@@ -1,0 +1,25 @@
+_site/
+.sass-cache/
+.jekyll-cache/
+.jekyll-metadata
+node_modules/
+vendor/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmpclaude-*
+*.log
+
+# Don't commit built Tailwind (built in CI)
+assets/css/tailwind.css
+
+# IDE
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.local

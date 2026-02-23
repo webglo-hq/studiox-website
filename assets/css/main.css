@@ -1,0 +1,233 @@
+/* Fonts loaded asynchronously via head.html for better LCP */
+/* Fallback font stack ensures content is visible immediately */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================
+   BASE LAYER - Root styles & resets
+   ======================================== */
+@layer base {
+  :root {
+    --color-primary: #E6C200;
+    --color-primary-hover: #CCA800;
+    --color-accent: #2563EB;
+    --color-accent-hover: #1D4ED8;
+    --color-charcoal: #171717;
+    --color-offwhite: #FAFAFA;
+    color-scheme: light;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply font-body bg-offwhite text-neutral-900 antialiased;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Focus visible for accessibility */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+
+  /* Smooth image loading */
+  img {
+    @apply max-w-full h-auto;
+  }
+
+  /* Heading styles */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-bold text-neutral-900 leading-tight;
+    text-wrap: balance;
+  }
+}
+
+/* ========================================
+   COMPONENTS LAYER - Reusable UI patterns
+   ======================================== */
+@layer components {
+  /* Primary CTA Button - High contrast yellow */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3.5 min-h-[48px]
+           text-base font-bold tracking-wide text-neutral-900
+           bg-primary rounded-full
+           border-2 border-transparent
+           shadow-lg shadow-black/10
+           transition-all duration-200 ease-out
+           hover:bg-primary-hover hover:shadow-xl hover:-translate-y-0.5
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2
+           active:translate-y-0 active:shadow-md
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0;
+  }
+
+  /* Secondary Button - Dark/inverted */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3.5 min-h-[48px]
+           text-base font-bold text-white
+           bg-neutral-900 rounded-full
+           border-2 border-transparent
+           shadow-lg shadow-black/10
+           transition-all duration-200 ease-out
+           hover:bg-accent hover:shadow-xl hover:-translate-y-0.5
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2
+           active:translate-y-0 active:shadow-md
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Ghost/Outline Button */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           px-6 py-3.5 min-h-[48px]
+           text-base font-bold text-neutral-900
+           bg-transparent rounded-full
+           border-2 border-neutral-300
+           transition-all duration-200 ease-out
+           hover:border-neutral-900 hover:bg-neutral-100
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2;
+  }
+
+  /* Section eyebrow/label */
+  .section-eyebrow {
+    @apply inline-block uppercase tracking-[0.15em] text-xs font-semibold text-accent mb-2;
+  }
+
+  /* Card component */
+  .card {
+    @apply bg-white rounded-2xl shadow-lg shadow-black/5 border border-neutral-200/50
+           transition-shadow duration-200
+           hover:shadow-xl;
+  }
+
+  /* Card without hover effect */
+  .card-static {
+    @apply bg-white rounded-2xl shadow-lg shadow-black/5 border border-neutral-200/50;
+  }
+
+  /* Image placeholder for missing images */
+  .img-placeholder {
+    @apply bg-gradient-to-br from-neutral-200 to-neutral-300 flex items-center justify-center text-neutral-500;
+  }
+
+  /* Link styles */
+  .link {
+    @apply text-accent font-semibold underline underline-offset-2
+           transition-colors duration-200
+           hover:text-accent-hover;
+  }
+
+  .link-subtle {
+    @apply text-neutral-700 font-medium
+           transition-colors duration-200
+           hover:text-accent;
+  }
+
+  /* Text balance for headings */
+  .heading-balance {
+    text-wrap: balance;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  /* Container utilities */
+  .container-narrow {
+    @apply max-w-3xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .container-default {
+    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .container-wide {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Prose improvements for blog content */
+  .prose-custom {
+    @apply prose prose-lg max-w-none
+           prose-headings:font-heading prose-headings:tracking-tight prose-headings:text-neutral-900
+           prose-p:text-neutral-700 prose-p:leading-relaxed
+           prose-a:text-accent prose-a:font-semibold prose-a:no-underline hover:prose-a:underline
+           prose-strong:text-neutral-900
+           prose-ul:text-neutral-700 prose-ol:text-neutral-700
+           prose-li:marker:text-accent;
+  }
+
+  /* Form inputs */
+  .input {
+    @apply w-full rounded-xl border border-neutral-300 px-4 py-3 text-base
+           bg-white text-neutral-900 placeholder:text-neutral-500
+           transition-all duration-200
+           focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20
+           hover:border-neutral-400;
+  }
+
+  /* Skip link for accessibility */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4
+           focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-neutral-900
+           focus:rounded-lg focus:font-semibold;
+  }
+}
+
+/* ========================================
+   UTILITIES LAYER - Custom utilities
+   ======================================== */
+@layer utilities {
+  /* Smooth scroll behavior */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+
+  /* Text shadow for hero text on images */
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Gradient overlays */
+  .overlay-dark {
+    @apply bg-gradient-to-t from-black/60 via-black/20 to-transparent;
+  }
+
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    @apply text-black bg-white;
+  }
+
+  a {
+    text-decoration: underline;
+  }
+}

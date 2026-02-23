@@ -1,0 +1,174 @@
+---
+layout: default
+title: Blog | Studio X Wrestling
+description: Wrestling tips, training insights, competition prep, and nutrition advice from Studio X Wrestling coaches.
+permalink: /blog/
+---
+
+<!-- Hero Section -->
+<section class="py-16 lg:py-24 bg-charcoal">
+  <div class="container-default">
+    <div class="max-w-2xl">
+      <p class="section-eyebrow !text-primary">The Studio X Blog</p>
+      <h1 class="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-[1.1]">
+        Training insights from the mat.
+      </h1>
+      <p class="mt-6 text-lg text-neutral-300 leading-relaxed">
+        Wrestling techniques, competition strategies, nutrition for grapplers, and mental preparation tips from coaches who've been there.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Blog Posts Grid -->
+<section class="py-16 lg:py-24 bg-white">
+  <div class="container-default">
+    <div class="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      {% assign sorted_posts = site.posts | sort: 'date' | reverse %}
+      {% for post in sorted_posts %}
+      <article class="card group">
+        <a href="{{ post.url }}" class="block">
+          <div class="relative aspect-[4/3] overflow-hidden rounded-t-lg bg-neutral-100">
+            {% if post.image %}
+            <img 
+              src="{{ post.image }}" 
+              alt="{{ post.title }}"
+              class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              loading="lazy"
+              onerror="this.parentElement.innerHTML='<div class=\'w-full h-full flex items-center justify-center bg-charcoal\'><svg class=\'w-16 h-16 text-primary\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253\'/></svg></div>'"
+            >
+            {% else %}
+            <div class="w-full h-full flex items-center justify-center bg-charcoal">
+              <svg class="w-16 h-16 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+              </svg>
+            </div>
+            {% endif %}
+            
+            <!-- Category Badge -->
+            {% if post.categories.first %}
+            <div class="absolute top-4 left-4">
+              <span class="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wider bg-primary text-charcoal rounded-full">
+                {{ post.categories.first }}
+              </span>
+            </div>
+            {% endif %}
+          </div>
+          
+          <div class="p-6">
+            <div class="flex items-center gap-2 text-sm text-neutral-500 mb-3">
+              <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%b %-d, %Y" }}</time>
+              {% if post.read_time %}
+              <span>•</span>
+              <span>{{ post.read_time }}</span>
+              {% endif %}
+            </div>
+            
+            <h2 class="font-heading text-xl font-bold text-neutral-900 group-hover:text-accent transition-colors leading-tight">
+              {{ post.title }}
+            </h2>
+            
+            {% if post.excerpt %}
+            <p class="mt-3 text-neutral-600 text-sm line-clamp-2">
+              {{ post.excerpt | strip_html | truncate: 120 }}
+            </p>
+            {% endif %}
+            
+            <div class="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-accent group-hover:gap-3 transition-all">
+              Read article
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+            </div>
+          </div>
+        </a>
+      </article>
+      {% endfor %}
+    </div>
+    
+    {% if site.posts.size == 0 %}
+    <div class="text-center py-16">
+      <svg class="w-16 h-16 text-neutral-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/>
+      </svg>
+      <h3 class="font-heading text-xl font-bold text-neutral-600">No posts yet</h3>
+      <p class="mt-2 text-neutral-500">Check back soon for wrestling tips and training insights.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Newsletter CTA -->
+<section class="py-16 lg:py-24 bg-charcoal">
+  <div class="container-narrow text-center">
+    <div class="max-w-2xl mx-auto">
+      <p class="section-eyebrow !text-primary">Stay Sharp</p>
+      <h2 class="font-heading text-3xl sm:text-4xl font-bold text-white leading-tight">
+        Wrestling tips delivered to your inbox.
+      </h2>
+      <p class="mt-4 text-lg text-neutral-300">
+        Get training insights, competition prep advice, and exclusive content from our coaches.
+      </p>
+      
+      <div class="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="{{ site.instagram }}" class="btn-primary !justify-center" target="_blank" rel="noopener noreferrer">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.067.06 1.407.06 4.123v.08c0 2.643-.012 2.987-.06 4.043-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.067.048-1.407.06-4.123.06h-.08c-2.643 0-2.987-.012-4.043-.06-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.047-1.024-.06-1.379-.06-3.808v-.63c0-2.43.013-2.784.06-3.808.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 015.45 2.525c.636-.247 1.363-.416 2.427-.465C8.901 2.013 9.256 2 11.685 2h.63z"/></svg>
+          Follow @studioxwrestling
+        </a>
+        <a href="/contact/" class="btn-secondary !justify-center">
+          Contact for Updates
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Categories Preview -->
+<section class="py-16 lg:py-24 bg-neutral-50">
+  <div class="container-default">
+    <div class="text-center mb-12">
+      <p class="section-eyebrow">Browse Topics</p>
+      <h2 class="font-heading text-3xl sm:text-4xl font-bold text-neutral-900">What we write about</h2>
+    </div>
+    
+    <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="card-static p-6 text-center">
+        <div class="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+          </svg>
+        </div>
+        <h3 class="font-heading text-lg font-bold text-neutral-900">Technique</h3>
+        <p class="mt-2 text-sm text-neutral-600">Breakdowns, drills, and position analysis</p>
+      </div>
+      
+      <div class="card-static p-6 text-center">
+        <div class="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+          </svg>
+        </div>
+        <h3 class="font-heading text-lg font-bold text-neutral-900">Competition</h3>
+        <p class="mt-2 text-sm text-neutral-600">Tournament prep, peaking, and match strategy</p>
+      </div>
+      
+      <div class="card-static p-6 text-center">
+        <div class="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+          </svg>
+        </div>
+        <h3 class="font-heading text-lg font-bold text-neutral-900">Nutrition</h3>
+        <p class="mt-2 text-sm text-neutral-600">Fueling performance and weight management</p>
+      </div>
+      
+      <div class="card-static p-6 text-center">
+        <div class="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+          </svg>
+        </div>
+        <h3 class="font-heading text-lg font-bold text-neutral-900">Mindset</h3>
+        <p class="mt-2 text-sm text-neutral-600">Mental game, focus, and training psychology</p>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,84 @@
+title: Studio X Wrestling
+description: High-energy wrestling training for high school, college, and grappling athletes.
+url: "https://studiox.fit"
+baseurl: ""
+lang: en
+
+author: Studio X Wrestling
+email: info@studioxwrestling.com
+instagram: https://www.instagram.com/studioxwrestling/?hl=en
+logo: /assets/images/logo.jpg
+
+plugins:
+  - jekyll-seo-tag
+
+markdown: kramdown
+permalink: /blog/:year/:month/:day/:title/
+timezone: America/New_York
+
+exclude:
+  - node_modules
+  - vendor
+  - package-lock.json
+  - package.json
+  - postcss.config.js
+  - tailwind.config.js
+  - tailwind.config.cjs
+  - README.md
+  - SETUP_GUIDE.md
+  - .github
+  - scripts
+  - Gemfile
+  - Gemfile.lock
+  - tmpclaude-*
+  - "*.log"
+
+collections:
+  posts:
+    output: true
+    permalink: /blog/:year/:month/:day/:title/
+
+defaults:
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: post
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default
+  - scope:
+      path: "assets/images"
+    values:
+      image: true
+
+nav_links:
+  - title: Home
+    url: /
+  - title: Coaches
+    url: /about/
+  - title: Blog
+    url: /blog/
+  - title: Contact
+    url: /contact/
+
+address:
+  room: "Cellar (Lower Level - Below JoJu)"
+  street: "83-27 Broadway"
+  city: "Elmhurst"
+  state: "NY"
+  zip: "11373"
+  full: "Cellar (Lower Level - Below JoJu), 83-27 Broadway, Elmhurst, NY 11373"
+  maps: "https://maps.google.com/?q=83-27+Broadway+Elmhurst+NY+11373"
+
+business:
+  name: Studio X Wrestling
+  priceRange: $$
+  url: https://studiox.fit
+  description: Wrestling coaching for scholastic athletes and grapplers in Elmhurst, Queens, NY.
+  sameAs:
+    - https://www.instagram.com/studioxwrestling/?hl=en
+  areaServed: New York City
+  sport: Wrestling

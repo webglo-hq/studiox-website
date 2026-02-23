@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0a"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="goldGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700"/>
+      <stop offset="50%" style="stop-color:#E6C200"/>
+      <stop offset="100%" style="stop-color:#B8960F"/>
+    </linearGradient>
+    <linearGradient id="silverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8E8E8"/>
+      <stop offset="50%" style="stop-color:#C0C0C0"/>
+      <stop offset="100%" style="stop-color:#A0A0A0"/>
+    </linearGradient>
+    <linearGradient id="bronzeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#CD7F32"/>
+      <stop offset="100%" style="stop-color:#8B4513"/>
+    </linearGradient>
+    <filter id="shadow2">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="glow2">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect fill="url(#bgGrad2)" width="1200" height="630"/>
+  
+  <!-- Podium -->
+  <g transform="translate(600, 450)">
+    <!-- First place (center, tallest) -->
+    <rect x="-70" y="-100" width="140" height="150" fill="url(#goldGrad2)" rx="4"/>
+    <text x="0" y="-20" font-family="system-ui, sans-serif" font-size="48" font-weight="700" fill="#171717" text-anchor="middle">1</text>
+    
+    <!-- Second place (left) -->
+    <rect x="-200" y="-60" width="120" height="110" fill="url(#silverGrad)" rx="4"/>
+    <text x="-140" y="10" font-family="system-ui, sans-serif" font-size="36" font-weight="700" fill="#171717" text-anchor="middle">2</text>
+    
+    <!-- Third place (right) -->
+    <rect x="80" y="-40" width="120" height="90" fill="url(#bronzeGrad)" rx="4"/>
+    <text x="140" y="15" font-family="system-ui, sans-serif" font-size="36" font-weight="700" fill="#171717" text-anchor="middle">3</text>
+  </g>
+  
+  <!-- Champion figure on podium -->
+  <g transform="translate(600, 280)" filter="url(#shadow2)">
+    <!-- Body -->
+    <ellipse cx="0" cy="50" rx="30" ry="45" fill="#E6C200"/>
+    <!-- Head -->
+    <circle cx="0" cy="-10" r="28" fill="#E6C200"/>
+    <!-- Arms raised in victory -->
+    <ellipse cx="-50" cy="10" rx="35" ry="14" fill="#E6C200" transform="rotate(-60)"/>
+    <ellipse cx="50" cy="10" rx="35" ry="14" fill="#E6C200" transform="rotate(60)"/>
+    <!-- Legs -->
+    <ellipse cx="-15" cy="110" rx="14" ry="40" fill="#E6C200"/>
+    <ellipse cx="15" cy="110" rx="14" ry="40" fill="#E6C200"/>
+  </g>
+  
+  <!-- Medal on champion -->
+  <g transform="translate(600, 310)">
+    <circle cx="0" cy="0" r="18" fill="url(#goldGrad2)" filter="url(#glow2)"/>
+    <text x="0" y="6" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#171717" text-anchor="middle">★</text>
+  </g>
+  
+  <!-- Confetti/celebration elements -->
+  <g opacity="0.6">
+    <rect x="150" y="100" width="8" height="20" fill="#E6C200" transform="rotate(25)"/>
+    <rect x="250" y="150" width="6" height="16" fill="#ffffff" transform="rotate(-15)"/>
+    <rect x="180" y="200" width="8" height="18" fill="#E6C200" transform="rotate(45)"/>
+    <rect x="950" y="120" width="8" height="20" fill="#E6C200" transform="rotate(-30)"/>
+    <rect x="1020" y="180" width="6" height="16" fill="#ffffff" transform="rotate(20)"/>
+    <rect x="900" y="160" width="8" height="18" fill="#E6C200" transform="rotate(-50)"/>
+    <circle cx="300" y="250" r="6" fill="#E6C200"/>
+    <circle cx="900" y="220" r="5" fill="#ffffff"/>
+  </g>
+  
+  <!-- Title text -->
+  <text x="600" y="80" font-family="system-ui, -apple-system, sans-serif" font-size="42" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="1">TOURNAMENT PREP</text>
+  <text x="600" y="120" font-family="system-ui, sans-serif" font-size="18" fill="#E6C200" text-anchor="middle" letter-spacing="3" opacity="0.9">COMPETE • WIN • REPEAT</text>
+  
+  <!-- Studio X branding -->
+  <g transform="translate(600, 590)">
+    <rect x="-80" y="-20" width="160" height="36" rx="18" fill="#E6C200" opacity="0.15"/>
+    <text x="0" y="5" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#E6C200" text-anchor="middle" letter-spacing="2">STUDIO X WRESTLING</text>
+  </g>
+</svg>

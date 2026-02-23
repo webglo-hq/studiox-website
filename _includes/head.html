@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ page.lang | default: site.lang | default: 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171717">
+  <meta name="color-scheme" content="light">
+  <meta name="format-detection" content="telephone=no">
+  
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-3LW3FMPM3X"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-3LW3FMPM3X');
+  </script>
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://www.googletagmanager.com">
+  
+  {%- seo -%}
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/jpeg" href="{{ '/assets/images/logo.jpg' | relative_url }}">
+  <link rel="apple-touch-icon" href="{{ '/assets/images/logo.jpg' | relative_url }}">
+  
+  <!-- Critical CSS inline for LCP -->
+  <style>
+    /* Critical above-the-fold styles */
+    body{font-family:Inter,system-ui,sans-serif;margin:0;background:#FAFAFA}
+    .font-heading{font-family:'Roboto Condensed',system-ui,sans-serif}
+  </style>
+  
+  <!-- Main stylesheet with low priority -->
+  <link rel="stylesheet" href="{{ '/assets/css/tailwind.css' | relative_url }}" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="{{ '/assets/css/tailwind.css' | relative_url }}"></noscript>
+  
+  <!-- Google Fonts - loaded async for performance -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SportsActivityLocation",
+    "name": {{ site.business.name | jsonify }},
+    "url": {{ site.business.url | default: site.url | jsonify }},
+    "description": {{ site.business.description | jsonify }},
+    "image": "{{ '/assets/images/logo.jpg' | absolute_url }}",
+    "sport": {{ site.business.sport | jsonify }},
+    "areaServed": {{ site.business.areaServed | jsonify }},
+    "priceRange": {{ site.business.priceRange | jsonify }},
+    "sameAs": {{ site.business.sameAs | jsonify }},
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": {{ site.address.street | jsonify }},
+      "addressLocality": {{ site.address.city | jsonify }},
+      "addressRegion": {{ site.address.state | jsonify }},
+      "postalCode": {{ site.address.zip | jsonify }},
+      "addressCountry": "US"
+    },
+    "telephone": "",
+    "openingHours": "Mo-Su"
+  }
+  </script>
+</head>
+<body class="min-h-screen flex flex-col">
+<!-- Skip link for accessibility -->
+<a href="#main-content" class="skip-link">Skip to main content</a>

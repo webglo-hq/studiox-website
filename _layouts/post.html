@@ -1,0 +1,62 @@
+{% include head.html %}
+{% include header.html %}
+<main id="main-content" class="flex-1 bg-white">
+  <article class="container-narrow py-12 lg:py-16" itemscope itemtype="https://schema.org/BlogPosting">
+    <!-- Breadcrumb navigation -->
+    <nav aria-label="Breadcrumb" class="mb-6">
+      <ol class="flex items-center gap-2 text-sm text-neutral-500">
+        <li><a href="{{ '/' | relative_url }}" class="hover:text-accent transition-colors">Home</a></li>
+        <li aria-hidden="true">/</li>
+        <li><a href="{{ '/blog/' | relative_url }}" class="hover:text-accent transition-colors">Blog</a></li>
+        <li aria-hidden="true">/</li>
+        <li class="text-neutral-900 font-medium truncate max-w-[200px]" aria-current="page">{{ page.title }}</li>
+      </ol>
+    </nav>
+    
+    <!-- Article header -->
+    <header class="mb-8">
+      {% if page.categories.first %}<p class="section-eyebrow">{{ page.categories.first }}</p>{% endif %}
+      <h1 class="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-neutral-900 leading-tight" itemprop="headline">{{ page.title }}</h1>
+      <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-neutral-600">
+        <time datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished">{{ page.date | date: "%B %d, %Y" }}</time>
+        {% if page.read_time %}<span>• {{ page.read_time }}</span>{% endif %}
+        {% if page.author %}<span itemprop="author">by {{ page.author }}</span>{% endif %}
+      </div>
+    </header>
+    
+    <!-- Featured image -->
+    {% assign post_image = page.image | default: page.featured_image %}
+    {% assign post_image_alt = page.image_alt | default: page.featured_image_alt | default: page.title %}
+    {% if post_image %}
+    <figure class="mb-10 -mx-4 sm:mx-0 overflow-hidden sm:rounded-2xl shadow-lg bg-charcoal">
+      <img 
+        src="{{ post_image }}" 
+        alt="{{ post_image_alt }}" 
+        class="w-full h-64 sm:h-80 lg:h-96 object-cover"
+        loading="eager"
+        itemprop="image"
+        onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'w-full h-64 sm:h-80 lg:h-96 flex items-center justify-center bg-charcoal\'><svg class=\'w-20 h-20 text-primary\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253\'/></svg></div>'"
+      >
+    </figure>
+    {% endif %}
+    
+    <!-- Article content -->
+    <div class="prose-custom" itemprop="articleBody">
+      {{ content }}
+    </div>
+    
+    <!-- Article footer -->
+    <footer class="mt-12 pt-8 border-t border-neutral-200">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <a href="{{ '/blog/' | relative_url }}" class="btn-ghost !py-2.5 !px-5 !text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          Back to all articles
+        </a>
+        <a href="{{ site.instagram }}" class="btn-primary !py-2.5 !px-5 !text-sm" target="_blank" rel="noopener noreferrer">
+          Questions? DM us
+        </a>
+      </div>
+    </footer>
+  </article>
+</main>
+{% include footer.html %}

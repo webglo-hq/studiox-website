@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bgGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f0f"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="plateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3a3a3a"/>
+      <stop offset="100%" style="stop-color:#2a2a2a"/>
+    </linearGradient>
+    <filter id="shadow3">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect fill="url(#bgGrad3)" width="1200" height="630"/>
+  
+  <!-- Wooden table surface -->
+  <rect x="0" y="380" width="1200" height="250" fill="#2d1f14" opacity="0.8"/>
+  <line x1="0" y1="380" x2="1200" y2="380" stroke="#1a1208" stroke-width="4"/>
+  
+  <!-- Main plate -->
+  <g transform="translate(600, 400)" filter="url(#shadow3)">
+    <ellipse cx="0" cy="30" rx="200" ry="50" fill="#1a1a1a" opacity="0.3"/>
+    <ellipse cx="0" cy="0" rx="180" ry="45" fill="url(#plateGrad)"/>
+    <ellipse cx="0" cy="0" rx="160" ry="38" fill="none" stroke="#4a4a4a" stroke-width="2"/>
+  </g>
+  
+  <!-- Grilled chicken/protein -->
+  <g transform="translate(550, 370)">
+    <ellipse cx="50" cy="20" rx="70" ry="35" fill="#8B4513"/>
+    <ellipse cx="50" cy="15" rx="65" ry="30" fill="#A0522D"/>
+    <!-- Grill marks -->
+    <line x1="10" y1="10" x2="90" y2="10" stroke="#5D3A1A" stroke-width="4" opacity="0.6"/>
+    <line x1="15" y1="22" x2="85" y2="22" stroke="#5D3A1A" stroke-width="4" opacity="0.6"/>
+  </g>
+  
+  <!-- Rice -->
+  <g transform="translate(680, 380)">
+    <ellipse cx="0" cy="0" rx="50" ry="30" fill="#F5F5DC"/>
+    <ellipse cx="0" cy="-8" rx="45" ry="25" fill="#FFFEF0"/>
+  </g>
+  
+  <!-- Broccoli/vegetables -->
+  <g transform="translate(480, 400)">
+    <circle cx="0" cy="0" r="20" fill="#228B22"/>
+    <circle cx="20" cy="-10" r="18" fill="#2E8B2E"/>
+    <circle cx="-15" cy="10" r="16" fill="#32CD32"/>
+    <rect x="-5" y="15" width="10" height="20" fill="#556B2F"/>
+  </g>
+  
+  <!-- Avocado slices -->
+  <g transform="translate(720, 420)">
+    <ellipse cx="0" cy="0" rx="25" ry="15" fill="#568203"/>
+    <ellipse cx="0" cy="0" rx="18" ry="10" fill="#9ACD32"/>
+  </g>
+  
+  <!-- Water bottle -->
+  <g transform="translate(900, 320)" filter="url(#shadow3)">
+    <rect x="-25" y="0" width="50" height="120" rx="8" fill="#4169E1" opacity="0.8"/>
+    <rect x="-20" y="10" width="40" height="80" rx="4" fill="#87CEEB" opacity="0.3"/>
+    <rect x="-25" y="-15" width="50" height="20" rx="4" fill="#2c2c2c"/>
+  </g>
+  
+  <!-- Protein powder container -->
+  <g transform="translate(300, 300)" filter="url(#shadow3)">
+    <rect x="-40" y="0" width="80" height="100" rx="6" fill="#E6C200"/>
+    <rect x="-35" y="20" width="70" height="50" rx="2" fill="#171717"/>
+    <text x="0" y="52" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#E6C200" text-anchor="middle">WHEY</text>
+    <rect x="-40" y="-10" width="80" height="15" rx="4" fill="#CCA800"/>
+  </g>
+  
+  <!-- Fork and knife -->
+  <g transform="translate(380, 450)">
+    <rect x="0" y="0" width="6" height="80" rx="2" fill="#C0C0C0"/>
+    <rect x="-8" y="-15" width="22" height="20" rx="2" fill="#C0C0C0"/>
+  </g>
+  <g transform="translate(820, 450)">
+    <rect x="0" y="0" width="6" height="80" rx="2" fill="#C0C0C0"/>
+    <path d="M-5,-20 L11,-20 L8,15 L-2,15 Z" fill="#C0C0C0"/>
+  </g>
+  
+  <!-- Title text -->
+  <text x="600" y="100" font-family="system-ui, -apple-system, sans-serif" font-size="42" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="1">NUTRITION FOR GRAPPLERS</text>
+  <text x="600" y="140" font-family="system-ui, sans-serif" font-size="18" fill="#E6C200" text-anchor="middle" letter-spacing="3" opacity="0.9">FUEL • RECOVER • PERFORM</text>
+  
+  <!-- Macros indicators -->
+  <g transform="translate(200, 200)">
+    <circle cx="0" cy="0" r="30" fill="none" stroke="#E6C200" stroke-width="4"/>
+    <text x="0" y="6" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#E6C200" text-anchor="middle">PROTEIN</text>
+  </g>
+  <g transform="translate(1000, 200)">
+    <circle cx="0" cy="0" r="30" fill="none" stroke="#E6C200" stroke-width="4"/>
+    <text x="0" y="6" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#E6C200" text-anchor="middle">CARBS</text>
+  </g>
+  
+  <!-- Studio X branding -->
+  <g transform="translate(600, 590)">
+    <rect x="-80" y="-20" width="160" height="36" rx="18" fill="#E6C200" opacity="0.15"/>
+    <text x="0" y="5" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#E6C200" text-anchor="middle" letter-spacing="2">STUDIO X WRESTLING</text>
+  </g>
+</svg>

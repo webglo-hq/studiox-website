@@ -1,0 +1,46 @@
+<!-- Cookie Consent Banner -->
+<div id="cookie-banner" class="fixed bottom-0 left-0 right-0 z-50 bg-neutral-900 border-t border-neutral-700 shadow-2xl" role="dialog" aria-label="Cookie consent notice" style="display:none;">
+  <div class="container-default py-4">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+      <div class="flex items-start gap-3 flex-1">
+        <!-- Cookie icon -->
+        <svg class="w-5 h-5 text-primary flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+        <p class="text-sm text-neutral-300 leading-relaxed">
+          We use cookies to improve your experience on our site.
+          By continuing to browse, you agree to our
+          <a href="{{ '/cookies/' | relative_url }}" class="text-primary hover:underline font-medium">Cookie Policy</a>
+          and
+          <a href="{{ '/privacy-policy/' | relative_url }}" class="text-primary hover:underline font-medium">Privacy Policy</a>.
+        </p>
+      </div>
+      <div class="flex gap-3 flex-shrink-0">
+        <button id="cookie-decline" class="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold text-neutral-300 bg-transparent border border-neutral-600 rounded-full hover:border-neutral-400 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary" type="button">
+          Decline
+        </button>
+        <button id="cookie-accept" class="inline-flex items-center justify-center px-4 py-2 text-sm font-bold text-neutral-900 bg-primary rounded-full hover:bg-primary-hover transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2" type="button">
+          Accept
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var banner = document.getElementById('cookie-banner');
+  if (!banner) return;
+  try {
+    var pref = localStorage.getItem('sx-cookie-consent');
+    if (!pref) banner.style.display = 'block';
+  } catch (e) {
+    banner.style.display = 'block';
+  }
+  function dismiss(val) {
+    try { localStorage.setItem('sx-cookie-consent', val); } catch (e) {}
+    banner.style.display = 'none';
+  }
+  document.getElementById('cookie-accept').addEventListener('click', function () { dismiss('accepted'); });
+  document.getElementById('cookie-decline').addEventListener('click', function () { dismiss('declined'); });
+})();
+</script>

@@ -1,0 +1,48 @@
+{% include head.html %}
+{% include header.html %}
+<main id="main-content" class="flex-1">
+  {{ content }}
+</main>
+<script>
+(function() {
+  const navToggle = document.getElementById('navToggle');
+  const mobileNav = document.getElementById('mobile-nav');
+  const hamburgerIcon = navToggle?.querySelector('.hamburger-icon');
+  const closeIcon = navToggle?.querySelector('.close-icon');
+  
+  if (navToggle && mobileNav) {
+    navToggle.addEventListener('click', () => {
+      const isOpen = !mobileNav.classList.contains('hidden');
+      mobileNav.classList.toggle('hidden');
+      navToggle.setAttribute('aria-expanded', String(!isOpen));
+      hamburgerIcon?.classList.toggle('hidden', !isOpen);
+      closeIcon?.classList.toggle('hidden', isOpen);
+    });
+    
+    // Close mobile nav on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !mobileNav.classList.contains('hidden')) {
+        mobileNav.classList.add('hidden');
+        navToggle.setAttribute('aria-expanded', 'false');
+        hamburgerIcon?.classList.remove('hidden');
+        closeIcon?.classList.add('hidden');
+        navToggle.focus();
+      }
+    });
+    
+    // Close mobile nav when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!mobileNav.classList.contains('hidden') && 
+          !mobileNav.contains(e.target) && 
+          !navToggle.contains(e.target)) {
+        mobileNav.classList.add('hidden');
+        navToggle.setAttribute('aria-expanded', 'false');
+        hamburgerIcon?.classList.remove('hidden');
+        closeIcon?.classList.add('hidden');
+      }
+    });
+  }
+})();
+</script>
+{% include cookie-banner.html %}
+{% include footer.html %}
