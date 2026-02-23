@@ -41,7 +41,7 @@ jobs:
         run: npm ci
       
       - name: Build Tailwind CSS
-        run: npm run build
+        run: npm run build:css
       
       - name: Setup Pages
         id: pages
