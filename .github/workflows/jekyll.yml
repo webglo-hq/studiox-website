@@ -24,11 +24,12 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.1'
-          bundler-cache: false
+          ruby-version: '3.2'
       
-      - name: Install Ruby dependencies
-        run: bundle install
+      - name: Add Linux platform and install gems
+        run: |
+          bundle lock --add-platform x86_64-linux
+          bundle install
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
