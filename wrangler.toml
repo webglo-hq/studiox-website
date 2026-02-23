@@ -1,0 +1,17 @@
+name = "studiox-form-handler"
+main = "scripts/cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+[vars]
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz-Neh8iazLF2phqEQDZsq-lvo27BR3xITzF9DDaHLlARyDFBUx879-XBDgDQh3Zc4dFw/exec"
+ALLOWED_ORIGINS = "https://studiox.fit,https://www.studiox.fit"
+
+# Production routes
+[[routes]]
+pattern = "studiox.fit/api/*"
+zone_name = "studiox.fit"
+
+[[routes]]
+pattern = "www.studiox.fit/api/*"
+zone_name = "studiox.fit"
