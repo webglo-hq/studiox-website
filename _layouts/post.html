@@ -180,9 +180,32 @@
 <!-- Adsense Script for Blog Posts -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2718034035990801" crossorigin="anonymous"></script>
 <script>
-  // Initialize all ad units on the page
-  document.querySelectorAll('.adsbygoogle').forEach(() => {
-    (adsbygoogle = window.adsbygoogle || []).push({});
+  // Initialize only visible ad units (prevents "availableWidth=0" errors on hidden sidebar ads)
+  function initVisibleAds() {
+    document.querySelectorAll('.adsbygoogle').forEach(function(ad) {
+      // Only initialize if the ad container is visible and has width
+      if (ad.offsetWidth > 0 && ad.offsetHeight >= 0 && !ad.dataset.adsbygoogleStatus) {
+        try {
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        } catch (e) {
+          // Silently ignore ad initialization errors
+        }
+      }
+    });
+  }
+  
+  // Initialize on load and on resize (for responsive layouts)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initVisibleAds);
+  } else {
+    initVisibleAds();
+  }
+  
+  // Re-check on resize for sidebar ads that become visible on larger screens
+  let resizeTimeout;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(initVisibleAds, 250);
   });
 </script>
 
