@@ -27,20 +27,93 @@
   <link rel="icon" type="image/jpeg" href="{{ '/assets/images/logo.jpg' | relative_url }}">
   <link rel="apple-touch-icon" href="{{ '/assets/images/logo.jpg' | relative_url }}">
   
-  <!-- Critical CSS inline for LCP -->
+  <!-- Critical CSS inline to prevent FOUC -->
   <style>
-    /* Critical above-the-fold styles */
-    body{font-family:Inter,system-ui,sans-serif;margin:0;background:#FAFAFA}
+    /* Reset and base */
+    *,*::before,*::after{box-sizing:border-box;border:0 solid #e5e5e5}
+    html{line-height:1.5;-webkit-text-size-adjust:100%;font-family:Inter,system-ui,sans-serif}
+    body{margin:0;line-height:inherit;background:#FAFAFA;min-height:100vh;display:flex;flex-direction:column}
+    img,video{max-width:100%;height:auto;display:block}
+    h1,h2,h3,h4,h5,h6,p{margin:0}
+    a{color:inherit;text-decoration:inherit}
+    button,input,select,textarea{font:inherit;color:inherit}
+    
+    /* Typography */
     .font-heading{font-family:'Roboto Condensed',system-ui,sans-serif}
+    
+    /* Layout */
+    .container-default{width:100%;max-width:1280px;margin:0 auto;padding:0 1rem}
+    .container-narrow{width:100%;max-width:768px;margin:0 auto;padding:0 1rem}
+    @media(min-width:640px){.container-default,.container-narrow{padding:0 1.5rem}}
+    @media(min-width:1024px){.container-default,.container-narrow{padding:0 2rem}}
+    
+    /* Colors */
+    .bg-charcoal{background:#171717}
+    .bg-white{background:#fff}
+    .text-white{color:#fff}
+    .text-neutral-300{color:#d4d4d4}
+    .text-neutral-400{color:#a3a3a3}
+    .text-primary{color:#f4c542}
+    
+    /* Hero section critical styles */
+    .min-h-\[90vh\]{min-height:90vh}
+    .flex{display:flex}
+    .flex-col{flex-direction:column}
+    .items-center{align-items:center}
+    .justify-center{justify-content:center}
+    .relative{position:relative}
+    .absolute{position:absolute}
+    .inset-0{inset:0}
+    .overflow-hidden{overflow:hidden}
+    .z-10{z-index:10}
+    .z-20{z-index:20}
+    
+    /* Grid */
+    .grid{display:grid}
+    .gap-12{gap:3rem}
+    @media(min-width:1024px){.lg\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    
+    /* Text sizes */
+    .text-sm{font-size:.875rem;line-height:1.25rem}
+    .text-lg{font-size:1.125rem;line-height:1.75rem}
+    .text-xl{font-size:1.25rem;line-height:1.75rem}
+    .text-4xl{font-size:2.25rem;line-height:2.5rem}
+    @media(min-width:640px){.sm\:text-5xl{font-size:3rem;line-height:1}}
+    @media(min-width:1024px){.lg\:text-6xl{font-size:3.75rem;line-height:1}}
+    
+    /* Font weights */
+    .font-bold{font-weight:700}
+    .font-semibold{font-weight:600}
+    
+    /* Spacing */
+    .py-16{padding-top:4rem;padding-bottom:4rem}
+    .mt-6{margin-top:1.5rem}
+    .mt-8{margin-top:2rem}
+    .mb-4{margin-bottom:1rem}
+    
+    /* Button base */
+    .btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;background:#f4c542;color:#171717;font-weight:700;border-radius:9999px;transition:all .2s}
+    .btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;background:transparent;border:2px solid #fff;color:#fff;font-weight:700;border-radius:9999px}
+    
+    /* Card */
+    .card-static{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    
+    /* Banner */
+    .bg-gradient-to-r{background:linear-gradient(to right,var(--tw-gradient-stops))}
+    
+    /* Loading state - hide body until CSS loads */
+    .css-loading{opacity:0}
+    .css-loaded{opacity:1;transition:opacity .1s}
   </style>
+  <script>document.documentElement.classList.add('css-loading')</script>
   
-  <!-- Main stylesheet with low priority -->
-  <link rel="stylesheet" href="{{ '/assets/css/tailwind.css' | relative_url }}" media="print" onload="this.media='all'">
+  <!-- Main stylesheet -->
+  <link rel="stylesheet" href="{{ '/assets/css/tailwind.css' | relative_url }}" onload="document.documentElement.classList.remove('css-loading');document.documentElement.classList.add('css-loaded')">
   <noscript><link rel="stylesheet" href="{{ '/assets/css/tailwind.css' | relative_url }}"></noscript>
   
-  <!-- Google Fonts - loaded async for performance -->
+  <!-- Google Fonts -->
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap">
   
   <!-- Structured Data -->
   <script type="application/ld+json">
