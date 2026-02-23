@@ -1,0 +1,26 @@
+# Gitleaks configuration
+# See https://github.com/gitleaks/gitleaks for more info
+
+title = "Gitleaks config for Studio X Wrestling"
+
+[extend]
+# Use the default gitleaks config as a base
+useDefault = true
+
+# Paths to exclude from scanning
+[allowlist]
+paths = [
+  '''_site/''',
+  '''node_modules/''',
+  '''vendor/''',
+  '''\.min\.js$''',
+  '''\.min\.css$''',
+]
+
+# Known false positives to ignore
+regexes = [
+  # Google Analytics IDs are not secrets
+  '''G-[A-Z0-9]{10}''',
+  # Adsense publisher IDs are public
+  '''pub-\d{16}''',
+]

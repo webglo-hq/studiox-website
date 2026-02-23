@@ -12,6 +12,11 @@ yarn-error.log*
 # Temporary files
 tmpclaude-*
 *.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
 
 # Don't commit built Tailwind (built in CI)
 assets/css/tailwind.css
@@ -19,7 +24,44 @@ assets/css/tailwind.css
 # IDE
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
 
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
 .env.local
+.env.development
+.env.production
+*.pem
+*.key
+*.secrets
+secrets/
+credentials/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# Build artifacts
+dist/
+build/
+*.min.js
+*.min.css
+
+# Testing
+coverage/
+.nyc_output/
+lighthuse_tests/
+lighthouse_tests/
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Misc
+*.orig
+.cache/

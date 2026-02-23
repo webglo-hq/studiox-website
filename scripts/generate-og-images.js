@@ -15,8 +15,16 @@ const CONFIG = {
   outputDir: 'assets/images/og',
   imageWidth: 1200,
   imageHeight: 630,
-  geminiApiKey: 'AIzaSyAtZCIn4OyakDS31DQuzf6tdvCJam1XgKA'
+  geminiApiKey: process.env.GEMINI_API_KEY || ''
 };
+
+// Check for API key
+if (!CONFIG.geminiApiKey) {
+  console.log('⚠️  GEMINI_API_KEY environment variable not set.');
+  console.log('   Set it with: $env:GEMINI_API_KEY="your-key-here" (PowerShell)');
+  console.log('   Or: export GEMINI_API_KEY="your-key-here" (bash)');
+  console.log('   Falling back to SVG templates.\n');
+}
 
 /**
  * Make HTTPS request (promise wrapper)
@@ -44,6 +52,11 @@ function httpsRequest(url, options, data) {
  * Generate image using Gemini API
  */
 async function generateWithGemini(title, category) {
+  // Skip if no API key configured
+  if (!CONFIG.geminiApiKey) {
+    return null;
+  }
+  
   const prompt = `Create a bold, professional sports marketing image for a wrestling blog article titled "${title}". 
 Style: Modern athletic brand aesthetic, dramatic lighting, high contrast.
 Color scheme: Deep charcoal black (#171717) background with vibrant gold/yellow (#E6C200) accents.
