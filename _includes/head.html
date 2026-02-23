@@ -31,8 +31,8 @@
   <style>
     /* Reset and base */
     *,*::before,*::after{box-sizing:border-box;border:0 solid #e5e5e5}
-    html{line-height:1.5;-webkit-text-size-adjust:100%;font-family:Inter,system-ui,sans-serif}
-    body{margin:0;line-height:inherit;background:#FAFAFA;min-height:100vh;display:flex;flex-direction:column}
+    html{line-height:1.5;-webkit-text-size-adjust:100%;font-family:Inter,system-ui,sans-serif;background:#171717}
+    body{margin:0;line-height:inherit;background:#FAFAFA;color:#171717;min-height:100vh;display:flex;flex-direction:column}
     img,video{max-width:100%;height:auto;display:block}
     h1,h2,h3,h4,h5,h6,p{margin:0}
     a{color:inherit;text-decoration:inherit}
@@ -47,13 +47,32 @@
     @media(min-width:640px){.container-default,.container-narrow{padding:0 1.5rem}}
     @media(min-width:1024px){.container-default,.container-narrow{padding:0 2rem}}
     
-    /* Colors */
+    /* Full color palette - Neutrals */
     .bg-charcoal{background:#171717}
     .bg-white{background:#fff}
+    .bg-neutral-50{background:#fafafa}
+    .bg-neutral-100{background:#f5f5f5}
+    .bg-neutral-800{background:#262626}
+    .bg-neutral-900{background:#171717}
     .text-white{color:#fff}
     .text-neutral-300{color:#d4d4d4}
     .text-neutral-400{color:#a3a3a3}
-    .text-primary{color:#f4c542}
+    .text-neutral-500{color:#737373}
+    .text-neutral-600{color:#525252}
+    .text-neutral-700{color:#404040}
+    .text-neutral-800{color:#262626}
+    .text-neutral-900{color:#171717}
+    
+    /* Brand colors */
+    .text-primary{color:#E6C200}
+    .bg-primary{background:#E6C200}
+    .text-accent{color:#2563EB}
+    .bg-accent{background:#2563EB}
+    .\!text-primary{color:#E6C200!important}
+    .\!text-accent{color:#2563EB!important}
+    
+    /* Section eyebrow - default accent color */
+    .section-eyebrow{display:inline-block;text-transform:uppercase;letter-spacing:.15em;font-size:.75rem;font-weight:600;color:#2563EB;margin-bottom:.5rem}
     
     /* Hero section critical styles */
     .min-h-\[90vh\]{min-height:90vh}
@@ -74,32 +93,45 @@
     @media(min-width:1024px){.lg\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
     
     /* Text sizes */
+    .text-xs{font-size:.75rem;line-height:1rem}
     .text-sm{font-size:.875rem;line-height:1.25rem}
+    .text-base{font-size:1rem;line-height:1.5rem}
     .text-lg{font-size:1.125rem;line-height:1.75rem}
     .text-xl{font-size:1.25rem;line-height:1.75rem}
+    .text-2xl{font-size:1.5rem;line-height:2rem}
+    .text-3xl{font-size:1.875rem;line-height:2.25rem}
     .text-4xl{font-size:2.25rem;line-height:2.5rem}
-    @media(min-width:640px){.sm\:text-5xl{font-size:3rem;line-height:1}}
-    @media(min-width:1024px){.lg\:text-6xl{font-size:3.75rem;line-height:1}}
+    @media(min-width:640px){.sm\:text-4xl{font-size:2.25rem;line-height:2.5rem}.sm\:text-5xl{font-size:3rem;line-height:1}}
+    @media(min-width:1024px){.lg\:text-5xl{font-size:3rem;line-height:1}.lg\:text-6xl{font-size:3.75rem;line-height:1}}
     
     /* Font weights */
-    .font-bold{font-weight:700}
+    .font-medium{font-weight:500}
     .font-semibold{font-weight:600}
+    .font-bold{font-weight:700}
     
     /* Spacing */
     .py-16{padding-top:4rem;padding-bottom:4rem}
+    .mt-4{margin-top:1rem}
     .mt-6{margin-top:1.5rem}
     .mt-8{margin-top:2rem}
+    .mb-2{margin-bottom:.5rem}
     .mb-4{margin-bottom:1rem}
     
     /* Button base */
-    .btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;background:#f4c542;color:#171717;font-weight:700;border-radius:9999px;transition:all .2s}
+    .btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;background:#E6C200;color:#171717;font-weight:700;border-radius:9999px;transition:all .2s}
     .btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;background:transparent;border:2px solid #fff;color:#fff;font-weight:700;border-radius:9999px}
     
     /* Card */
-    .card-static{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .card,.card-static{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}
     
-    /* Banner */
-    .bg-gradient-to-r{background:linear-gradient(to right,var(--tw-gradient-stops))}
+    /* Footer dark background text */
+    footer{background:#171717;color:#fff}
+    footer .text-neutral-400{color:#a3a3a3}
+    footer .text-neutral-500{color:#737373}
+    footer .text-primary{color:#E6C200}
+    
+    /* Cookie banner */
+    #cookie-banner{background:#262626;color:#fff}
     
     /* Loading state - hide body until CSS loads */
     .css-loading{opacity:0}
