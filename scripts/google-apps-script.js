@@ -22,6 +22,9 @@ const CONFIG = {
   // Business owner email for notifications
   OWNER_EMAIL: 'info@studiox.fit',
   
+  // Email sender (Gmail workspace alias)
+  SENDER_EMAIL: 'noreply@webglo.org',
+  
   // Spreadsheet name (will be created on setup)
   SPREADSHEET_NAME: 'StudioX CRM - Contact Form Submissions',
   
@@ -29,7 +32,10 @@ const CONFIG = {
   BUSINESS_NAME: 'Studio X Wrestling',
   WEBSITE_URL: 'https://studiox.fit',
   INSTAGRAM_URL: 'https://www.instagram.com/studioxwrestling/',
-  ADDRESS: 'Cellar (Lower Level - Below JoJu), 83-27 Broadway, Elmhurst, NY 11373'
+  ADDRESS: 'Cellar (Lower Level - Below JoJu), 83-27 Broadway, Elmhurst, NY 11373',
+  
+  // Unsubscribe endpoint (Cloudflare Worker)
+  UNSUBSCRIBE_URL: 'https://studiox.fit/api/unsubscribe'
 };
 
 // ============================================
@@ -92,6 +98,11 @@ function setup() {
   marketingSheet.getRange(1, 1, 1, 4).setValues([['Name', 'Email', 'Date Added', 'Source']]);
   marketingSheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#f4c542');
   
+  // Create an Unsubscribed sheet
+  const unsubSheet = spreadsheet.insertSheet('Unsubscribed');
+  unsubSheet.getRange(1, 1, 1, 3).setValues([['Email', 'Date Unsubscribed', 'Reason']]);
+  unsubSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#ff6b6b');
+  
   // Create a Dashboard sheet
   const dashboardSheet = spreadsheet.insertSheet('Dashboard');
   dashboardSheet.getRange('A1').setValue('Studio X CRM Dashboard');
@@ -133,12 +144,19 @@ function setup() {
 }
 
 // ============================================
-// WEB APP ENDPOINT - Handles form submissions
+// WEB APP ENDPOINT - Handles form submissions and unsubscribes
 // ============================================
 function doPost(e) {
   try {
     // Parse the incoming data
     const data = JSON.parse(e.postData.contents);
+    
+    // Handle unsubscribe requests
+    if (data.action === 'unsubscribe') {
+      const result = processUnsubscribe(data.email, data.token, data.reason);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     
     // Get the spreadsheet
     const scriptProperties = PropertiesService.getScriptProperties();
@@ -220,7 +238,7 @@ function sendNotifications(data) {
 }
 
 function sendOwnerNotification(data) {
-  const subject = `🤼 New Lead: ${data.name} - ${data.interest || 'General Inquiry'}`;
+  const subject = `[New Lead] ${data.name} - ${data.interest || 'General Inquiry'}`;
   
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -298,14 +316,23 @@ Reply to: ${data.email}
   
   GmailApp.sendEmail(CONFIG.OWNER_EMAIL, subject, plainBody, {
     htmlBody: htmlBody,
-    name: 'Studio X Website'
+    name: 'Studio X Website',
+    from: CONFIG.SENDER_EMAIL
   });
 }
 
 function sendVisitorConfirmation(data) {
   if (!data.email) return;
   
-  const subject = `Thanks for reaching out, ${data.name?.split(' ')[0] || 'wrestler'}! 🤼`;
+  // Check if email is unsubscribed
+  if (isUnsubscribed(data.email)) {
+    Logger.log('Email is unsubscribed, skipping visitor confirmation: ' + data.email);
+    return;
+  }
+  
+  const subject = `Thanks for reaching out, ${data.name?.split(' ')[0] || 'wrestler'}!`;
+  const unsubscribeToken = generateUnsubscribeToken(data.email);
+  const unsubscribeLink = `${CONFIG.UNSUBSCRIBE_URL}?token=${unsubscribeToken}&email=${encodeURIComponent(data.email)}`;
   
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -366,6 +393,9 @@ function sendVisitorConfirmation(data) {
         <p style="margin: 10px 0 0; color: #666; font-size: 11px;">
           You received this email because you submitted a contact form on our website.
         </p>
+        <p style="margin: 10px 0 0;">
+          <a href="${unsubscribeLink}" style="color: #666; font-size: 11px; text-decoration: underline;">Unsubscribe from future emails</a>
+        </p>
       </div>
     </div>
   `;
@@ -389,11 +419,14 @@ ${CONFIG.ADDRESS}
 
 See you on the mat!
 - Studio X Wrestling Team
+
+To unsubscribe: ${unsubscribeLink}
   `;
   
   GmailApp.sendEmail(data.email, subject, plainBody, {
     htmlBody: htmlBody,
     name: CONFIG.BUSINESS_NAME,
+    from: CONFIG.SENDER_EMAIL,
     replyTo: CONFIG.OWNER_EMAIL
   });
 }
@@ -411,6 +444,97 @@ function formatInterest(interest) {
     'other': 'Other'
   };
   return interestMap[interest] || interest || 'Not specified';
+}
+
+// Generate a simple token for unsubscribe verification
+function generateUnsubscribeToken(email) {
+  const secret = 'studiox-unsub-2024'; // Simple secret for token generation
+  const data = email.toLowerCase() + secret;
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, data)).substring(0, 32);
+}
+
+// Verify unsubscribe token
+function verifyUnsubscribeToken(email, token) {
+  return generateUnsubscribeToken(email) === token;
+}
+
+// Check if email is unsubscribed
+function isUnsubscribed(email) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const spreadsheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+  if (!spreadsheetId) return false;
+  
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const unsubSheet = spreadsheet.getSheetByName('Unsubscribed');
+    if (!unsubSheet) return false;
+    
+    const data = unsubSheet.getDataRange().getValues();
+    const emailLower = email.toLowerCase();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().toLowerCase() === emailLower) {
+        return true;
+      }
+    }
+  } catch (e) {
+    Logger.log('Error checking unsubscribe status: ' + e.message);
+  }
+  
+  return false;
+}
+
+// Process unsubscribe request (called from Cloudflare Worker)
+function processUnsubscribe(email, token, reason) {
+  // Verify token
+  if (!verifyUnsubscribeToken(email, token)) {
+    return { success: false, error: 'Invalid unsubscribe token' };
+  }
+  
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const spreadsheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+  
+  if (!spreadsheetId) {
+    return { success: false, error: 'System not configured' };
+  }
+  
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    let unsubSheet = spreadsheet.getSheetByName('Unsubscribed');
+    
+    // Create sheet if it doesn't exist
+    if (!unsubSheet) {
+      unsubSheet = spreadsheet.insertSheet('Unsubscribed');
+      unsubSheet.getRange(1, 1, 1, 3).setValues([['Email', 'Date Unsubscribed', 'Reason']]);
+      unsubSheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#ff6b6b');
+    }
+    
+    // Check if already unsubscribed
+    if (isUnsubscribed(email)) {
+      return { success: true, message: 'Already unsubscribed' };
+    }
+    
+    // Add to unsubscribed list
+    unsubSheet.appendRow([email.toLowerCase(), new Date(), reason || 'User requested']);
+    
+    // Also remove from Marketing List if present
+    const marketingSheet = spreadsheet.getSheetByName('Marketing List');
+    if (marketingSheet) {
+      const marketingData = marketingSheet.getDataRange().getValues();
+      const emailLower = email.toLowerCase();
+      
+      for (let i = marketingData.length - 1; i >= 1; i--) {
+        if (marketingData[i][1] && marketingData[i][1].toString().toLowerCase() === emailLower) {
+          marketingSheet.deleteRow(i + 1);
+        }
+      }
+    }
+    
+    return { success: true, message: 'Successfully unsubscribed' };
+  } catch (e) {
+    Logger.log('Error processing unsubscribe: ' + e.message);
+    return { success: false, error: e.message };
+  }
 }
 
 // ============================================

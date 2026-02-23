@@ -40,6 +40,10 @@ export default {
       return handleContactForm(request, env);
     }
     
+    if (url.pathname === '/api/unsubscribe') {
+      return handleUnsubscribe(request, env);
+    }
+    
     if (url.pathname === '/api/health') {
       return new Response(JSON.stringify({ 
         status: 'ok', 
@@ -64,7 +68,7 @@ function handleCORS(request, env) {
   const allowedOrigins = (env.ALLOWED_ORIGINS || 'https://studiox.fit,https://www.studiox.fit').split(',');
   
   const corsHeaders = {
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   };
@@ -239,4 +243,189 @@ function sanitizeFormData(data) {
   }
   
   return sanitized;
+}
+
+// Handle unsubscribe requests
+async function handleUnsubscribe(request, env) {
+  const url = new URL(request.url);
+  
+  // GET request - show unsubscribe page
+  if (request.method === 'GET') {
+    const email = url.searchParams.get('email');
+    const token = url.searchParams.get('token');
+    
+    if (!email || !token) {
+      return new Response(getUnsubscribePage('error', 'Invalid unsubscribe link'), {
+        status: 400,
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    
+    return new Response(getUnsubscribePage('confirm', email, token), {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' }
+    });
+  }
+  
+  // POST request - process unsubscribe
+  if (request.method === 'POST') {
+    try {
+      const formData = await request.formData();
+      const email = formData.get('email');
+      const token = formData.get('token');
+      const reason = formData.get('reason') || 'User requested';
+      
+      if (!email || !token) {
+        return new Response(getUnsubscribePage('error', 'Missing required fields'), {
+          status: 400,
+          headers: { 'Content-Type': 'text/html' }
+        });
+      }
+      
+      // Forward to Google Apps Script
+      if (env.GOOGLE_SCRIPT_URL) {
+        const gasResponse = await fetch(env.GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'unsubscribe',
+            email: email,
+            token: token,
+            reason: reason
+          })
+        });
+        
+        const result = await gasResponse.json();
+        
+        if (result.success) {
+          return new Response(getUnsubscribePage('success', email), {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        } else {
+          return new Response(getUnsubscribePage('error', result.error || 'Failed to unsubscribe'), {
+            status: 400,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        }
+      }
+      
+      return new Response(getUnsubscribePage('error', 'Service unavailable'), {
+        status: 500,
+        headers: { 'Content-Type': 'text/html' }
+      });
+      
+    } catch (error) {
+      console.error('Unsubscribe error:', error);
+      return new Response(getUnsubscribePage('error', 'Something went wrong'), {
+        status: 500,
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+  }
+  
+  return new Response('Method not allowed', { status: 405 });
+}
+
+// Generate unsubscribe HTML page
+function getUnsubscribePage(status, emailOrMessage, token = '') {
+  const baseStyles = `
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #171717; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+      .container { max-width: 480px; width: 100%; text-align: center; }
+      .card { background: #262626; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+      .logo { font-size: 24px; font-weight: bold; color: #E6C200; margin-bottom: 24px; }
+      h1 { font-size: 28px; margin-bottom: 16px; }
+      p { color: #a3a3a3; line-height: 1.6; margin-bottom: 24px; }
+      .email { color: #E6C200; font-weight: 600; }
+      .btn { display: inline-block; padding: 14px 32px; border-radius: 50px; font-weight: 600; text-decoration: none; cursor: pointer; border: none; font-size: 16px; transition: all 0.2s; }
+      .btn-primary { background: #E6C200; color: #171717; }
+      .btn-primary:hover { background: #CCA800; }
+      .btn-secondary { background: transparent; border: 2px solid #525252; color: #fff; margin-left: 12px; }
+      .btn-secondary:hover { border-color: #737373; }
+      .success-icon { font-size: 48px; margin-bottom: 16px; }
+      .error-icon { font-size: 48px; margin-bottom: 16px; }
+      textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #404040; background: #1a1a1a; color: #fff; font-family: inherit; font-size: 14px; resize: vertical; min-height: 80px; margin-bottom: 20px; }
+      textarea:focus { outline: none; border-color: #E6C200; }
+      input[type="hidden"] { display: none; }
+      form { margin-top: 20px; }
+      .actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+      a { color: #E6C200; }
+    </style>
+  `;
+  
+  if (status === 'confirm') {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unsubscribe - Studio X Wrestling</title>
+  ${baseStyles}
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">Studio X Wrestling</div>
+      <h1>Unsubscribe</h1>
+      <p>You're about to unsubscribe <span class="email">${emailOrMessage}</span> from Studio X Wrestling emails.</p>
+      <form method="POST" action="/api/unsubscribe">
+        <input type="hidden" name="email" value="${emailOrMessage}">
+        <input type="hidden" name="token" value="${token}">
+        <textarea name="reason" placeholder="Optional: Let us know why you're leaving (helps us improve)"></textarea>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">Unsubscribe</button>
+          <a href="https://studiox.fit" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+  
+  if (status === 'success') {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unsubscribed - Studio X Wrestling</title>
+  ${baseStyles}
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">Studio X Wrestling</div>
+      <div class="success-icon">✓</div>
+      <h1>You're Unsubscribed</h1>
+      <p>We've removed <span class="email">${emailOrMessage}</span> from our mailing list. You won't receive any more emails from us.</p>
+      <p>Changed your mind? You can always <a href="https://studiox.fit/contact/">contact us</a> again.</p>
+      <a href="https://studiox.fit" class="btn btn-primary">Back to Website</a>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+  
+  // Error state
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error - Studio X Wrestling</title>
+  ${baseStyles}
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">Studio X Wrestling</div>
+      <div class="error-icon">⚠</div>
+      <h1>Something Went Wrong</h1>
+      <p>${emailOrMessage}</p>
+      <p>If you continue having issues, please <a href="https://www.instagram.com/studioxwrestling/">DM us on Instagram</a>.</p>
+      <a href="https://studiox.fit" class="btn btn-primary">Back to Website</a>
+    </div>
+  </div>
+</body>
+</html>`;
 }
