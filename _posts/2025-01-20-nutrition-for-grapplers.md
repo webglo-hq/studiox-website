@@ -7,6 +7,7 @@ image_alt: Healthy meal plate with protein and vegetables for athletes
 categories: [Nutrition]
 read_time: 12 min read
 author: Coach Gevorg
+og_image: "/assets/images/og/nutrition-for-grapplers.jpg"
 ---
 
 Let's be honest: nutrition in wrestling culture has historically been terrible. Crash diets, saunas, spitting in cups, eating nothing for days before weigh-ins—these practices don't just hurt performance, they can cause lasting health damage.

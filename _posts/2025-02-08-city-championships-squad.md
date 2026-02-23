@@ -7,6 +7,7 @@ image_alt: Studio X Wrestling squad and coaches gathered on the mat after compet
 categories: [Competition]
 read_time: 4 min read
 author: Coach Gevorg
+og_image: "/assets/images/og/city-championships-squad.jpg"
 ---
 
 There's a moment at every tournament, right after the last match, when it all hits you — the weeks of drilling, the early mornings, the hard rounds at practice. You look around at your teammates and you realize it was worth every second.

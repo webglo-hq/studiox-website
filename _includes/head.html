@@ -23,6 +23,12 @@
   
   {%- seo -%}
   
+  <!-- Override og:image if og_image is set -->
+  {%- if page.og_image -%}
+  <meta property="og:image" content="{{ page.og_image | absolute_url }}">
+  <meta name="twitter:image" content="{{ page.og_image | absolute_url }}">
+  {%- endif -%}
+  
   <!-- Favicon -->
   <link rel="icon" type="image/jpeg" href="{{ '/assets/images/logo.jpg' | relative_url }}">
   <link rel="apple-touch-icon" href="{{ '/assets/images/logo.jpg' | relative_url }}">

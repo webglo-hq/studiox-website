@@ -7,6 +7,7 @@ image_alt: Two grapplers demonstrating wrestling techniques for BJJ
 categories: [Technique]
 read_time: 8 min read
 author: Coach Gevorg
+og_image: "/assets/images/og/why-wrestling-essential-bjj.jpg"
 ---
 
 If you've ever rolled with someone who has a wrestling background, you know the feeling. The relentless pressure. The scramble that somehow always ends with them on top. The frustrating reality that your guard—the position you've drilled for months—never even comes into play.

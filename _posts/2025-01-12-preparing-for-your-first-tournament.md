@@ -7,6 +7,7 @@ image_alt: Champion on podium celebrating wrestling tournament victory
 categories: [Competition]
 read_time: 10 min read
 author: Coach Kevin
+og_image: "/assets/images/og/preparing-for-your-first-tournament.jpg"
 ---
 
 Your first tournament will feel faster than any training session you've ever experienced. The ref's whistle blows, and suddenly six minutes feels like six seconds. Your heart rate spikes. Your carefully practiced techniques seem to vanish. And before you know it, your hand is either raised in victory or you're walking off the mat wondering what just happened.
