@@ -23,7 +23,7 @@ const CONFIG = {
   OWNER_EMAIL: 'info@studiox.fit',
   
   // Email sender (Gmail workspace alias)
-  SENDER_EMAIL: 'noreply@webglo.org',
+  SENDER_EMAIL: 'noreply@studiox.fit',
   
   // Spreadsheet name (will be created on setup)
   SPREADSHEET_NAME: 'StudioX CRM - Contact Form Submissions',
