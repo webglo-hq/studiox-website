@@ -19,8 +19,15 @@
 // CONFIGURATION - Update these values
 // ============================================
 const CONFIG = {
-  // Business owner email for notifications
+  // Primary contact email (also receives notifications)
   OWNER_EMAIL: 'info@studiox.fit',
+  
+  // Coach emails for notifications (all will receive lead alerts)
+  COACH_EMAILS: [
+    'Gevorg.arakelov@gmail.com',
+    'michaelfalcon76@yahoo.com',
+    'kargudo02@gmail.com'
+  ],
   
   // Email sender (Gmail workspace alias)
   SENDER_EMAIL: 'noreply@studiox.fit',
@@ -314,10 +321,14 @@ ${data.message || 'No message provided'}
 Reply to: ${data.email}
   `;
   
+  // Send to primary email, CC all coaches
+  // Reply-to is set to the client's email so coaches can reply directly
   GmailApp.sendEmail(CONFIG.OWNER_EMAIL, subject, plainBody, {
     htmlBody: htmlBody,
     name: 'Studio X Website',
-    from: CONFIG.SENDER_EMAIL
+    from: CONFIG.SENDER_EMAIL,
+    cc: CONFIG.COACH_EMAILS.join(','),
+    replyTo: data.email || CONFIG.OWNER_EMAIL
   });
 }
 
@@ -424,6 +435,7 @@ See you on the mat!
 To unsubscribe: ${unsubscribeLink}
   `;
   
+  // Reply-to is set to owner email so client replies go to Studio X
   GmailApp.sendEmail(data.email, subject, plainBody, {
     htmlBody: htmlBody,
     name: CONFIG.BUSINESS_NAME,
