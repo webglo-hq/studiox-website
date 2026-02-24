@@ -342,7 +342,7 @@ function sendVisitorConfirmation(data) {
       </div>
       
       <div style="padding: 30px; background: #ffffff;">
-        <h2 style="margin: 0 0 20px; color: #171717;">Hey ${data.name?.split(' ')[0] || 'there'}! 👋</h2>
+        <h2 style="margin: 0 0 20px; color: #171717;">Hey ${data.name?.split(' ')[0] || 'there'}! &#x1F44B;</h2>
         
         <p style="color: #333; line-height: 1.6;">
           Thanks for reaching out to Studio X Wrestling! We got your message and will get back to you 
@@ -351,7 +351,7 @@ function sendVisitorConfirmation(data) {
         
         <div style="margin: 30px 0; padding: 20px; background: linear-gradient(135deg, #f4c542 0%, #ffd700 100%); 
                     border-radius: 12px; text-align: center;">
-          <h3 style="margin: 0 0 10px; color: #171717;">🎁 Remember: Your First Class is FREE!</h3>
+          <h3 style="margin: 0 0 10px; color: #171717;">&#127873; Remember: Your First Class is FREE!</h3>
           <p style="margin: 0; color: #333;">No commitment, no pressure — just show up and train.</p>
         </div>
         
@@ -372,14 +372,14 @@ function sendVisitorConfirmation(data) {
           <a href="${CONFIG.INSTAGRAM_URL}" 
              style="display: inline-block; padding: 12px 30px; background: #171717; color: #fff; 
                     text-decoration: none; border-radius: 25px; font-weight: bold;">
-            📱 DM Us on Instagram
+            &#128241; DM Us on Instagram
           </a>
         </div>
         
         <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
         
         <p style="color: #666; font-size: 14px;">
-          <strong>📍 Find us at:</strong><br>
+          <strong>&#128205; Find us at:</strong><br>
           ${CONFIG.ADDRESS}<br>
           <a href="https://maps.google.com/?q=83-27+Broadway+Elmhurst+NY+11373" style="color: #0066cc;">Get directions →</a>
         </p>
@@ -405,7 +405,8 @@ Hey ${data.name?.split(' ')[0] || 'there'}!
 
 Thanks for reaching out to Studio X Wrestling! We got your message and will get back to you within 24 hours.
 
-🎁 REMINDER: Your First Class is FREE! No commitment, no pressure — just show up and train.
+*** REMINDER: Your First Class is FREE! ***
+No commitment, no pressure - just show up and train.
 
 What happens next:
 1. One of our coaches will review your message
@@ -414,7 +415,7 @@ What happens next:
 
 Need a faster response? DM us on Instagram: ${CONFIG.INSTAGRAM_URL}
 
-📍 Find us at:
+Find us at:
 ${CONFIG.ADDRESS}
 
 See you on the mat!
@@ -447,15 +448,23 @@ function formatInterest(interest) {
 }
 
 // Generate a simple token for unsubscribe verification
+// Generate a URL-safe token for unsubscribe verification
 function generateUnsubscribeToken(email) {
   const secret = 'studiox-unsub-2024'; // Simple secret for token generation
-  const data = email.toLowerCase() + secret;
-  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, data)).substring(0, 32);
+  const data = email.toLowerCase().trim() + secret;
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, data));
+  // Make URL-safe: replace + with -, / with _, and remove =
+  return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '').substring(0, 32);
 }
 
 // Verify unsubscribe token
 function verifyUnsubscribeToken(email, token) {
-  return generateUnsubscribeToken(email) === token;
+  const expected = generateUnsubscribeToken(email);
+  // Also check the old format in case of legacy tokens
+  const secret = 'studiox-unsub-2024';
+  const data = email.toLowerCase().trim() + secret;
+  const oldFormat = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, data)).substring(0, 32);
+  return token === expected || token === oldFormat;
 }
 
 // Check if email is unsubscribed
