@@ -39,6 +39,9 @@ assets/css/tailwind.css
 secrets/
 credentials/
 
+# Scripts with sensitive configuration (deploy manually)
+scripts/
+
 # OS files
 .DS_Store
 Thumbs.db
