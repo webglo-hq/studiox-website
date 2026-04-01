@@ -40,7 +40,7 @@ secrets/
 credentials/
 
 # Scripts with sensitive configuration (deploy manually)
-scripts/
+# scripts/  ← Removed: Worker code is safe to commit (secrets in env vars)
 
 # OS files
 .DS_Store
