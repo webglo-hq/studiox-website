@@ -7,7 +7,7 @@ compatibility_date = "2024-01-01"
 # Then update the id below with the output
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
-id = "YOUR_KV_NAMESPACE_ID"  # Replace after running: wrangler kv:namespace create "RATE_LIMIT_KV"
+id = "c199ce3c3ba1456182d2047a18f43e8c"
 
 # Environment variables
 [vars]
