@@ -157,6 +157,7 @@ export class AgentRuntime<Ctx> {
     let outputTokens = run.outputTokens;
     let costMicros = run.costMicros;
     let checkpoint = run.checkpoint;
+    let customSummary: string | null = null;
     const clock = this.opts.clock;
     const allowed = new Set(skill.manifest.tools);
     const tools = skill.manifest.tools.map((t) => this.opts.tools.get(t)).filter((t): t is ToolDef<Ctx, unknown, unknown> => !!t);
@@ -193,6 +194,10 @@ export class AgentRuntime<Ctx> {
       async checkpoint(state: unknown) {
         checkpoint = state;
         await store.updateRun(run.id, { checkpoint: state });
+      },
+      setSummary(text: string) {
+        const t = text.replace(/\s+/g, ' ').trim();
+        customSummary = t ? t.slice(0, 400) : null;
       },
       async reportUsage(u) {
         inputTokens += u.inputTokens;
@@ -329,7 +334,8 @@ export class AgentRuntime<Ctx> {
       const pending = proposals.filter((p) => p.status === 'pending' || p.status === 'suggested');
       const auto = proposals.filter((p) => p.status === 'auto_applied');
       const failed = proposals.filter((p) => p.status === 'failed');
-      const summary = `${proposals.length} proposal${proposals.length === 1 ? '' : 's'}: ${auto.length} posted automatically, ${pending.length} waiting for a person${failed.length ? `, ${failed.length} rejected by verification` : ''}.`;
+      const counts = `${proposals.length} proposal${proposals.length === 1 ? '' : 's'}: ${auto.length} posted automatically, ${pending.length} waiting for a person${failed.length ? `, ${failed.length} rejected by verification` : ''}.`;
+      const summary = customSummary ? (proposals.length ? `${customSummary} (${counts})` : customSummary) : counts;
       await step('finish', summary, { tokens: inputTokens + outputTokens, costMicros, stepsUsed });
       const status = pending.length ? 'awaiting_approval' : 'completed';
       await store.updateRun(run.id, { status, summary, finishedAt: clock.nowIso(), stepsUsed });

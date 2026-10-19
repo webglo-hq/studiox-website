@@ -37,6 +37,8 @@ export interface EngineOptions {
   env?: Record<string, string | undefined>;
   faults?: { crashAfterToolCalls?: number };
   concurrency?: number;
+  /** Called when background agent work fails unexpectedly (logged by the server). */
+  onBackgroundError?: (e: unknown) => void;
 }
 
 /** Grounding for the live model: definitions and payload schemas come from the ontology. */
@@ -68,6 +70,21 @@ export function validateSkills(skills: SkillPackage[]): string[] {
   return skills.flatMap((s) => validateSkill(s, ctx).map((p) => `${s.id}: ${p}`));
 }
 
+interface BackgroundRun {
+  startedAt: string;
+  startedBy: string;
+  again: string | null;
+  promise: Promise<void>;
+}
+
+/** What the close agents are doing right now (polled by the UI while they run in the background). */
+export interface AgentActivity {
+  running: boolean;
+  startedAt: string | null;
+  startedBy: string | null;
+  last: { finishedAt: string; status: string; summary: string | null; runId: string | null; error: string | null } | null;
+}
+
 export interface DecisionOutcome {
   proposalId: string;
   ok: boolean;
@@ -86,6 +103,8 @@ export class AgentEngine {
   private readonly offline = new PlaybookBrain(PLAYBOOKS);
   private readonly ontologyCtx = accountingOntologyContext();
   private orchestrating = new Set<string>();
+  private readonly background = new Map<string, BackgroundRun>();
+  private readonly lastBackground = new Map<string, AgentActivity['last']>();
 
   constructor(private readonly opts: EngineOptions) {
     const problems = validateSkills(opts.skills);
@@ -209,7 +228,7 @@ export class AgentEngine {
   }
 
   /** Approve or reject one or more proposals; each is decided independently. */
-  async decide(input: { proposalIds: string[]; decision: 'approve' | 'reject'; reason?: string | null; userId: string }): Promise<{ results: DecisionOutcome[]; continued: RunResult | null }> {
+  async decide(input: { proposalIds: string[]; decision: 'approve' | 'reject'; reason?: string | null; userId: string; background?: boolean }): Promise<{ results: DecisionOutcome[]; continued: RunResult | null; continuing: boolean }> {
     const actor = await humanDelegate(this.opts.db, this.opts.tenantId, input.userId);
     const results: DecisionOutcome[] = [];
     for (const id of input.proposalIds) {
@@ -222,16 +241,72 @@ export class AgentEngine {
       }
     }
     let continued: RunResult | null = null;
+    let continuing = false;
     if (results.some((r) => r.ok)) {
       const ctx = this.ctx(null);
       const s = await settings(ctx);
       const period = await currentPeriodKey(ctx);
       const user = await loadActor(this.opts.db, this.opts.tenantId, input.userId);
-      if (s.autoContinue && hasPermission(user, 'agent.orchestrate') && (await this.hasReadyTasks(period))) {
-        continued = await this.orchestrate(period, input.userId).catch(() => null);
+      if (s.autoContinue && hasPermission(user, 'agent.orchestrate')) {
+        if (input.background) {
+          // Continue in the background; a run already in progress re-checks when it finishes.
+          if (this.background.has(period) || (await this.hasReadyTasks(period))) continuing = (await this.startOrchestration(period, input.userId).catch(() => null)) !== null;
+        } else if (await this.hasReadyTasks(period)) {
+          continued = await this.orchestrate(period, input.userId).catch(() => null);
+        }
       }
     }
-    return { results, continued };
+    return { results, continued, continuing };
+  }
+
+  /**
+   * Start the close agents without waiting for them (the server UI polls activity()).
+   * Checks permissions and the period first, so errors still reach the caller. If agents are
+   * already running for the period, the request is remembered and they run again afterwards.
+   */
+  async startOrchestration(periodKey: string | null, userId: string): Promise<{ started: boolean; queued: boolean; periodKey: string }> {
+    const { db, tenantId } = this.opts;
+    const actor = await loadActor(db, tenantId, userId);
+    if (!hasPermission(actor, 'agent.orchestrate')) throw new AppError('FORBIDDEN', 'Your role cannot run the whole close; run the agents for your own tasks instead.');
+    const period = periodKey ?? (await currentPeriodKey(this.ctx(actor)));
+    const cycle = await db.findOne('close_cycle', { tenant_id: tenantId, period_key: period });
+    if (!cycle) throw new AppError('NOT_FOUND', `No close calendar for ${period}`);
+    if (cycle.status === 'closed') throw new AppError('PERIOD_LOCKED', `${period} is closed.`);
+    const running = this.background.get(period);
+    if (running) {
+      running.again = userId;
+      return { started: false, queued: true, periodKey: period };
+    }
+    const entry: BackgroundRun = { startedAt: this.opts.clock.nowIso(), startedBy: userId, again: null, promise: Promise.resolve() };
+    this.background.set(period, entry);
+    entry.promise = (async () => {
+      let by: string | null = userId;
+      try {
+        while (by) {
+          entry.again = null;
+          const r: RunResult = await this.orchestrate(period, by);
+          this.lastBackground.set(period, { finishedAt: this.opts.clock.nowIso(), status: r.run.status, summary: r.run.summary ?? null, runId: r.run.id, error: r.run.error ?? null });
+          const next: string | null = entry.again;
+          by = next && (await this.hasReadyTasks(period)) ? next : null;
+        }
+      } catch (e) {
+        this.lastBackground.set(period, { finishedAt: this.opts.clock.nowIso(), status: 'failed', summary: null, runId: null, error: e instanceof Error ? e.message : String(e) });
+        this.opts.onBackgroundError?.(e);
+      } finally {
+        this.background.delete(period);
+      }
+    })();
+    return { started: true, queued: false, periodKey: period };
+  }
+
+  activity(periodKey: string): AgentActivity {
+    const bg = this.background.get(periodKey);
+    return { running: !!bg || this.orchestrating.has(periodKey), startedAt: bg?.startedAt ?? null, startedBy: bg?.startedBy ?? null, last: this.lastBackground.get(periodKey) ?? null };
+  }
+
+  /** Resolves when no background agent work is in flight (tests and graceful shutdown). */
+  async idle(): Promise<void> {
+    while (this.background.size) await Promise.all([...this.background.values()].map((b) => b.promise));
   }
 
   async review(proposalId: string, userId: string, note?: string | null) {

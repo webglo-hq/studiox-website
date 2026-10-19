@@ -248,6 +248,8 @@ export interface BrainSession {
   reportUsage(u: { inputTokens: number; outputTokens: number; costMicros: number; model: string }): Promise<void>;
   checkpoint(state: unknown): Promise<void>;
   readonly savedCheckpoint: unknown;
+  /** Replace the run's default one-line summary (plain language, shown in the UI). */
+  setSummary(text: string): void;
 }
 
 export interface ProposalOutcome {

@@ -159,7 +159,10 @@ export class AnthropicBrain implements Brain {
       const uses = response.content.filter((b): b is Anthropic.Beta.Messages.BetaToolUseBlock => b.type === 'tool_use');
       if (response.stop_reason === 'end_turn' || uses.length === 0) {
         const text = response.content.filter((b): b is Anthropic.Beta.Messages.BetaTextBlock => b.type === 'text').map((b) => b.text).join(' ').trim();
-        if (text) await session.note(`Model summary: ${text.slice(0, 280)}`);
+        if (text) {
+          await session.note(`Model summary: ${text.slice(0, 280)}`);
+          session.setSummary(text.slice(0, 300));
+        }
         await session.checkpoint({ messages, done: true });
         return;
       }

@@ -845,16 +845,36 @@ const orchestrator: Playbook = async (s) => {
   await s.plan(['Read the close calendar', 'Dispatch every task whose dependencies are satisfied, wave by wave', 'Report what is waiting for people and why']);
   await s.callTool('get_close_calendar', {});
   const maxWaves = s.policy.thresholds.maxWaves ?? 12;
+  let ran = 0;
+  let waves = 0;
+  let waiting = 0;
+  let failed = 0;
+  let blockedCount = 0;
+  let done = false;
   for (let w = 0; w < maxWaves; w++) {
     const r = await s.callTool<{ waves: { title: string; status: string; pending: number; summary: string | null }[][]; blocked: { title: string; waitingOn: { title: string; reason: string }[] }[]; done: boolean }>('dispatch_ready_tasks', {});
     const wave = r.waves[0] ?? [];
     if (!wave.length) {
       const blocked = r.blocked.map((b) => `${b.title} ← ${b.waitingOn.map((x) => `${x.title}: ${x.reason}`).join('; ')}`);
+      blockedCount = r.blocked.length;
+      done = r.done;
       await s.note(blocked.length ? `Waiting on people: ${blocked.join(' | ')}` : r.done ? 'Every agent task has run.' : 'Nothing else is ready.', { blocked: r.blocked });
       break;
     }
+    waves += 1;
+    ran += wave.length;
+    waiting += wave.reduce((n, t) => n + t.pending, 0);
+    failed += wave.filter((t) => t.status === 'failed' || t.status === 'budget_exceeded').length;
     await s.note(`Wave ${w + 1}: ${wave.map((t) => `${t.title} — ${t.status}${t.pending ? `, ${t.pending} awaiting approval` : ''}`).join(' | ')}`);
   }
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  s.setSummary(
+    ran
+      ? `Ran ${plural(ran, 'agent task')} in ${plural(waves, 'wave')}; ${plural(waiting, 'item')} now wait for people${failed ? `; ${plural(failed, 'run')} failed` : ''}${blockedCount ? `; ${plural(blockedCount, 'task')} wait on approvals or sign-offs` : ''}.`
+      : done
+        ? 'Every agent task has run; nothing else to dispatch.'
+        : `Nothing new to run${blockedCount ? `: ${plural(blockedCount, 'task')} wait on approvals or sign-offs` : ''}.`,
+  );
 };
 
 export const PLAYBOOKS: Record<string, Playbook> = {
