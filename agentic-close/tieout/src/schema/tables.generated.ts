@@ -40,6 +40,7 @@ export interface UserRow {
   last_login_at: string | null;
   preferences: UserPreferences;
   created_at: string;
+  must_change_password: boolean;
 }
 
 export interface PermissionRow {
@@ -1222,7 +1223,7 @@ export interface DbOptionalOnInsert {
   schema_migrations: 'id' | 'applied_at';
   tenants: 'id' | 'is_demo' | 'settings' | 'created_at';
   counters: 'id' | 'tenant_id' | 'value';
-  users: 'id' | 'tenant_id' | 'title' | 'password_hash' | 'status' | 'kind' | 'mfa_enabled' | 'failed_logins' | 'locked_until' | 'last_login_at' | 'preferences' | 'created_at';
+  users: 'id' | 'tenant_id' | 'title' | 'password_hash' | 'status' | 'kind' | 'mfa_enabled' | 'failed_logins' | 'locked_until' | 'last_login_at' | 'preferences' | 'created_at' | 'must_change_password';
   permissions: 'id' | 'sensitive';
   roles: 'id' | 'tenant_id' | 'approval_limit_minor' | 'is_system';
   role_permissions: 'id' | 'tenant_id';
@@ -1352,6 +1353,7 @@ export const tableMeta = {
       {"name":"last_login_at","type":"timestamptz","nullable":true},
       {"name":"preferences","type":"jsonb","nullable":false,"default":{"kind":"literal","value":{}}},
       {"name":"created_at","type":"timestamptz","nullable":false,"default":{"kind":"now"}},
+      {"name":"must_change_password","type":"boolean","nullable":false,"default":{"kind":"literal","value":false}},
     ],
   },
   permissions: {

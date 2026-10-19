@@ -372,7 +372,7 @@ function People({ data }: { data: AdminData }) {
           </button>
         }
       >
-        <p>Share this one-time password with the person through a separate channel. It is shown only once; ask them to change it after their first sign-in (My account → Password).</p>
+        <p>Share this one-time password with the person through a separate channel. It is shown only once, and Tieout asks them to choose their own password the first time they sign in with it.</p>
         <p className="mono" style={{ fontSize: 18, userSelect: 'all' }}>
           {temp?.password}
         </p>

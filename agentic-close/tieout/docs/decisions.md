@@ -119,7 +119,9 @@ Until two-factor is finished, a session may call only `/api/auth/me`, logout, en
 password alone never yields an API token or a changed credential. Switching two-factor on issues ten
 one-time recovery codes (hashed, `migrations/0004_mfa_recovery.sql`); a lost authenticator is reset by
 an administrator with a documented reason, which signs the person out everywhere. TOTP is checked
-against wall-clock time, never the demo's shifted business clock.
+against wall-clock time, never the demo's shifted business clock. A temporary password (invitation or
+administrator reset) must be replaced at the next sign-in before the session can do anything else; a
+reset also retires the person's API tokens, and signing in through SSO retires the temporary password.
 
 ## ADR-012 · Tenant isolation in the database (row-level security)
 

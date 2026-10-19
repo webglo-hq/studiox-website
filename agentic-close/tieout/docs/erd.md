@@ -39,6 +39,7 @@ erDiagram
     timestamptz last_login_at "nullable"
     jsonb preferences
     timestamptz created_at
+    boolean must_change_password
   }
   roles {
     text id PK

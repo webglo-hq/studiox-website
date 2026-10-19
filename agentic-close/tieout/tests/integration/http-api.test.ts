@@ -274,6 +274,9 @@ describe('HTTP API: entity scope', () => {
     const login = await morgan.post<{ csrfToken: string }>('/api/auth/login', { email: 'morgan.ellis@bramblewood.example', password: invited.body.tempPassword }, { 'x-tieout-client-ip': '203.0.113.7' });
     expect(login.status).toBe(200);
     morgan.csrf = login.body.csrfToken;
+    // an invitation's temporary password is replaced before anything else
+    expect((await morgan.get('/api/admin')).status).toBe(401);
+    expect((await morgan.post('/api/auth/password', { current: invited.body.tempPassword, next: 'morgan-chooses-a-long-passphrase' })).status).toBe(200);
     // people with access beyond the UK are out of reach: roles, sign-in resets, disabling
     const casey = admin.users.find((u) => u.name === 'Casey Morgan')!;
     expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(403);

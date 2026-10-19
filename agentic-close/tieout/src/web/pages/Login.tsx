@@ -2,7 +2,7 @@
  * Sign-in with password, then TOTP (verify, a one-time recovery code, or first-time enrolment,
  * which shows recovery codes once). Demo mode lists personas.
  */
-import { ShieldCheck } from 'lucide-react';
+import { KeyRound, ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { api, ApiError, setCsrf, type AuthOptions } from '../api';
 import { RecoveryCodes } from '../components/RecoveryCodes';
@@ -11,18 +11,24 @@ import { useApp } from '../lib/app-state';
 import { ROLE_LABEL } from '../lib/format';
 
 export function Login() {
-  const { refresh, mfaPending } = useApp();
+  const { refresh, mfaPending, passwordChange } = useApp();
   const [opts, setOpts] = useState<AuthOptions | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState<'password' | 'mfa' | 'enroll'>(mfaPending ? 'mfa' : 'password');
+  const [stage, setStage] = useState<'password' | 'mfa' | 'enroll' | 'newpw'>(mfaPending ? 'mfa' : passwordChange ? 'newpw' : 'password');
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
   const [code, setCode] = useState('');
   const [enrol, setEnrol] = useState<{ secret: string; otpauth: string } | null>(null);
   const [useRecovery, setUseRecovery] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
   const id = useId();
+
+  // after two-factor, a temporary password still has to be replaced
+  useEffect(() => {
+    if (passwordChange) setStage('newpw');
+  }, [passwordChange]);
 
   useEffect(() => {
     api<AuthOptions>('/auth/options')
@@ -35,15 +41,36 @@ export function Login() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ csrfToken: string; mfa: 'not_required' | 'pending' | 'enroll' }>('/auth/login', { body: as ?? { email, password } });
+      const r = await api<{ csrfToken: string; mfa: 'not_required' | 'pending' | 'enroll'; passwordChange: boolean }>('/auth/login', { body: as ?? { email, password } });
       setCsrf(r.csrfToken);
+      if (r.passwordChange) setPw({ current: (as ?? { password }).password, next: '', confirm: '' });
       if (r.mfa === 'pending') setStage('mfa');
       else if (r.mfa === 'enroll') {
         setStage('enroll');
         setEnrol(await api<{ secret: string; otpauth: string }>('/auth/mfa/enroll', { body: {} }));
-      } else await refresh();
+      } else if (r.passwordChange) setStage('newpw');
+      else await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function choosePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (pw.next !== pw.confirm) {
+      setError('The two new passwords are not the same.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api('/auth/password', { body: { current: pw.current, next: pw.next } });
+      setPw({ current: '', next: '', confirm: '' });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not change the password.');
     } finally {
       setBusy(false);
     }
@@ -72,7 +99,7 @@ export function Login() {
       const r = await api<{ csrfToken: string; recoveryCodes: string[] | null }>('/auth/mfa/verify', { body: { code } });
       setCsrf(r.csrfToken);
       if (r.recoveryCodes?.length) setCodes(r.recoveryCodes); // first-time set-up: show them once
-      else await refresh();
+      else await refresh(); // a temporary password then moves the page to "Choose a new password"
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'That code did not work.');
     } finally {
@@ -159,12 +186,46 @@ export function Login() {
                   {busy ? 'Signing in…' : 'Sign in'}
                 </button>
                 {opts?.oidc.enabled ? (
-                  <a className="btn" href="/api/auth/oidc/start">
+                  <a className="btn" href="api/auth/oidc/start">
                     Sign in with single sign-on
                   </a>
                 ) : null}
               </form>
             </>
+          ) : stage === 'newpw' ? (
+            <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void choosePassword(e)}>
+              <div className="row">
+                <KeyRound className="icon" aria-hidden="true" />
+                <h2 style={{ fontSize: 22 }}>Choose a new password</h2>
+              </div>
+              <p className="muted">You signed in with a temporary password from your administrator. Replace it before you continue; it then stops working.</p>
+              <label className="field" htmlFor={`${id}-cur`}>
+                Temporary password
+                <input id={`${id}-cur`} type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
+              </label>
+              <label className="field" htmlFor={`${id}-new`}>
+                New password
+                <input id={`${id}-new`} type="password" autoComplete="new-password" aria-describedby={`${id}-new-h`} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+                <span id={`${id}-new-h`} className="hint">
+                  At least 12 characters. A long passphrase is best.
+                </span>
+              </label>
+              <label className="field" htmlFor={`${id}-rep`}>
+                Repeat the new password
+                <input id={`${id}-rep`} type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
+              </label>
+              {error ? (
+                <p className="error-text" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button className="btn primary big" type="submit" disabled={busy || !pw.current || pw.next.length < 12 || !pw.confirm}>
+                Save and continue
+              </button>
+              <button className="linklike" type="button" onClick={() => void startOver()}>
+                Sign in as someone else
+              </button>
+            </form>
           ) : codes ? (
             <div className="stack" style={{ gap: 12 }}>
               <div className="row">

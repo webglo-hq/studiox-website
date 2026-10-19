@@ -107,8 +107,10 @@ export async function resetPassword(ctx: AppContext, u: RequestUser, userId: str
     if (!user) throw notFound('User', userId);
     await assertCanManage(tx, u, userId);
     const now = ctx.clock.now().toISOString();
-    await tx.update('users', userId, { password_hash: hash, failed_logins: 0, locked_until: null });
+    await tx.update('users', userId, { password_hash: hash, failed_logins: 0, locked_until: null, must_change_password: true });
     await revokeSessions(tx, userId, now, 'password reset by an administrator');
+    // a forgotten (or exposed) password also retires the person's API tokens
+    for (const t of await tx.find('api_tokens', { user_id: userId, revoked_at: { isNull: true } })) await tx.update('api_tokens', t.id, { revoked_at: now });
     await audit(tx, u.actor, ctx.clock, { action: 'admin.user.password_reset', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: temporary password issued; signed out everywhere`, data: {} }, u.ip);
     return { userId, tempPassword };
   });
@@ -129,7 +131,7 @@ export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email
     const role = await tx.findOne('roles', { key: input.role });
     if (!role) throw validation('Unknown role.');
     const now = ctx.clock.now().toISOString();
-    const user = await tx.insert('users', { email, display_name: input.name.trim(), title: input.title ?? null, password_hash: hash, status: 'active', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: now });
+    const user = await tx.insert('users', { email, display_name: input.name.trim(), title: input.title ?? null, password_hash: hash, status: 'active', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: now, must_change_password: true });
     // an administrator limited to some entities invites people with the same limit (never wider)
     for (const sid of u.actor.entityScope ?? [null]) await tx.insert('user_roles', { user_id: user.id, role_id: role.id, scope_entity_id: sid, granted_by: u.actor.id, granted_at: now });
     await audit(tx, u.actor, ctx.clock, { action: 'admin.user.invite', subjectType: 'user', subjectId: user.id, summary: `Invited ${input.name} as ${role.name}`, data: { role: role.key } }, u.ip);

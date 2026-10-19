@@ -6,6 +6,8 @@ import type { DbTx } from '../../schema';
 export interface UserActor extends Actor {
   approvalLimitMinor: number | null;
   email: string;
+  /** signed in with a temporary password that must be replaced before anything else */
+  mustChangePassword: boolean;
 }
 
 export async function resolveUserActor(tx: DbTx, userId: string): Promise<UserActor> {
@@ -33,5 +35,6 @@ export async function resolveUserActor(tx: DbTx, userId: string): Promise<UserAc
     roles: roles.map((r) => r.key),
     entityScope: unscoped ? null : [...new Set(grants.map((g) => g.scope_entity_id!).filter(Boolean))],
     approvalLimitMinor: limit,
+    mustChangePassword: u.must_change_password,
   };
 }

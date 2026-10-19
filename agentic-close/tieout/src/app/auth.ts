@@ -21,6 +21,8 @@ export interface LoginResult {
   sessionToken: string;
   csrfToken: string;
   mfa: 'not_required' | 'pending' | 'enroll';
+  /** a temporary password: choose a new one before anything else */
+  passwordChange: boolean;
   user: { id: string; name: string; email: string };
 }
 
@@ -58,7 +60,7 @@ export async function login(ctx: AppContext, email: string, password: string, me
     const mfa: LoginResult['mfa'] = user.mfa_enabled ? 'pending' : mfaRequired ? 'enroll' : 'not_required';
     const { token, csrf } = await createSession(ctx, tx, user, mfa === 'not_required' ? 'not_required' : 'pending', meta, null);
     await audit(tx, actor, ctx.clock, { action: 'auth.login', subjectType: 'user', subjectId: user.id, summary: `Signed in${mfa !== 'not_required' ? ' (MFA required)' : ''}`, data: { mfa } }, meta.ip);
-    return { sessionToken: token, csrfToken: csrf, mfa, user: { id: user.id, name: user.display_name, email: user.email } };
+    return { sessionToken: token, csrfToken: csrf, mfa, passwordChange: user.must_change_password, user: { id: user.id, name: user.display_name, email: user.email } };
   });
 }
 
@@ -119,7 +121,9 @@ export async function oidcCallback(ctx: AppContext, params: { code: string | nul
   if (!user || user.status !== 'active' || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
   return ctx.db.tx(user.tenant_id, async (tx) => {
     const now = ctx.clock.now().toISOString();
-    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now });
+    // signing in through the identity provider retires any temporary Tieout password
+    const retire = user.must_change_password ? { must_change_password: false, password_hash: await ctx.hasher.hash(`${secureToken(24)}-retired`) } : {};
+    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now, ...retire });
     const actor = await resolveUserActor(tx, user.id);
     const tenant = await tx.get('tenants', user.tenant_id);
     const mfaRequired = (tenant?.settings.mfaRequiredRoles ?? []).some((r) => actor.roles.includes(r));
@@ -128,12 +132,12 @@ export async function oidcCallback(ctx: AppContext, params: { code: string | nul
     const state: SessionRow['mfa_state'] = mfaRequired && !idpMfa ? 'pending' : 'not_required';
     const { token, csrf } = await createSession(ctx, tx, user, state, meta, null);
     await audit(tx, actor, ctx.clock, { action: 'auth.login', subjectType: 'user', subjectId: user.id, summary: `Signed in with single sign-on${state === 'pending' ? ' (Tieout MFA required)' : ''}`, data: { method: 'oidc', issuer: claims.iss, amr: claims.amr ?? [] } }, meta.ip);
-    return { sessionToken: token, csrfToken: csrf, mfa: state === 'pending' ? 'pending' : 'not_required', user: { id: user.id, name: user.display_name, email: user.email } };
+    return { sessionToken: token, csrfToken: csrf, mfa: state === 'pending' ? 'pending' : 'not_required', passwordChange: false, user: { id: user.id, name: user.display_name, email: user.email } };
   });
 }
 
 /** Validate a session token from the cookie (or a bearer API token for the MCP server). */
-export async function authenticate(ctx: AppContext, token: string | null, opts: { ip: string | null; allowPendingMfa?: boolean }): Promise<Authenticated> {
+export async function authenticate(ctx: AppContext, token: string | null, opts: { ip: string | null; allowPendingMfa?: boolean; allowPasswordChange?: boolean }): Promise<Authenticated> {
   if (!token || token.length < 20 || token.length > 200) throw unauthenticated();
   const id = sha256Hex(token);
   const rows = await ctx.db.system((sys) => sys.findGlobal('sessions', { id }));
@@ -149,6 +153,7 @@ export async function authenticate(ctx: AppContext, token: string | null, opts: 
       session = await tx.update('sessions', s.id, { last_seen_at: now, idle_expires_at: addMinutes(now, tenant?.settings.sessionIdleMinutes ?? ctx.config.sessionIdleMinutes) });
     }
     const actor = await resolveUserActor(tx, s.user_id);
+    if (actor.mustChangePassword && !opts.allowPasswordChange) throw new DomainError('unauthenticated', 'Choose a new password first.', { passwordChange: true });
     return { user: { actor, tenantId: s.tenant_id, sessionId: s.id, ip: opts.ip }, session };
   });
 }
@@ -270,8 +275,9 @@ export async function changePassword(ctx: AppContext, u: RequestUser, current: s
   await ctx.db.tx(u.tenantId, async (tx) => {
     const user = (await tx.get('users', u.actor.id))!;
     if (!(await ctx.hasher.verify(current, user.password_hash))) throw validation('Your current password is not correct.');
+    if (String(next ?? '') === String(current ?? '')) throw validation('Choose a password different from the current one.');
     try {
-      await tx.update('users', user.id, { password_hash: await ctx.hasher.hash(next) });
+      await tx.update('users', user.id, { password_hash: await ctx.hasher.hash(next), must_change_password: false });
     } catch (e) {
       throw validation((e as Error).message);
     }

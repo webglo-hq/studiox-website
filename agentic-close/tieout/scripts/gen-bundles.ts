@@ -49,40 +49,51 @@ function parseSql(sql: string): Table[] {
         continue;
       }
       if (/^(CHECK|PRIMARY KEY|FOREIGN KEY|CONSTRAINT|OR|AND)\b/.test(line) || /^[()]/.test(line)) continue;
-      const cm = /^([a-z_][a-z0-9_]*) (TEXT|BIGINT|INT|NUMERIC(?:\(\d+,\d+\))?|BOOLEAN|DATE|TIMESTAMPTZ|JSONB)\b(.*)$/.exec(line);
-      if (!cm) throw new Error(`gen: cannot parse column line in ${name}: ${line}`);
-      const [, colName, rawType, rest0] = cm as unknown as [string, string, string, string];
-      const [rest, comment] = rest0.split('--').map((s) => s?.trim() ?? '') as [string, string | undefined];
-      const type = (rawType.startsWith('NUMERIC') ? 'numeric' : rawType.toLowerCase()) as SqlType;
-      const col: Col = {
-        name: colName,
-        type,
-        nullable: !/NOT NULL/.test(rest) && !/PRIMARY KEY/.test(rest),
-      };
-      if (/PRIMARY KEY/.test(rest)) col.primaryKey = true;
-      if (/\bUNIQUE\b/.test(rest)) col.unique = true;
-      const ref = /REFERENCES ([a-z_]+)\(id\)( ON DELETE CASCADE)?/.exec(rest);
-      if (ref) col.references = { table: ref[1]!, onDelete: ref[2] ? 'cascade' : 'restrict' };
-      const def = /DEFAULT ('(?:[^']*)'(?:::jsonb)?|now\(\)|true|false|-?\d+(?:\.\d+)?)/.exec(rest);
-      if (def) {
-        const d = def[1]!;
-        if (d === 'now()') col.default = { kind: 'now' };
-        else if (d === 'true' || d === 'false') col.default = { kind: 'literal', value: d === 'true' };
-        else if (/^-?\d/.test(d)) col.default = { kind: 'literal', value: Number(d) };
-        else if (d.endsWith('::jsonb')) col.default = { kind: 'literal', value: JSON.parse(d.slice(1, -8)) };
-        else col.default = { kind: 'literal', value: d.slice(1, -1) };
-      }
-      const en = /CHECK \(\w+ IN \(([^)]*)\)\)/.exec(rest);
-      if (en) col.enumValues = en[1]!.split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
-      if (comment) {
-        const jt = /@json (.+)$/.exec(comment);
-        if (jt) col.jsonType = jt[1]!.trim();
-      }
-      t.columns.push(col);
+      t.columns.push(parseColumn(name, line));
     }
     tables.push(t);
   }
   return tables;
+}
+
+/** `ALTER TABLE t ADD COLUMN …;` statements of a migration, applied after every CREATE TABLE. */
+function parseAlters(sql: string): { table: string; line: string }[] {
+  const out: { table: string; line: string }[] = [];
+  for (const m of sql.matchAll(/ALTER TABLE ([a-z_][a-z0-9_]*) ADD COLUMN ([^;]+);/g)) out.push({ table: m[1]!, line: m[2]!.trim() });
+  return out;
+}
+
+function parseColumn(name: string, line: string): Col {
+  const cm = /^([a-z_][a-z0-9_]*) (TEXT|BIGINT|INT|NUMERIC(?:\(\d+,\d+\))?|BOOLEAN|DATE|TIMESTAMPTZ|JSONB)\b(.*)$/.exec(line);
+  if (!cm) throw new Error(`gen: cannot parse column line in ${name}: ${line}`);
+  const [, colName, rawType, rest0] = cm as unknown as [string, string, string, string];
+  const [rest, comment] = rest0.split('--').map((s) => s?.trim() ?? '') as [string, string | undefined];
+  const type = (rawType.startsWith('NUMERIC') ? 'numeric' : rawType.toLowerCase()) as SqlType;
+  const col: Col = {
+    name: colName,
+    type,
+    nullable: !/NOT NULL/.test(rest) && !/PRIMARY KEY/.test(rest),
+  };
+  if (/PRIMARY KEY/.test(rest)) col.primaryKey = true;
+  if (/\bUNIQUE\b/.test(rest)) col.unique = true;
+  const ref = /REFERENCES ([a-z_]+)\(id\)( ON DELETE CASCADE)?/.exec(rest);
+  if (ref) col.references = { table: ref[1]!, onDelete: ref[2] ? 'cascade' : 'restrict' };
+  const def = /DEFAULT ('(?:[^']*)'(?:::jsonb)?|now\(\)|true|false|-?\d+(?:\.\d+)?)/.exec(rest);
+  if (def) {
+    const d = def[1]!;
+    if (d === 'now()') col.default = { kind: 'now' };
+    else if (d === 'true' || d === 'false') col.default = { kind: 'literal', value: d === 'true' };
+    else if (/^-?\d/.test(d)) col.default = { kind: 'literal', value: Number(d) };
+    else if (d.endsWith('::jsonb')) col.default = { kind: 'literal', value: JSON.parse(d.slice(1, -8)) };
+    else col.default = { kind: 'literal', value: d.slice(1, -1) };
+  }
+  const en = /CHECK \(\w+ IN \(([^)]*)\)\)/.exec(rest);
+  if (en) col.enumValues = en[1]!.split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
+  if (comment) {
+    const jt = /@json (.+)$/.exec(comment);
+    if (jt) col.jsonType = jt[1]!.trim();
+  }
+  return col;
 }
 
 function singular(word: string): string {
@@ -255,6 +266,11 @@ const migFiles = readdirSync(join(ROOT, 'migrations'))
   .sort()
   .map((f) => ({ id: f.replace(/\.sql$/, ''), sql: readFileSync(join(ROOT, 'migrations', f), 'utf8') }));
 const tables = migFiles.flatMap((f) => parseSql(f.sql));
+for (const a of migFiles.flatMap((f) => parseAlters(f.sql))) {
+  const t = tables.find((x) => x.name === a.table);
+  if (!t) throw new Error(`gen: ALTER TABLE for unknown table ${a.table}`);
+  t.columns.push(parseColumn(a.table, a.line));
+}
 const stale: string[] = [];
 emit('src/schema/tables.generated.ts', genTables(tables), stale);
 emit('src/schema/migrations.generated.ts', genMigrations(migFiles), stale);

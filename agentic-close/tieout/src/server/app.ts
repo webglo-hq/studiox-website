@@ -33,6 +33,8 @@ const APP_ROOT_FROM_CALLBACK = '../../../';
  * yields a token or a changed credential.
  */
 const PENDING_MFA_ROUTES = new Set(['/api/auth/me', '/api/auth/logout', '/api/auth/mfa/enroll', '/api/auth/mfa/verify']);
+/** With a temporary password, a (two-factor verified) session can only replace it. */
+const PASSWORD_CHANGE_ROUTES = new Set([...PENDING_MFA_ROUTES, '/api/auth/password']);
 
 type Env = { Variables: { auth: Authenticated | null; user: RequestUser; token: string | null } };
 
@@ -125,7 +127,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const b = await body<{ email: string; password: string }>(c, 10_000);
     const r = await login(ctx, b.email, b.password, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
     issueSession(c, r.sessionToken);
-    return c.json({ user: r.user, csrfToken: r.csrfToken, mfa: r.mfa });
+    return c.json({ user: r.user, csrfToken: r.csrfToken, mfa: r.mfa, passwordChange: r.passwordChange });
   });
 
   // ------------------------------------------------------------------ single sign-on (OpenID Connect)
@@ -171,7 +173,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     }
     const token = getCookie(c, SESSION_COOKIE) ?? (opts.cookieBridge ? c.req.header(SESSION_BRIDGE_HEADER) || undefined : undefined) ?? null;
     const allowPending = PENDING_MFA_ROUTES.has(path);
-    const a = await authenticate(ctx, token, { ip: ipOf(c), allowPendingMfa: allowPending });
+    const a = await authenticate(ctx, token, { ip: ipOf(c), allowPendingMfa: allowPending, allowPasswordChange: PASSWORD_CHANGE_ROUTES.has(path) });
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       if (!sameOrigin(c, ctx)) throw new DomainError('forbidden', 'Cross-site request blocked.');
       checkCsrf(a.session, c.req.header('x-csrf-token') ?? null);
@@ -189,6 +191,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.get('/api/auth/me', async (c) => {
     const a = c.get('auth');
     if (a?.session.mfa_state === 'pending') return c.json({ mfa: 'pending', user: { id: a.user.actor.id, name: a.user.actor.label }, csrfToken: c.get('token') ? csrfFor(c.get('token')!) : null });
+    if (a?.user.actor.mustChangePassword) return c.json({ passwordChange: true, user: { id: a.user.actor.id, name: a.user.actor.label }, csrfToken: c.get('token') ? csrfFor(c.get('token')!) : null });
     return c.json(await q.me(ctx, U(c), c.get('token')));
   });
   app.post('/api/auth/logout', async (c) => {

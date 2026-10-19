@@ -12,9 +12,9 @@ through Playwright 1.56).
 | Types | `npm run typecheck` | 0 errors |
 | Lint (incl. layering and browser-safety rules) | `npm run lint` | 0 problems |
 | Unit tests | `npm run test:unit` | 99 passed, 8 files |
-| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, full close, identity, MCP, OIDC) | `npm run pg:start && npm run test:integration` | 73 passed, 8 files |
+| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, full close, identity, MCP, OIDC) | `npm run pg:start && npm run test:integration` | 75 passed, 8 files |
 | Skill evals (golden cases, offline engine) | `npm run evals` | 18/18 cases, 105/105 checks |
-| End-to-end, server on embedded PostgreSQL: the demo script to the locked period, entity scope, two-factor, axe WCAG 2.2 AA on every screen in light and dark | `npm run e2e` | 22 passed |
+| End-to-end, server on embedded PostgreSQL: the demo script to the locked period, entity scope, two-factor, a temporary password replaced at first sign-in, axe WCAG 2.2 AA on every screen in light and dark | `npm run e2e` | 23 passed |
 | End-to-end, static demo: the same script from `file://`, sandboxed iframe, no network, phone on every route | `npm run e2e:demo` | 21 passed |
 | Dependency advisories | `npm audit --audit-level=high` | 0 vulnerabilities |
 | Static demo build checks | `npm run build:demo` | 1 file + favicon, 1.92 MB, relative paths, no service worker, guarded storage |
@@ -65,7 +65,7 @@ look for:
 
 ### 2.2 Data model (`migrations/`, `docs/erd.md`)
 
-77 tables in four migrations: multi-entity GL with balanced, immutable entries corrected by reversal;
+77 tables in five migrations: multi-entity GL with balanced, immutable entries corrected by reversal;
 subledgers (AP, AR, bank, card, fixed assets, prepaids, payroll); budgets and forecasts; close
 periods, templates, tasks, dependencies, sign-offs with workday due dates; reconciliations, matches,
 items, evidence; flux analyses, lines, explanations; agent runs, steps, tool calls, messages,
@@ -116,7 +116,7 @@ inline definitions, designed empty/error/loading states, undo by reversal, keybo
 light and dark themes from CSS tokens, responsive to 390 px. Security: scrypt (Argon2id was not used to
 stay dependency-free and browser-portable), HttpOnly SameSite=Strict sessions with rotation and expiry,
 HMAC CSRF + Origin checks, rate limits, 8 roles and 34 permissions, SoD rules, approval limits, entity
-scope, TOTP with recovery codes, administrator resets, OIDC code flow + PKCE, every mutation audited
+scope, TOTP with recovery codes, administrator resets with temporary passwords replaced at the next sign-in, OIDC code flow + PKCE, every mutation audited
 (`http-api.test.ts`, `identity.test.ts`, `oidc.test.ts`, `e2e/*`).
 
 ### 2.7 Seed and scenario (`src/packs/accounting/seed`)
@@ -172,9 +172,9 @@ suite.
 1. **Live model quality is unmeasured.** Next: run the golden evals against Claude with a budget, and
    compare live and offline proposals.
 2. **Container files are unverified.** Next: build the image and run `compose.yaml` in CI.
-3. **Identity lifecycle.** No self-service password-reset email, no forced change of a temporary
-   password, no SCIM provisioning or OIDC logout; SSO was tested against an in-process provider. Next:
-   SCIM, OIDC logout, a commercial IdP in staging.
+3. **Identity lifecycle.** No self-service password-reset email (administrators issue temporary
+   passwords, which must be replaced at the next sign-in), no SCIM provisioning or OIDC logout; SSO was
+   tested against an in-process provider. Next: SCIM, OIDC logout, a commercial IdP in staging.
 4. **Single node.** Rate limits and agent runs are in-process; several nodes need a shared limiter and a
    job queue; agents run on demand (no scheduler).
 5. **Connectors are file-based.** Next: bank (e.g. Plaid or host-to-host camt.053) and ERP API adapters

@@ -19,7 +19,7 @@ const emailOf = (key: string) => PEOPLE.find((p) => p.key === key)!.email;
 const step = () => Math.floor(Date.now() / 1000 / TOTP_PERIOD);
 
 async function signIn(c: HttpClient, key: string, password = TEST_PASSWORD) {
-  const r = await c.post<{ csrfToken: string; mfa: string }>('/api/auth/login', { email: emailOf(key), password }, { 'x-tieout-client-ip': '198.51.100.20' });
+  const r = await c.post<{ csrfToken: string; mfa: string; passwordChange?: boolean }>('/api/auth/login', { email: emailOf(key), password }, { 'x-tieout-client-ip': '198.51.100.20' });
   if (r.status === 200) c.csrf = r.body.csrfToken;
   return r;
 }
@@ -120,9 +120,37 @@ describe('administrator password resets and account changes', () => {
     expect(r.body.tempPassword.length).toBeGreaterThanOrEqual(24);
     expect((await sam.get('/api/home')).status).toBe(401);
     expect((await signIn(t.client(), 'sam')).status).toBe(401);
-    expect((await signIn(t.client(), 'sam', r.body.tempPassword)).status).toBe(200);
+
+    // the temporary password only lets Sam choose a new one
+    const fresh = t.client();
+    const login = await signIn(fresh, 'sam', r.body.tempPassword);
+    expect(login.status).toBe(200);
+    expect(login.body.passwordChange).toBe(true);
+    expect((await fresh.get<{ passwordChange: boolean }>('/api/auth/me')).body.passwordChange).toBe(true);
+    const blocked = await fresh.get<{ error: { details: { passwordChange: boolean } } }>('/api/home');
+    expect(blocked.status).toBe(401);
+    expect(blocked.body.error.details.passwordChange).toBe(true);
+    expect((await fresh.post('/api/auth/tokens', { name: 'sneaky', days: 7 })).status).toBe(401);
+    expect((await fresh.post('/api/auth/password', { current: r.body.tempPassword, next: r.body.tempPassword })).status).toBe(400);
+    expect((await fresh.post('/api/auth/password', { current: r.body.tempPassword, next: 'sam-picks-a-long-passphrase' })).status).toBe(200);
+    expect((await fresh.get('/api/home')).status).toBe(200);
+    expect((await signIn(t.client(), 'sam', r.body.tempPassword)).status).toBe(401);
+    expect((await signIn(t.client(), 'sam', 'sam-picks-a-long-passphrase')).body.passwordChange).toBe(false);
+
     const casey = await signedIn('casey');
     expect((await casey.post(`/api/admin/users/${samId}/password-reset`, {})).status).toBe(403);
+  });
+
+  it('retires the person’s API tokens with a password reset', async () => {
+    const riley = await signedIn('riley');
+    const token = await riley.post<{ token: string }>('/api/auth/tokens', { name: 'Riley laptop (MCP)', days: 7 });
+    expect(token.status).toBe(200);
+    const viaToken = () => t.app.fetch(new Request('https://tieout.test/api/home', { headers: { authorization: `Bearer ${token.body.token}` } }));
+    expect((await viaToken()).status).toBe(200);
+    const avery = await signedIn('avery');
+    const rileyId = (await avery.get<AdminView>('/api/admin')).body.users.find((u) => u.name === 'Riley Chen')!.id;
+    expect((await avery.post(`/api/admin/users/${rileyId}/password-reset`, {})).status).toBe(200);
+    expect((await viaToken()).status).toBe(401);
   });
 
   it('records why an account was disabled', async () => {

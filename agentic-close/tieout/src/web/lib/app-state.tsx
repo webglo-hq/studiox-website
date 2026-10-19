@@ -37,6 +37,8 @@ interface AppState {
   me: Me | null;
   loading: boolean;
   mfaPending: boolean;
+  /** signed in with a temporary password: choose a new one first */
+  passwordChange: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   period: string;
@@ -58,6 +60,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [mfaPending, setMfaPending] = useState(false);
+  const [passwordChange, setPasswordChange] = useState(false);
   const [period, setPeriodState] = useState<string>(() => readPref('period') ?? '2026-09');
   const [entityId, setEntityState] = useState<string | null>(() => readPref('entity'));
   const [theme, setThemeState] = useState<Theme>(() => (readPref('theme') as Theme | null) ?? 'system');
@@ -67,14 +70,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const r = await api<Me & { mfa?: 'pending'; csrfToken: string | null }>('/auth/me');
+      const r = await api<Me & { mfa?: 'pending'; passwordChange?: boolean; csrfToken: string | null }>('/auth/me');
       if (r.mfa === 'pending') {
         setCsrf(r.csrfToken);
         setMfaPending(true);
+        setPasswordChange(false);
+        setMe(null);
+      } else if (r.passwordChange) {
+        setCsrf(r.csrfToken);
+        setMfaPending(false);
+        setPasswordChange(true);
         setMe(null);
       } else {
         setCsrf(r.csrfToken);
         setMfaPending(false);
+        setPasswordChange(false);
         setMe(r);
         if (r.tenant.activeCloseKey && !readPref('period')) setPeriodState(r.tenant.activeCloseKey);
       }
@@ -82,6 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (e instanceof ApiError && e.status === 401) {
         setMe(null);
         setMfaPending(!!(e.details as { mfa?: string }).mfa);
+        setPasswordChange(!!(e.details as { passwordChange?: boolean }).passwordChange);
       } else throw e;
     } finally {
       setLoading(false);
@@ -105,6 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       me,
       loading,
       mfaPending,
+      passwordChange,
       refresh,
       logout: async () => {
         await api('/auth/logout', { method: 'POST', body: {} }).catch(() => undefined);
@@ -132,7 +144,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       version,
       bump: () => setVersion((v) => v + 1),
     }),
-    [me, loading, mfaPending, refresh, period, entityId, theme, toasts, toast, version],
+    [me, loading, mfaPending, passwordChange, refresh, period, entityId, theme, toasts, toast, version],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

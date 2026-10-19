@@ -114,7 +114,8 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
   the app (`npm run verify:audit -- file.json`); row-level security isolates tenants.
 * **Enterprise auth**: scrypt, server-side sessions, CSRF + Origin checks, rate limits, RBAC (8 roles,
   34 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
-  entity scoping, administrator resets of passwords and two-factor, API tokens for MCP.
+  entity scoping, administrator resets (temporary passwords are replaced at the next sign-in), API
+  tokens for MCP.
 * **Integrations**: BAI2, ISO 20022 camt.053, OFX and CSV bank statements; card, ERP journal, AP and
   payroll files; idempotent by content hash with per-record provenance.
 * **MCP server** (`src/mcp`): Claude can read the close and start agent runs with a read-only token.
@@ -127,7 +128,7 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
 npm run verify          # gen:check, typecheck, lint, unit + integration tests, skill evals
 npm run pg:start        # throwaway PostgreSQL 16 cluster in .pgtest/ (random port) for the PG tests
 npm run test:integration
-npm run e2e             # Playwright: the demo script to the locked period, scope, 2FA, axe (server on PGlite)
+npm run e2e             # Playwright: the demo script to the locked period, scope, 2FA, password reset, axe (PGlite)
 npm run e2e:demo        # Playwright: the static demo from disk, in a sandboxed iframe, offline, phone
 npm run audit:deps      # npm audit --audit-level=high
 npm run pg:stop
