@@ -19,7 +19,9 @@ export function inlineDemoBundle(): Plugin {
 
       for (const [fileName, item] of Object.entries(bundle)) {
         if (item.type === 'chunk' && item.isEntry) {
-          const code = item.code.replace(/<\/script/gi, '<\\/script');
+          // With code splitting off, Vite leaves its preload-list placeholder in the inlined dynamic import;
+          // there is nothing to preload in a single file, so the helper gets an empty list.
+          const code = item.code.replace(/__VITE_PRELOAD__/g, 'void 0').replace(/<\/script/gi, '<\\/script');
           const tag = new RegExp(`<script[^>]*src="[^"]*${escapeRegExp(fileName)}"[^>]*></script>`);
           html = html.replace(tag, () => `<script type="module">${code}</script>`);
           delete bundle[fileName];

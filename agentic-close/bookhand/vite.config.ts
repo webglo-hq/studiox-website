@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       chunkSizeWarningLimit: 4096,
       rolldownOptions: demo
-        ? { output: { inlineDynamicImports: true } }
+        ? { output: { codeSplitting: false } }
         : undefined,
     },
     server: {

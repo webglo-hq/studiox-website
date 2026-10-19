@@ -1,0 +1,152 @@
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('../../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('../../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../../../node_modules/@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2') format('woff2');
+}
+
+/* Design tokens. Light is default; dark follows the OS unless the user pins a theme (data-theme). */
+:root {
+  color-scheme: light;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-display: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+
+  --bg: #f6f5f1;
+  --bg-sunken: #efede7;
+  --surface: #ffffff;
+  --surface-2: #fbfaf7;
+  --surface-hover: #f3f1ec;
+  --border: #e3e0d8;
+  --border-strong: #cdc9be;
+  --text: #16181d;
+  --text-2: #4a4f5a;
+  --text-3: #6b707b;
+  --text-inverse: #ffffff;
+
+  --accent: #1f6b52;
+  --accent-hover: #18573f;
+  --accent-soft: #e5f2ec;
+  --accent-text: #175a43;
+  --accent-contrast: #ffffff;
+  --ink: #16181d;
+
+  --attention: #9a5b0b;
+  --attention-soft: #fbf0dc;
+  --danger: #b4321f;
+  --danger-soft: #fbe7e2;
+  --info: #2a55c9;
+  --info-soft: #e7edfc;
+  --success: #1f7a4d;
+  --success-soft: #e3f3ea;
+  --violet: #6a3fc1;
+  --violet-soft: #efe8fb;
+
+  --focus: #2a55c9;
+  --shadow-sm: 0 1px 2px rgba(22, 24, 29, 0.06);
+  --shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 4px 16px rgba(22, 24, 29, 0.06);
+  --shadow-lg: 0 8px 40px rgba(22, 24, 29, 0.14);
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --sidebar: #12141a;
+  --sidebar-text: #c9ccd3;
+  --sidebar-active: #ffffff;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --gutter: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0d0f13;
+    --bg-sunken: #0a0b0e;
+    --surface: #15181e;
+    --surface-2: #181b22;
+    --surface-hover: #1d2129;
+    --border: #262a33;
+    --border-strong: #353a45;
+    --text: #eef0f3;
+    --text-2: #b9bec8;
+    --text-3: #8f95a1;
+    --text-inverse: #0d0f13;
+    --accent: #4cbf8f;
+    --accent-hover: #63cf9f;
+    --accent-soft: #15302a;
+    --accent-text: #79d8ae;
+    --accent-contrast: #06140e;
+    --ink: #eef0f3;
+    --attention: #e8b04b;
+    --attention-soft: #33270f;
+    --danger: #f07a64;
+    --danger-soft: #3a1b16;
+    --info: #86a4f5;
+    --info-soft: #172240;
+    --success: #5fd197;
+    --success-soft: #133024;
+    --violet: #b79af2;
+    --violet-soft: #26193f;
+    --focus: #86a4f5;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.55);
+    --sidebar: #0a0c10;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d0f13;
+  --bg-sunken: #0a0b0e;
+  --surface: #15181e;
+  --surface-2: #181b22;
+  --surface-hover: #1d2129;
+  --border: #262a33;
+  --border-strong: #353a45;
+  --text: #eef0f3;
+  --text-2: #b9bec8;
+  --text-3: #8f95a1;
+  --text-inverse: #0d0f13;
+  --accent: #4cbf8f;
+  --accent-hover: #63cf9f;
+  --accent-soft: #15302a;
+  --accent-text: #79d8ae;
+  --accent-contrast: #06140e;
+  --ink: #eef0f3;
+  --attention: #e8b04b;
+  --attention-soft: #33270f;
+  --danger: #f07a64;
+  --danger-soft: #3a1b16;
+  --info: #86a4f5;
+  --info-soft: #172240;
+  --success: #5fd197;
+  --success-soft: #133024;
+  --violet: #b79af2;
+  --violet-soft: #26193f;
+  --focus: #86a4f5;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.55);
+  --sidebar: #0a0c10;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --gutter: 16px;
+  }
+}
