@@ -3,7 +3,8 @@
  * A small, safe XML reader: no DTDs, no entities beyond the five predefined ones, no external
  * resources (XXE-proof by construction), element/attribute/text only.
  */
-import type { ImportError, ParsedBankStatement, ParsedBankTransaction } from './types';
+import { parseDate } from './csv';
+import { failClosed, type ImportError, type ParsedBankStatement, type ParsedBankTransaction } from './types';
 
 interface XNode {
   name: string;
@@ -70,43 +71,73 @@ function text(n: XNode | undefined, ...path: string[]): string {
 
 function amountMinor(n: XNode | undefined): number {
   const t = n?.text.trim() ?? '';
-  if (!/^\d+(\.\d{1,2})?$/.test(t)) throw new Error(`camt.053: invalid amount "${t}"`);
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) throw new Error(`invalid amount "${t}"`);
   const [w, f = ''] = t.split('.') as [string, string?];
   return Number(w) * 100 + Number((f + '00').slice(0, 2));
 }
 
-export function parseCamt053(xml: string): ParsedBankStatement {
+/** CRDT or DBIT, nothing else: a missing or unknown indicator never defaults to a credit. */
+function sign(n: XNode, what: string): 1 | -1 {
+  const v = text(n, 'CdtDbtInd');
+  if (v === 'CRDT') return 1;
+  if (v === 'DBIT') return -1;
+  throw new Error(`${what} has ${v ? `an invalid credit/debit indicator "${v}"` : 'no credit/debit indicator (CdtDbtInd)'}`);
+}
+
+/** Every statement in the message (a camt.053 may carry several, e.g. one per account). */
+export function parseCamt053Statements(xml: string): ParsedBankStatement[] {
   const doc = parseXml(xml);
-  const stmt = child(doc, 'Document', 'BkToCstmrStmt', 'Stmt');
-  if (!stmt) throw new Error('camt.053: Document/BkToCstmrStmt/Stmt not found');
-  const warnings: ImportError[] = [];
+  const stmts = all(child(doc, 'Document', 'BkToCstmrStmt'), 'Stmt');
+  if (!stmts.length) throw new Error('camt.053: Document/BkToCstmrStmt/Stmt not found');
+  return stmts.map((stmt, si) => parseStatement(stmt, stmts.length > 1 ? `statement ${si + 1}: ` : ''));
+}
+
+/** The one statement of a single-statement message. */
+export function parseCamt053(xml: string): ParsedBankStatement {
+  const statements = parseCamt053Statements(xml);
+  if (statements.length !== 1) throw new Error(`camt.053: the message holds ${statements.length} statements; read them with parseCamt053Statements`);
+  return statements[0]!;
+}
+
+function parseStatement(stmt: XNode, where: string): ParsedBankStatement {
+  const problems: ImportError[] = [];
   const acct = child(stmt, 'Acct');
   const accountNumber = text(acct, 'Id', 'IBAN') || text(acct, 'Id', 'Othr', 'Id');
-  const currency = text(acct, 'Ccy') || 'EUR';
+  if (!accountNumber) problems.push({ line: null, message: `${where}the statement names no account (Acct/Id)` });
+  const balances = all(stmt, 'Bal');
+  const currency = text(acct, 'Ccy') || child(balances[0], 'Amt')?.attrs.Ccy || '';
+  if (!/^[A-Z]{3}$/.test(currency)) problems.push({ line: null, message: `${where}the statement has no currency (Acct/Ccy)` });
   let opening: number | null = null;
   let closing: number | null = null;
-  for (const bal of all(stmt, 'Bal')) {
+  for (const bal of balances) {
     const code = text(bal, 'Tp', 'CdOrPrtry', 'Cd');
-    const amt = amountMinor(child(bal, 'Amt'));
-    const sign = text(bal, 'CdtDbtInd') === 'DBIT' ? -1 : 1;
-    if (code === 'OPBD' || code === 'PRCD') opening = sign * amt;
-    if (code === 'CLBD') closing = sign * amt;
+    try {
+      const amt = sign(bal, `the ${code || 'unnamed'} balance`) * amountMinor(child(bal, 'Amt'));
+      if (code === 'OPBD' || code === 'PRCD') opening = amt;
+      if (code === 'CLBD') closing = amt;
+    } catch (err) {
+      problems.push({ line: null, message: `${where}${(err as Error).message}` });
+    }
   }
   const statementDate = (text(stmt, 'CreDtTm') || text(stmt, 'FrToDt', 'ToDtTm')).slice(0, 10);
   const transactions: ParsedBankTransaction[] = [];
   all(stmt, 'Ntry').forEach((e, i) => {
     try {
-      const amt = amountMinor(child(e, 'Amt'));
-      const sign = text(e, 'CdtDbtInd') === 'DBIT' ? -1 : 1;
+      const amtNode = child(e, 'Amt');
+      if (amtNode?.attrs.Ccy && amtNode.attrs.Ccy !== currency) throw new Error(`the entry is in ${amtNode.attrs.Ccy}, the statement in ${currency}`);
+      const amount = sign(e, 'the entry') * amountMinor(amtNode);
+      const booked = text(e, 'BookgDt', 'Dt') || text(e, 'BookgDt', 'DtTm').slice(0, 10);
+      if (!booked) throw new Error('the entry has no booking date');
+      const valued = text(e, 'ValDt', 'Dt');
       const tx = child(e, 'NtryDtls', 'TxDtls');
-      const credit = sign > 0;
+      const credit = amount > 0;
       const counterparty = credit ? text(tx, 'RltdPties', 'Dbtr', 'Nm') || text(tx, 'RltdPties', 'Dbtr', 'Pty', 'Nm') : text(tx, 'RltdPties', 'Cdtr', 'Nm') || text(tx, 'RltdPties', 'Cdtr', 'Pty', 'Nm');
       const ustrd = all(child(tx, 'RmtInf'), 'Ustrd').map((u) => u.text.trim()).join(' ');
       transactions.push({
         externalId: text(e, 'AcctSvcrRef') || text(e, 'NtryRef') || `${statementDate}-${i + 1}`,
-        bookingDate: text(e, 'BookgDt', 'Dt') || text(e, 'BookgDt', 'DtTm').slice(0, 10),
-        valueDate: text(e, 'ValDt', 'Dt') || null,
-        amountMinor: sign * amt,
+        bookingDate: parseDate(booked),
+        valueDate: valued ? parseDate(valued) : null,
+        amountMinor: amount,
         description: [text(e, 'AddtlNtryInf'), ustrd].filter(Boolean).join(' – ') || (credit ? 'Credit' : 'Debit'),
         counterparty: counterparty || null,
         reference: text(tx, 'Refs', 'EndToEndId') || null,
@@ -114,13 +145,15 @@ export function parseCamt053(xml: string): ParsedBankStatement {
         sourceLine: i + 1,
       });
     } catch (err) {
-      warnings.push({ line: i + 1, message: (err as Error).message });
+      problems.push({ line: i + 1, message: `${where}${(err as Error).message}` });
     }
   });
-  if (opening === null || closing === null) throw new Error('camt.053: opening (OPBD) and closing (CLBD) balances are required');
+  if (opening === null || closing === null) problems.push({ line: null, message: `${where}opening (OPBD) and closing (CLBD) balances are required` });
+  failClosed(problems);
   const net = transactions.reduce((s, t) => s + t.amountMinor, 0);
-  if (opening + net !== closing) warnings.push({ line: null, message: `balance check: opening ${opening} + entries ${net} != closing ${closing}` });
-  return { format: 'camt053', accountNumber, currency, statementDate, openingBalanceMinor: opening, closingBalanceMinor: closing, transactions, warnings };
+  // the entries must account for the whole movement between the two balances
+  failClosed(opening! + net !== closing! ? [{ line: null, message: `${where}opening balance ${opening} + entries ${net} does not equal the closing balance ${closing} (minor units)` }] : []);
+  return { format: 'camt053', accountNumber, currency, statementDate, openingBalanceMinor: opening!, closingBalanceMinor: closing!, transactions, warnings: [] };
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

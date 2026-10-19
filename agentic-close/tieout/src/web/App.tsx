@@ -20,6 +20,13 @@ import { Recs } from './pages/Recs';
 import { Reports } from './pages/Reports';
 import { Runs } from './pages/Runs';
 import { Skills } from './pages/Skills';
+import { DemoMailbox, Welcome } from './pages/Welcome';
+
+/** Pages that work without signing in (a link to choose a password, the demo mailbox). */
+const PUBLIC: Record<string, { title: string; render: () => ReactNode }> = {
+  welcome: { title: 'Choose your password', render: () => <Welcome /> },
+  mailbox: { title: 'Demo mailbox', render: () => <DemoMailbox /> },
+};
 
 const ROUTES: Record<string, { title: string; perm?: string; render: () => ReactNode }> = {
   home: { title: 'My close', render: () => <Home /> },
@@ -44,15 +51,17 @@ export function App() {
   const route = useRoute();
   const page = route.path[0] ?? 'home';
   const def = ROUTES[page];
+  const open = PUBLIC[page];
   useEffect(() => {
-    document.title = me && def ? `${def.title} · Tieout` : 'Tieout · Sign in';
-  }, [me, def]);
+    document.title = open ? `${open.title} · Tieout` : me && def ? `${def.title} · Tieout` : 'Tieout · Sign in';
+  }, [me, def, open]);
   if (loading)
     return (
       <div className="boot">
         <Loading label="Opening Tieout" />
       </div>
     );
+  if (open) return open.render();
   if (!me || mfaPending) return <Login />;
   let body: ReactNode;
   if (!def) body = <Empty title="Page not found">That address does not match a screen. Use the navigation to continue.</Empty>;

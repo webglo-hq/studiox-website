@@ -11,12 +11,12 @@ import {
   type AuditAppend,
   type AuditRecord,
   type ColumnMeta,
+  type DirectoryKind,
   type Condition,
   type FindOptions,
   type LineSum,
   type LineSumQuery,
   type Store,
-  type SystemTx,
   type TableMeta,
   type TableMetaMap,
   type Tx,
@@ -89,17 +89,20 @@ export class PgStore<M, I = M> implements Store<M, I> {
     }
   }
 
-  async system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R> {
+  async tenantIds(): Promise<string[]> {
     try {
-      return await this.driver.transaction(async (q) => {
-        // cross-tenant system lookups (sign-in, session/token resolution) bypass RLS for this transaction only
-        await q.query("SELECT set_config('tieout.bypass', 'on', true)");
-        return fn({
-          findGlobal: (table, where, opts) => this.find(q, table, where as Record<string, Condition>, opts as FindOptions<SqlRow>, null) as never,
-          insertGlobal: (table, row) => this.insert(q, table, row as SqlRow, null) as never,
-          updateGlobal: (table, id, patch) => this.update(q, table, id, patch as SqlRow, null) as never,
-        });
-      });
+      const r = await this.driver.query('SELECT DISTINCT "tenant_id" FROM "tenant_directory" ORDER BY 1');
+      return r.rows.map((x) => String(x.tenant_id));
+    } catch (e) {
+      throw normaliseError(e);
+    }
+  }
+
+  async tenantOf(kind: DirectoryKind, key: string): Promise<string | null> {
+    // the tenant directory (migration 0010) has no row-level security and holds only lookup keys
+    try {
+      const r = await this.driver.query('SELECT "tenant_id" FROM "tenant_directory" WHERE "id" = $1', [`${kind}:${key}`]);
+      return r.rows[0] ? String(r.rows[0].tenant_id) : null;
     } catch (e) {
       throw normaliseError(e);
     }
@@ -303,6 +306,10 @@ export class PgStore<M, I = M> implements Store<M, I> {
     if (query.toDate) {
       params.push(query.toDate);
       conds.push(`je."posting_date" <= $${params.length}`);
+    }
+    if (query.excludeEntryTypes?.length) {
+      params.push([...query.excludeEntryTypes]);
+      conds.push(`NOT (je."entry_type" = ANY($${params.length}))`);
     }
     const groups = query.groupBy.map((g) => {
       const expr = GROUP_SQL[g];

@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, qs, type ProposalDetail, type ProposalList } from '../api';
 import { Badge, Confidence, Drawer, Empty, ErrorBox, FlagBadges, Loading, Money, ProposalStatus, ReasonDialog, Segmented, Term } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
-import { date, KIND_LABEL, ROLE_LABEL, ROUTE_LABEL, titleCase } from '../lib/format';
+import { date, KIND_LABEL, MATERIALITY_LABEL, ROLE_LABEL, ROUTE_LABEL, titleCase } from '../lib/format';
 import { setQuery, useRoute } from '../lib/router';
 
 type StatusFilter = 'open' | 'review' | 'auto' | 'all';
@@ -44,7 +44,12 @@ export function Inbox() {
           return n;
         });
       }
-      if (e.key === 'Enter' && items[cursor] && (t.dataset.row !== undefined || t === document.body)) setQuery('open', items[cursor]!.id);
+      if (e.key === 'Enter' && items[cursor] && (t.dataset.row !== undefined || t === document.body)) {
+        // the panel takes focus while this key is still being handled: without this, the browser
+        // would also "press" whatever the panel focused (its Close button) and shut it again
+        e.preventDefault();
+        setQuery('open', items[cursor]!.id);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -133,11 +138,24 @@ export function Inbox() {
             <Empty title={status === 'open' ? 'Nothing needs a decision' : 'No items'}>{status === 'open' ? 'When agents propose work that needs a person, it lands here.' : 'Try another filter.'}</Empty>
           ) : (
             items.map((p, i) => (
-              <div className="prop" key={p.id} data-row data-active={cursor === i ? 'true' : undefined} aria-current={cursor === i ? 'true' : undefined} tabIndex={0} onFocus={() => setCursor(i)} onKeyDown={(e) => e.key === 'Enter' && setQuery('open', p.id)}>
+              <div
+                className="prop"
+                key={p.id}
+                data-row
+                data-active={cursor === i ? 'true' : undefined}
+                aria-current={cursor === i ? 'true' : undefined}
+                tabIndex={0}
+                onFocus={() => setCursor(i)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.target !== e.currentTarget) return;
+                  e.preventDefault();
+                  setQuery('open', p.id);
+                }}
+              >
                 {status === 'open' ? (
                   <input
                     type="checkbox"
-                    aria-label={`Select ${p.ref}`}
+                    aria-label={`Select ${p.ref}: ${p.title}`}
                     disabled={!bulkable(p)}
                     checked={selected.has(p.id)}
                     onChange={(e) => {
@@ -158,7 +176,7 @@ export function Inbox() {
                   </a>
                   <p className="why">{p.why}</p>
                   <div className="meta">
-                    <span>{KIND_LABEL[p.kind]}</span>·<span>{p.skillKey}</span>
+                    <span>{KIND_LABEL[p.kind]}</span>·<span>{p.skillTitle}</span>
                     <ProposalStatus status={p.status} route={p.route} reviewStatus={p.reviewStatus} />
                     <FlagBadges flags={p.flags} />
                     {p.status === 'pending_approval' && p.assignedRole ? <span>for {ROLE_LABEL[p.assignedRole] ?? p.assignedRole}</span> : null}
@@ -182,6 +200,19 @@ export function Inbox() {
       )}
       {openId ? <ProposalDrawer id={openId} canEdit={can(me, 'coding.approve')} onClose={() => setQuery('open', null)} onChanged={() => { bump(); reload(); }} /> : null}
     </div>
+  );
+}
+
+/** "SOD-01: You prepared this…" → the words first, the control they come from as a reference. */
+function Reason({ text }: { text: string }) {
+  const m = /^((?:AX-)?[A-Z]+-\d+): (.*)$/s.exec(text);
+  if (!m) return <>{text}</>;
+  const [, code, words] = m as unknown as [string, string, string];
+  return (
+    <>
+      {words}{' '}
+      <span className="muted">({code.startsWith('AX-') ? <a href={`#/ontology?axiom=${code}`}>{code}</a> : code})</span>
+    </>
   );
 }
 
@@ -266,7 +297,7 @@ function ProposalDrawer({ id, onClose, onChanged, canEdit }: { id: string; onClo
                   <Lock className="icon" aria-hidden="true" /> You can’t approve this.
                 </span>
               )}
-              <button className="btn danger" disabled={busy || !p.eligibility.reasons.every((r) => !r.includes('permission'))} onClick={() => setRejecting(true)}>
+              <button className="btn danger" disabled={busy || !p.eligibility.canReject} onClick={() => setRejecting(true)}>
                 <X className="icon" aria-hidden="true" /> Reject
               </button>
               {p.kind === 'coding' && canEdit ? (
@@ -308,7 +339,9 @@ function ProposalDrawer({ id, onClose, onChanged, canEdit }: { id: string; onClo
                 <strong>Why you can’t approve it</strong>
                 <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
                   {p.eligibility.reasons.map((r) => (
-                    <li key={r}>{r}</li>
+                    <li key={r}>
+                      <Reason text={r} />
+                    </li>
                   ))}
                 </ul>
                 {p.assignedRole ? <p style={{ marginTop: 6 }}>Assigned to: {ROLE_LABEL[p.assignedRole] ?? p.assignedRole}.</p> : null}
@@ -446,11 +479,12 @@ function ProposalDrawer({ id, onClose, onChanged, canEdit }: { id: string; onClo
               ) : null}
               <dt>Materiality</dt>
               <dd>
-                <Term id="tie:Materiality">{p.materiality.replace('_', ' ')}</Term>
+                <Term id="tie:Materiality">{MATERIALITY_LABEL[p.materiality] ?? p.materiality}</Term>
               </dd>
-              <dt>Needs permission</dt>
+              <dt>Who can decide</dt>
               <dd>
-                <code>{p.decisionPermission}</code>
+                {p.decisionRoles.join(', ')}
+                {p.kind === 'journal_entry' ? ', within their approval limit' : ''}
               </dd>
             </dl>
             {p.approvals.length ? (

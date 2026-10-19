@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { totpAt, TOTP_PERIOD } from '../../src/core/auth/totp';
 import { PEOPLE } from '../../src/packs/accounting/seed/company';
-import { testApp, TEST_PASSWORD, type HttpClient, type TestApp } from '../support/app';
+import { readMail, testApp, TEST_PASSWORD, type HttpClient, type TestApp } from '../support/app';
 
 interface AdminView {
   users: { id: string; name: string; mfa: boolean }[];
@@ -18,8 +18,8 @@ const emailOf = (key: string) => PEOPLE.find((p) => p.key === key)!.email;
 // TOTP runs on wall-clock time, like the authenticator app on a phone
 const step = () => Math.floor(Date.now() / 1000 / TOTP_PERIOD);
 
-async function signIn(c: HttpClient, key: string, password = TEST_PASSWORD) {
-  const r = await c.post<{ csrfToken: string; mfa: string; passwordChange?: boolean }>('/api/auth/login', { email: emailOf(key), password }, { 'x-tieout-client-ip': '198.51.100.20' });
+async function signIn(c: HttpClient, key: string, password = TEST_PASSWORD, ip = '198.51.100.20') {
+  const r = await c.post<{ csrfToken: string; mfa: string; passwordChange?: boolean }>('/api/auth/login', { email: emailOf(key), password }, { 'x-tieout-client-ip': ip });
   if (r.status === 200) c.csrf = r.body.csrfToken;
   return r;
 }
@@ -111,19 +111,41 @@ describe('two-factor recovery codes', () => {
 });
 
 describe('administrator password resets and account changes', () => {
-  it('issues a temporary password: the old one stops working and sessions end', async () => {
+  it('sends a single-use reset link to the person: the old password stops working and sessions end', async () => {
     const sam = await signedIn('sam');
     const avery = await signedIn('avery');
     const samId = (await avery.get<AdminView>('/api/admin')).body.users.find((u) => u.name === 'Sam Rivera')!.id;
-    const r = await avery.post<{ tempPassword: string }>(`/api/admin/users/${samId}/password-reset`, {});
+    const r = await avery.post<{ sent: { to: string } }>(`/api/admin/users/${samId}/password-reset`, {});
     expect(r.status).toBe(200);
-    expect(r.body.tempPassword.length).toBeGreaterThanOrEqual(24);
+    // the administrator learns where the link went, never the link or a password
+    expect(r.body.sent.to).toContain(emailOf('sam'));
+    expect(JSON.stringify(r.body)).not.toMatch(/tkl_|password"/i);
     expect((await sam.get('/api/home')).status).toBe(401);
     expect((await signIn(t.client(), 'sam')).status).toBe(401);
 
-    // the temporary password only lets Sam choose a new one
+    // Sam opens the link from the message and chooses a new password; it works once
+    const { token } = await readMail(t, emailOf('sam'));
+    expect((await t.client().get<{ purpose: string; name: string }>(`/api/auth/link?token=${token}`)).body).toMatchObject({ purpose: 'password_reset', name: 'Sam Rivera' });
+    expect((await t.client().post('/api/auth/link', { token, password: 'short' })).status).toBe(400);
+    expect((await t.client().post('/api/auth/link', { token, password: 'sam-picks-a-long-passphrase' })).status).toBe(200);
+    expect((await t.client().post('/api/auth/link', { token, password: 'someone-else-tries-again' })).status).toBe(404);
+    const back = await signIn(t.client(), 'sam', 'sam-picks-a-long-passphrase');
+    expect(back.status).toBe(200);
+    expect(back.body.passwordChange).toBe(false);
+
+    const casey = await signedIn('casey');
+    expect((await casey.post(`/api/admin/users/${samId}/password-reset`, {})).status).toBe(403);
+  });
+
+  const LEGACY_IP = '198.51.100.21';
+  it('still has a temporary password from before reset links (migration 0012) replaced before anything else', async () => {
+    const avery = await signedIn('avery');
+    const samId = (await avery.get<AdminView>('/api/admin')).body.users.find((u) => u.name === 'Sam Rivera')!.id;
+    const temp = 'an-old-temporary-password-Tmp';
+    // from another address, so this suite stays under the sign-in rate limit
+    await t.ctx.db.tx(t.fx.tenantId, async (tx) => tx.update('users', samId, { password_hash: await t.ctx.hasher.hash(temp), must_change_password: true }));
     const fresh = t.client();
-    const login = await signIn(fresh, 'sam', r.body.tempPassword);
+    const login = await signIn(fresh, 'sam', temp, LEGACY_IP);
     expect(login.status).toBe(200);
     expect(login.body.passwordChange).toBe(true);
     expect((await fresh.get<{ passwordChange: boolean }>('/api/auth/me')).body.passwordChange).toBe(true);
@@ -131,14 +153,11 @@ describe('administrator password resets and account changes', () => {
     expect(blocked.status).toBe(401);
     expect(blocked.body.error.details.passwordChange).toBe(true);
     expect((await fresh.post('/api/auth/tokens', { name: 'sneaky', days: 7 })).status).toBe(401);
-    expect((await fresh.post('/api/auth/password', { current: r.body.tempPassword, next: r.body.tempPassword })).status).toBe(400);
-    expect((await fresh.post('/api/auth/password', { current: r.body.tempPassword, next: 'sam-picks-a-long-passphrase' })).status).toBe(200);
+    expect((await fresh.post('/api/auth/password', { current: temp, next: temp })).status).toBe(400);
+    expect((await fresh.post('/api/auth/password', { current: temp, next: 'sam-picks-another-passphrase' })).status).toBe(200);
     expect((await fresh.get('/api/home')).status).toBe(200);
-    expect((await signIn(t.client(), 'sam', r.body.tempPassword)).status).toBe(401);
-    expect((await signIn(t.client(), 'sam', 'sam-picks-a-long-passphrase')).body.passwordChange).toBe(false);
-
-    const casey = await signedIn('casey');
-    expect((await casey.post(`/api/admin/users/${samId}/password-reset`, {})).status).toBe(403);
+    expect((await signIn(t.client(), 'sam', temp, LEGACY_IP)).status).toBe(401);
+    expect((await signIn(t.client(), 'sam', 'sam-picks-another-passphrase', LEGACY_IP)).body.passwordChange).toBe(false);
   });
 
   it('retires the person’s API tokens with a password reset', async () => {

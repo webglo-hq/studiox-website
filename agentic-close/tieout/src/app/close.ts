@@ -1,15 +1,17 @@
 /**
  * Close management use cases: run the close agents, complete and sign off checklist tasks
- * (AX-CL-01, reviewer ≠ preparer), finalize the close package and lock the period (AX-CL-02).
+ * (AX-CL-01; the named reviewer, or someone with at least the reviewer role's authority, and
+ * never the task's owner or preparer), finalize the close package and lock the period (AX-CL-02).
  */
 import { audit } from '../core/audit/audit';
 import { conflict, forbidden, invariant, notFound, precondition, sodViolation, validation } from '../core/util/errors';
 import { sha256Hex } from '../core/util/hash';
 import { canonicalJson } from '../core/util/json';
 import { runCloseAgents, type CloseRunResult } from '../packs/accounting/close/orchestrate';
+import { permissionNeeded, roleDef } from '../packs/accounting/controls/permissions';
 import { AccountingServices } from '../packs/accounting/services';
 import { periodLabel } from '../core/util/time';
-import type { DbTx } from '../schema';
+import type { CloseTaskRow, DbTx } from '../schema';
 import type { AppContext, RequestUser } from './context';
 import { assertCanActOn, assertInScope, requireGroupAccess, requirePermission } from './context';
 
@@ -55,6 +57,43 @@ export async function completeTask(ctx: AppContext, u: RequestUser, taskId: stri
   });
 }
 
+/** Whether `u` has at least the authority of `roleKey`: they hold it, or an approval limit as high. */
+function hasAuthorityOf(u: RequestUser, roleKey: string): boolean {
+  if (u.actor.roles.includes(roleKey)) return true;
+  const need = roleDef(roleKey)?.approvalLimitMinor;
+  if (need === undefined) return false;
+  const mine = u.actor.approvalLimitMinor;
+  return mine === null || (need !== null && mine >= need);
+}
+
+/**
+ * Why `u` may not sign off this checklist task, in words (empty: they may). The reviewer is
+ * independent of the work: never its owner, whoever completed it, or whoever ran its agents; and
+ * it is the named reviewer, or someone with at least the reviewer role's authority (a Controller
+ * may stand in for a Senior Accountant, never for the CFO). Prerequisites are signed off first.
+ */
+export async function signOffBlockers(tx: DbTx, u: RequestUser, t: CloseTaskRow): Promise<{ sod: string[]; other: string[] }> {
+  const sod: string[] = [];
+  const other: string[] = [];
+  if (!u.actor.permissions.has('close.signoff')) other.push(permissionNeeded('close.signoff'));
+  if (t.owner_id === u.actor.id) sod.push('You own this task, so its reviewer signs it off (SOD-01).');
+  else if (t.completed_by === u.actor.id) sod.push('You completed this task, so someone else has to sign it off (SOD-01).');
+  if (t.agent_run_id && !t.completed_by) {
+    const run = await tx.get('agent_runs', t.agent_run_id);
+    if (run?.requested_by === u.actor.id) sod.push('You ran the agents for this task, so someone else has to sign it off (SOD-02).');
+  }
+  if (t.reviewer_id !== u.actor.id && t.reviewer_role && !hasAuthorityOf(u, t.reviewer_role)) {
+    const named = t.reviewer_id ? (await tx.get('users', t.reviewer_id))?.display_name : null;
+    const role = roleDef(t.reviewer_role)?.name ?? t.reviewer_role;
+    other.push(`${named ? `${named} (${role})` : `A ${role}`} reviews this task; signing it off needs at least the ${role}’s authority.`);
+  }
+  for (const d of await tx.find('close_task_dependencies', { task_id: t.id })) {
+    const dt = await tx.get('close_tasks', d.depends_on_task_id);
+    if (dt && dt.status !== 'done' && dt.status !== 'skipped') other.push(`AX-CL-01: “${dt.title}” must be signed off first.`);
+  }
+  return { sod, other };
+}
+
 export async function signOffTask(ctx: AppContext, u: RequestUser, taskId: string) {
   requirePermission(u, 'close.signoff');
   return ctx.db.tx(u.tenantId, async (tx) => {
@@ -62,16 +101,13 @@ export async function signOffTask(ctx: AppContext, u: RequestUser, taskId: strin
     if (!t) throw notFound('Task', taskId);
     assertCanActOn(u, t.entity_id, 'This checklist task');
     if (t.status !== 'ready_for_review') throw conflict('The task is not ready for review yet.');
-    if (t.completed_by === u.actor.id) throw sodViolation('You completed this task, so someone else has to sign it off (SOD-01).');
-    if (t.agent_run_id) {
-      const run = await tx.get('agent_runs', t.agent_run_id);
-      if (run?.requested_by === u.actor.id && !t.completed_by) throw sodViolation('You ran the agents for this task, so someone else has to sign it off (SOD-02).');
-    }
-    const deps = await tx.find('close_task_dependencies', { task_id: t.id });
-    for (const d of deps) {
-      const dt = await tx.get('close_tasks', d.depends_on_task_id);
-      if (dt && dt.status !== 'done' && dt.status !== 'skipped') throw invariant('AX-CL-01', `“${dt.title}” must be signed off first`);
-    }
+    const blocked = await signOffBlockers(tx, u, t);
+    if (blocked.sod.length) throw sodViolation(blocked.sod.join(' '));
+    // who may sign comes before when: a prerequisite still open is reported once the signer is right
+    const authority = blocked.other.filter((m) => !m.startsWith('AX-CL-01: '));
+    if (authority.length) throw forbidden(authority.join(' '));
+    const dependency = blocked.other.find((m) => m.startsWith('AX-CL-01: '));
+    if (dependency) throw invariant('AX-CL-01', dependency.slice('AX-CL-01: '.length).replace(/\.$/, ''));
     const now = ctx.clock.now().toISOString();
     const updated = await tx.update('close_tasks', t.id, { status: 'done', reviewed_by: u.actor.id, reviewed_at: now, completed_by: t.completed_by ?? null, completed_at: t.completed_at ?? now });
     await tx.insert('signoffs', { subject_type: 'close_task', subject_id: t.id, role: 'reviewer', user_id: u.actor.id, statement: `I reviewed and signed off “${t.title}”.`, content_hash: null, signed_at: now });
@@ -93,6 +129,10 @@ export async function finalizePackage(ctx: AppContext, u: RequestUser, packageId
     const now = ctx.clock.now().toISOString();
     const hash = sha256Hex(canonicalJson(pkg.content as unknown as Record<string, unknown>));
     if (hash !== pkg.content_hash) throw invariant('AX-AUD-01', 'the package content no longer matches its hash');
+    // nobody signs statements that disagree with the ledger (AX-FS-01) or commentary that no longer explains them (AX-FLX-01)
+    const svc = new AccountingServices(tx, u.actor, ctx.clock);
+    await svc.close.assertStatementsTie(pkg.period_key);
+    await svc.close.assertVariancesExplained(pkg.period_key, pkg.content);
     const updated = await tx.update('close_packages', pkg.id, { status: 'final' });
     await tx.insert('signoffs', { subject_type: 'close_package', subject_id: pkg.id, role: 'approver', user_id: u.actor.id, statement: `I approve the ${pkg.period_key} close package v${pkg.version}.`, content_hash: hash, signed_at: now });
     // the checklist's "Generate the close package" task: prepared by whoever asked for the package,

@@ -13,6 +13,7 @@
 import { addDays, diffDays, periodEnd, periodStart, shiftPeriod } from '../../../core/util/time';
 import { isBusinessDay } from '../close/workdays';
 import { ROLES } from '../controls/permissions';
+import { reversalLines } from '../ledger/journal';
 import type { AcctContext } from './context';
 
 export interface RiskHit {
@@ -32,6 +33,13 @@ export interface FlaggedEntry {
   approvedBy: string | null;
   hits: RiskHit[];
   score: number;
+  /** the entry that already reverses it, if any */
+  reversedBy: string | null;
+  /**
+   * For an entry its own preparer approved and nobody has reversed: the lines that cancel it, so
+   * it can be reversed until someone independent has reviewed the support.
+   */
+  reversal: { account: string; debit: number; credit: number; department: string | null; location: string | null; project: string | null; product_class: string | null; memo: string | null }[] | null;
 }
 
 export interface DuplicatePayment {
@@ -77,7 +85,13 @@ export class AnomalyService {
       if (!hits.length) continue;
       const score = hits.reduce((s, x) => s + x.weight, 0);
       if (score < 20) continue;
-      flagged.push({ jeId: h.id, jeNumber: h.je_number, date: h.posting_date, memo: h.memo, amountMinor: h.total_minor, source: h.source, preparedBy: name(h.prepared_by), approvedBy: h.approved_by ? name(h.approved_by) : null, hits, score });
+      const reversedBy = (await this.c.tx.findOne('journal_entries', { reverses_je_id: h.id }))?.je_number ?? null;
+      let reversal: FlaggedEntry['reversal'] = null;
+      if (!reversedBy && hits.some((x) => x.test === 'self_approval')) {
+        const rows = await this.c.tx.find('journal_lines', { journal_entry_id: h.id }, { orderBy: [['line_no', 'asc']] });
+        reversal = reversalLines(h, rows, await this.c.chart()).map((l) => ({ account: l.account, debit: l.debit ?? 0, credit: l.credit ?? 0, department: l.department ?? null, location: l.location ?? null, project: l.project ?? null, product_class: l.product_class ?? null, memo: l.memo ?? null }));
+      }
+      flagged.push({ jeId: h.id, jeNumber: h.je_number, date: h.posting_date, memo: h.memo, amountMinor: h.total_minor, source: h.source, preparedBy: name(h.prepared_by), approvedBy: h.approved_by ? name(h.approved_by) : null, hits, score, reversedBy, reversal });
     }
     flagged.sort((a, b) => b.score - a.score || b.amountMinor - a.amountMinor);
     const duplicates = await this.duplicatePayments(entityId, periodKey);

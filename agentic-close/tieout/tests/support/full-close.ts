@@ -92,8 +92,10 @@ export async function closeTheMonth(t: TestApp, opts: { runAgents: boolean }): P
   let writtenExplanationId: string | null = null;
   const me = (await sam.get<{ entities: { id: string; kind: string }[] }>('/api/auth/me')).body;
   for (const e of me.entities.filter((x) => x.kind === 'legal')) {
-    type Line = { code: string; exceeds: boolean; explanation: { status: string } | null; proposal: { status: string } | null };
-    const lines = (await sam.get<{ lines: Line[] }>(`/api/flux?entity=${e.id}&period=${P}`)).body.lines.filter((l) => l.exceeds && l.explanation?.status !== 'approved');
+    // an approved explanation counts only while it covers the variance as it stands (the decisions
+    // above moved some of them); a draft already waiting for the current figures needs no second one
+    type Line = { code: string; exceeds: boolean; explanation: { status: string; stale: boolean } | null; draft: { current: boolean } | null };
+    const lines = (await sam.get<{ lines: Line[] }>(`/api/flux?entity=${e.id}&period=${P}`)).body.lines.filter((l) => l.exceeds && !(l.explanation?.status === 'approved' && !l.explanation.stale) && !l.draft?.current);
     if (!lines.length) continue;
     const w = await sam.post<{ id: string }>('/api/flux/explanations', { entityId: e.id, periodKey: P, accountCode: lines[0]!.code, text: 'Thirteen unpaid September payroll days accrued at month-end; reverses on 1 October.' });
     expect(w.status, JSON.stringify(w.body)).toBe(200);
@@ -104,11 +106,15 @@ export async function closeTheMonth(t: TestApp, opts: { runAgents: boolean }): P
   for (const p of (await casey.get<{ items: Item[] }>(`/api/proposals?status=open&period=${P}&kind=flux_explanation`)).body.items) expect((await casey.post(`/api/proposals/${p.id}/approve`, {})).status).toBe(200);
   expect((await readiness()).unexplainedFlux).toBe(0);
 
-  // 4. the checklist, signed off in dependency order
-  type Task = { id: string; key: string; status: string };
+  // 4. the checklist, signed off in dependency order, each task by its named reviewer or someone with
+  //    at least that reviewer's authority, never by its owner (T-10): the Controller signs what she
+  //    reviews, and the CFO the journal-entry review the Controller owns
+  type Task = { id: string; key: string; status: string; signOff: { can: boolean } | null };
   for (let round = 0; round < 4; round++) {
-    const open = (await casey.get<{ tasks: Task[] }>(`/api/close/${P}`)).body.tasks.filter((x) => x.status === 'ready_for_review');
-    for (const task of open) await casey.post(`/api/close/tasks/${task.id}/signoff`, {});
+    for (const who of [casey, riley]) {
+      const mine = (await who.get<{ tasks: Task[] }>(`/api/close/${P}`)).body.tasks.filter((x) => x.signOff?.can);
+      for (const task of mine) expect((await who.post(`/api/close/tasks/${task.id}/signoff`, {})).status, task.key).toBe(200);
+    }
   }
 
   // 5. the package: the Controller asks the agent for it, the CFO approves the draft and signs it

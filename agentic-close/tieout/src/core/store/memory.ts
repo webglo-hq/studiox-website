@@ -16,11 +16,11 @@ import {
   type AuditAppend,
   type AuditRecord,
   type ColumnMeta,
+  type DirectoryKind,
   type FindOptions,
   type LineSum,
   type LineSumQuery,
   type Store,
-  type SystemTx,
   type TableMeta,
   type TableMetaMap,
   type Tx,
@@ -128,28 +128,15 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
     });
   }
 
-  async system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R> {
-    return this.serialise(async () => {
-      this.undo = [];
-      try {
-        const sys: SystemTx<M> = {
-          findGlobal: async (table, where, opts) => this.findRows(table, where as Where<Row>, opts as FindOptions<Row>, null) as never,
-          insertGlobal: async (table, row) => {
-            const tid = ((row as Row).tenant_id as string | undefined) ?? null;
-            return this.insertRow(table, row as Row, tid) as never;
-          },
-          updateGlobal: async (table, id, patch) => this.updateRow(table, id, patch as Row, null) as never,
-        };
-        const r = await fn(sys);
-        this.undo = null;
-        return r;
-      } catch (e) {
-        const undo = this.undo ?? [];
-        this.undo = null;
-        for (let i = undo.length - 1; i >= 0; i--) undo[i]!();
-        throw e;
-      }
-    });
+  async tenantIds(): Promise<string[]> {
+    return [...new Set(this.findRows('users', {} as Where<Row>, undefined, null).map((u) => u.tenant_id as string))].sort();
+  }
+
+  async tenantOf(kind: DirectoryKind, key: string): Promise<string | null> {
+    // the in-memory store has no row-level security; the lookup reads the keyed table directly
+    const [table, column] = { user_email: ['users', 'email'], session: ['sessions', 'id'], api_token: ['api_tokens', 'token_hash'], credential_link: ['credential_links', 'token_hash'] }[kind];
+    const row = this.findRows(table, { [column]: key } as Where<Row>, { limit: 1 }, null)[0];
+    return row ? (row.tenant_id as string) : null;
   }
 
   private serialise<R>(fn: () => Promise<R>): Promise<R> {
@@ -440,6 +427,7 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
     const je = this.table('journal_entries');
     const jl = this.table('journal_lines');
     const statuses = new Set(q.statuses ?? ['posted']);
+    const excluded = new Set(q.excludeEntryTypes ?? []);
     const entitySet = q.entityIds ? new Set(q.entityIds) : null;
     const accountSet = q.accountIds ? new Set(q.accountIds) : null;
     const groups = new Map<string, LineSum>();
@@ -448,7 +436,7 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
       : (je.indexes.get('tenant_id')?.get(tenantId) ?? []);
     for (const hid of headerIds) {
       const h = je.rows.get(hid);
-      if (!h || h.tenant_id !== tenantId || !statuses.has(h.status as string)) continue;
+      if (!h || h.tenant_id !== tenantId || !statuses.has(h.status as string) || excluded.has(h.entry_type as string)) continue;
       const date = h.posting_date as string;
       if (q.fromDate && date < q.fromDate) continue;
       if (q.toDate && date > q.toDate) continue;

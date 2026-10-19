@@ -37,7 +37,7 @@ Node 22.6+ is required. Every port is configurable and defaults to a random free
 | Priya Natarajan | AP Specialist | Vendor-side work |
 | Devon Park | FP&A Analyst | Read flux, draft explanations |
 | Alex Quinn | External Auditor | Read-only: ledger, runs, audit chain |
-| Avery Stone | IT Administrator | People, roles and entity scope (e.g. limit Sam to the UK subsidiary), SoD controls, security settings |
+| Avery Stone | IT Administrator | Invite people (they get a link; Avery never sees a password), roles and entity scope (e.g. limit Sam to the UK subsidiary), SoD controls, security settings. New approval authority and control changes wait for Casey or Riley under *Admin → Access requests*; invitation and reset links arrive in the *demo mailbox* on the sign-in page |
 
 ## Demo script (≈5 minutes for the tour, ≈10 to finish the close)
 
@@ -45,8 +45,9 @@ The same story, all the way to the locked period, runs as the end-to-end test su
 (`tests/e2e/demo-script.spec.ts`), against the server (on embedded PostgreSQL) and against the static
 demo.
 
-1. **Sign in as Jordan Lee.** *My close* shows the September 2026 close at **WD+2** with the agents not
-   yet run.
+1. **Sign in as Jordan Lee** (the sign-in cards say who does what; Jordan is where to start). *My
+   close* shows the September 2026 close at **WD+2** with the agents not yet run, *What's next for
+   you* (here: run the close agents) and a short guide to the whole close, with where this month is.
 2. **Run close agents.** Nine checklist tasks run in three dependency waves (coding before accruals,
    FX before eliminations) across both entities on the offline engine: about a second in the static
    demo, ten on the server's embedded Postgres. Small, certain items are applied within the
@@ -58,7 +59,8 @@ demo.
    so a different person has to approve it"* (SOD-02).
 5. **Sign out, sign in as Casey Morgan, approve the accrual.** It posts with its reason, evidence and
    approval trail; its reversal posts automatically on October 1.
-6. **The payroll accrual ($459,094)** shows *for CFO*: above the Controller's approval limit.
+6. **The payroll accrual ($413,182)** shows *for CFO*: above the Controller's approval limit. Keyboard:
+   `j`/`k` move through the inbox, `Enter` opens an item, `a` approves it.
 7. **Reconciliations → First Harbor → Open workbench.** The tie-out bridge: statement balance, deposit
    in transit, outstanding check, and the unexplained −$2,750 that keeps it from tying out.
 8. **Flux → 6310 Events and conferences.** Drivers that add up exactly to +$102,141; approve the
@@ -80,8 +82,9 @@ demo.
 14. **Explain the new variances (Sam).** Posting the payroll accrual pushed two payroll accounts past
     the threshold: write one explanation yourself (*Flux → the row → Your explanation*) and let the
     agent draft the other (*Draft 1 explanation*).
-15. **Casey** approves the explanations, *Review & sign*s each reconciliation, signs off the checklist and
-    clicks *Draft close package*.
+15. **Casey** approves the explanations, *Review & sign*s each reconciliation and signs off the checklist
+    tasks she reviews. She owns *Review journal entries for risk*, so **Riley** (its named reviewer)
+    signs that one off; then Casey clicks *Draft close package*.
 16. **Riley** approves the package draft in the inbox, *Finalize & sign*s it in the close cockpit, then
     **Lock September 2026**. A locked entity can be reopened only with a documented reason.
 
@@ -113,9 +116,10 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
   periods, maker-checker and the hash-chained audit log, which auditors can export and verify outside
   the app (`npm run verify:audit -- file.json`); row-level security isolates tenants.
 * **Enterprise auth**: scrypt, server-side sessions, CSRF + Origin checks, rate limits, RBAC (8 roles,
-  34 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
-  entity scoping, administrator resets (temporary passwords are replaced at the next sign-in), API
-  tokens for MCP.
+  35 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
+  entity scoping, invitations and password resets by single-use link (the administrator never sees
+  a credential; in the demo, links arrive in the demo mailbox on the sign-in page), a second person
+  approves any new approval authority or SoD change, API tokens for MCP.
 * **Integrations**: BAI2, ISO 20022 camt.053, OFX and CSV bank statements; card, ERP journal, AP and
   payroll files; idempotent by content hash with per-record provenance.
 * **MCP server** (`src/mcp`): Claude can read the close and start agent runs with a read-only token.

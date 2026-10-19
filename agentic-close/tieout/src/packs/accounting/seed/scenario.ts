@@ -9,7 +9,7 @@ import { writeBai2 } from '../../../integrations/bai2';
 import { writeCamt053 } from '../../../integrations/camt053';
 import { toCsv } from '../../../integrations/csv';
 import type { Db } from '../../../schema';
-import { PERMISSIONS, ROLES } from '../controls/permissions';
+import { LATE_PERMISSIONS, PERMISSIONS, ROLES } from '../controls/permissions';
 import { DEFAULT_SOD_RULES } from '../controls/sod';
 import { workdayDate } from '../close/workdays';
 import { convert } from '../ledger/money';
@@ -56,8 +56,9 @@ export async function seedScenario(db: Db, opts: SeedOptions): Promise<SeedSumma
   for (const r of ROLES) {
     const row = b.add('roles', { key: r.key, name: r.name, description: r.description, approval_limit_minor: r.approvalLimitMinor, is_system: true });
     roleIds.set(r.key, row.id);
-    for (const p of r.permissions) b.add('role_permissions', { role_id: row.id, permission_id: p });
+    for (const p of r.permissions) if (!LATE_PERMISSIONS.has(p)) b.add('role_permissions', { role_id: row.id, permission_id: p });
   }
+  for (const r of ROLES) for (const p of r.permissions.filter((x) => LATE_PERMISSIONS.has(x))) b.add('role_permissions', { id: `rp_${r.key}_${p.replace(/\W/g, '_')}`, role_id: roleIds.get(r.key)!, permission_id: p });
   for (const p of PEOPLE) {
     const u = b.add('users', { email: p.email, display_name: p.name, title: p.title, password_hash: await opts.hashPassword(opts.demoPassword), status: 'active', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: '2025-08-01T12:00:00.000Z' });
     b.userId.set(p.key, u.id);
@@ -443,7 +444,8 @@ function yearEndClose(st: HistoryState, pk: string) {
       }
     if (!lines.length) continue;
     lines.push(net > 0 ? { account: '3200', debit: net } : { account: '3200', credit: -net });
-    b.je({ entity: e.code, date: periodEnd(pk), type: 'adjusting', memo: `FY${pk.slice(0, 4)} year-end close: income statement to retained earnings`, source: 'system', sourceRef: `YEC-${pk.slice(0, 4)}`, preparedBy: 'system:year-end', approvedBy: b.user('casey'), route: 'system', lines });
+    // a closing entry: it moves the year's profit to retained earnings and is not December activity
+    b.je({ entity: e.code, date: periodEnd(pk), type: 'closing', memo: `FY${pk.slice(0, 4)} year-end close: income statement to retained earnings`, source: 'system', sourceRef: `YEC-${pk.slice(0, 4)}`, preparedBy: 'system:year-end', approvedBy: b.user('casey'), route: 'system', lines });
   }
 }
 
@@ -544,7 +546,7 @@ function budgets(st: HistoryState) {
       const a = plCodes.get(l.account_id);
       if (!a) continue;
       const h = headers.get(l.journal_entry_id)!;
-      if (h.entity_id !== entId || h.entry_type === 'opening' || (h.source_ref as string | null)?.startsWith('YEC-') || (h.posting_date as string) >= `${SCENARIO.closeKey}-01`) continue;
+      if (h.entity_id !== entId || h.entry_type === 'opening' || h.entry_type === 'closing' || (h.posting_date as string) >= `${SCENARIO.closeKey}-01`) continue;
       const k = `${a.code}|${l.department ?? ''}`;
       const natural = a.cls === 'revenue' ? (l.credit_minor ?? 0) - (l.debit_minor ?? 0) : (l.debit_minor ?? 0) - (l.credit_minor ?? 0);
       sums.set(k, (sums.get(k) ?? 0) + natural);

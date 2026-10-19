@@ -6,6 +6,7 @@
 4. Trial balance per entity (functional currency).
 5. Variance commentary (approved explanations; pending ones marked).
 6. Reconciliation status: bank, AP, AR, with preparer, reviewer and unreconciled amount.
-7. Open items: proposals awaiting a decision.
+7. Open items: proposals awaiting a decision, and open reconciling exceptions (an unexplained bank
+   item, a bank or book error), each in its own currency.
 8. Agent activity: runs, proposals, auto-applied by policy, cost.
 9. Sign-offs: preparer (Controller) and approver (CFO).

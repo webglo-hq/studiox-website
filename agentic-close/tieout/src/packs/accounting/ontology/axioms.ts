@@ -58,7 +58,9 @@ export interface RecFacts {
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 const fmt = (minor: number) => `${minor < 0 ? '-' : ''}${(Math.abs(minor) / 100).toFixed(2)}`;
-const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening']);
+/** approval limits are set, and compared, in US dollars (at the closing rate) */
+const usd = (minor: number) => `${minor < 0 ? '−' : ''}$${(Math.abs(minor) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening', 'closing']);
 
 const A = <F>(a: Axiom<F>) => a;
 
@@ -102,6 +104,17 @@ export const AXIOMS = [
     plainEnglish: 'Across the whole ledger, debit balances equal credit balances — so Assets = Liabilities + Equity.',
     citations: ['pacioli1494', 'conceptual-framework'],
     check: (f) => (f.debits !== undefined && f.credits !== undefined && f.debits !== f.credits ? [`trial balance out by ${fmt(f.debits - f.credits)}`] : []),
+  }),
+  // ---------------------------------------------------------------- statements
+  A<{ statement?: string; netIncomeMinor?: number; ledgerNetIncomeMinor?: number }>({
+    id: 'AX-FS-01', title: 'Income statement ties to the ledger', appliesTo: ['tie:IncomeStatement'], severity: 'error', enforcedBy: ['ontology', 'runtime'],
+    formal: '∀e, p: netIncome(IS(e, p)) = −Σ_{l ∈ lines(e, p), class(account(l)) ∈ {revenue, expense}, type(entry(l)) ≠ closing} (debit(l) − credit(l))',
+    plainEnglish: 'Net income on every income statement equals the income and expenses posted in the ledger for that period (year-end closing entries excluded). Presentation may regroup amounts, never change the total.',
+    citations: ['conceptual-framework', 'usgaap-taxonomy'],
+    check: (f) =>
+      f.netIncomeMinor !== undefined && f.ledgerNetIncomeMinor !== undefined && f.netIncomeMinor !== f.ledgerNetIncomeMinor
+        ? [`${f.statement ?? 'the income statement'} shows net income ${fmt(f.netIncomeMinor)} but the ledger shows ${fmt(f.ledgerNetIncomeMinor)}`]
+        : [],
   }),
   // ---------------------------------------------------------------- immutability
   A<{ before?: { status: string } ; changed?: readonly string[] }>({
@@ -223,7 +236,7 @@ export const AXIOMS = [
     formal: 'approve(u, x) ⇒ amount(x) ≤ approvalLimit(role(u))',
     plainEnglish: 'You can only approve amounts within your role’s approval limit; larger items escalate.',
     citations: ['coso2013'],
-    check: (f) => (f.amountMinor !== undefined && f.limitMinor !== undefined && f.limitMinor !== null && f.amountMinor > f.limitMinor ? [`amount ${fmt(f.amountMinor)} exceeds your approval limit of ${fmt(f.limitMinor)}`] : []),
+    check: (f) => (f.amountMinor !== undefined && f.limitMinor !== undefined && f.limitMinor !== null && f.amountMinor > f.limitMinor ? [`${usd(f.amountMinor)} is above your approval limit of ${usd(f.limitMinor)}`] : []),
   }),
   // ---------------------------------------------------------------- reconciliation
   A<RecFacts>({
@@ -347,12 +360,12 @@ export const AXIOMS = [
     },
   }),
   // ---------------------------------------------------------------- flux
-  A<{ lines?: readonly { exceeds_threshold: boolean; status: string; account: string }[] }>({
+  A<{ lines?: readonly { exceeds_threshold: boolean; status: string; account: string; stale?: boolean }[] }>({
     id: 'AX-FLX-01', title: 'Significant variances are explained', appliesTo: ['tie:VarianceAnalysis'], severity: 'error', enforcedBy: ['runtime', 'ui'],
-    formal: '∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ explains(x, v)',
-    plainEnglish: 'Every variance over both thresholds needs an approved explanation before the period can be locked.',
+    formal: '∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ covers(x) = (current(v), comparative(v))',
+    plainEnglish: 'Every variance over both thresholds needs an approved explanation of the variance as it stands before the period can be locked. A later posting that moves the figures puts the explanation out of date.',
     citations: ['pcaob-as2105'],
-    check: (f) => (f.lines ?? []).filter((l) => l.exceeds_threshold && l.status !== 'approved').map((l) => `variance on ${l.account} has no approved explanation`),
+    check: (f) => (f.lines ?? []).filter((l) => l.exceeds_threshold && (l.status !== 'approved' || l.stale)).map((l) => (l.status === 'approved' ? `the explanation of ${l.account} is out of date: the ledger has moved the variance since it was approved` : `variance on ${l.account} has no approved explanation`)),
   }),
   A<{ varianceMinor?: number; driverMinors?: readonly number[] }>({
     id: 'AX-FLX-02', title: 'Drivers reconcile to the variance', appliesTo: ['tie:VarianceExplanation'], severity: 'warning', enforcedBy: ['ontology', 'runtime'],
@@ -381,18 +394,21 @@ export const AXIOMS = [
     citations: ['apqc-close'],
     check: (f) => (f.status === 'done' && (f.dependencyStatuses ?? []).some((s) => !['done', 'skipped'].includes(s)) ? ['finish the prerequisite tasks first'] : []),
   }),
-  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean }>({
+  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean; untiedStatements?: number; stalePackage?: boolean }>({
     id: 'AX-CL-02', title: 'Lock only a finished close', appliesTo: ['tie:LockedPeriod', 'tie:FinancialClose'], severity: 'error', enforcedBy: ['runtime', 'ui'],
-    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ ∃ final ClosePackage(p)',
-    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained and a close package exists.',
+    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p) matching the ledger and the current explanations',
+    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and an approved close package still matches the books.',
     citations: ['sox404', 'coso2013'],
     check: (f) => {
       const out: string[] = [];
-      if ((f.pendingProposals ?? 0) > 0) out.push(`${f.pendingProposals} proposals still need a decision`);
-      if ((f.openRecs ?? 0) > 0) out.push(`${f.openRecs} reconciliations are not reviewed`);
-      if ((f.unexplainedFlux ?? 0) > 0) out.push(`${f.unexplainedFlux} significant variances lack an approved explanation`);
-      if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close tasks are not done`);
+      const one = (n: number | undefined) => n === 1;
+      if ((f.pendingProposals ?? 0) > 0) out.push(`${f.pendingProposals} ${one(f.pendingProposals) ? 'proposal still needs' : 'proposals still need'} a decision`);
+      if ((f.openRecs ?? 0) > 0) out.push(`${f.openRecs} ${one(f.openRecs) ? 'reconciliation is' : 'reconciliations are'} not reviewed`);
+      if ((f.unexplainedFlux ?? 0) > 0) out.push(`${f.unexplainedFlux} significant ${one(f.unexplainedFlux) ? 'variance lacks' : 'variances lack'} an approved explanation`);
+      if ((f.untiedStatements ?? 0) > 0) out.push(`${f.untiedStatements} income statement${f.untiedStatements === 1 ? ' does' : 's do'} not tie to the ledger (AX-FS-01)`);
+      if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close ${one(f.openTasks) ? 'task is' : 'tasks are'} not done`);
       if (f.finalPackage === false) out.push('generate the close package first');
+      else if (f.stalePackage) out.push('the approved close package no longer matches the books; generate a new version and approve it');
       return out;
     },
   }),

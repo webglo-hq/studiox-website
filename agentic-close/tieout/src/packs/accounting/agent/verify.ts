@@ -7,10 +7,11 @@ import type { RunContext } from '../../../core/agent/runtime';
 import type { ProposalDraft, VerificationResult } from '../../../core/agent/types';
 import type { AxiomOutcome } from '../../../core/ontology/types';
 import { periodKeyOf } from '../../../core/util/time';
-import { evaluateEntry, type JournalDraftInput } from '../ledger/journal';
+import { evaluateEntry, reversalLines, type JournalDraftInput } from '../ledger/journal';
 import { closeOntology } from '../ontology';
 import type { AccountingServices } from '../services';
-import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, PAYLOAD_SCHEMAS, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
+import { covers } from '../services/flux';
+import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, money, PAYLOAD_SCHEMAS, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
 
 const ok = (check: string, message: string, axiomId?: string): VerificationResult => ({ check, axiomId, passed: true, severity: 'info', message });
 const fail = (check: string, message: string, axiomId?: string, severity: 'error' | 'warning' = 'error'): VerificationResult => ({ check, axiomId, passed: false, severity, message });
@@ -31,6 +32,7 @@ export function jeInput(p: JePayload, preparedBy: string, extra: Partial<Journal
     autoReverseOn: p.autoReverseOn ?? null,
     counterpartyEntityId: p.counterpartyEntityId ?? null,
     sourceRef: p.sourceRef ?? null,
+    reversesJeId: p.reversesJeId ?? null,
     ...extra,
   };
 }
@@ -60,6 +62,17 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       }
       if (p.entryType === 'accrual') out.push(fromOutcome(onto.check('AX-ACR-02', { evidenceKinds: draft.evidence.filter((e) => e.kind === 'record' || e.kind === 'source_document').map((e) => e.refType ?? e.kind) })));
       if (p.fx) out.push(fromOutcome(onto.check('AX-FX-01', { foreignMinor: p.fx.foreignMinor, closingRate: p.fx.closingRate, revaluedFunctionalMinor: p.fx.revaluedFunctionalMinor })));
+      if (p.reversesJeId) {
+        // a reversal cancels the posted entry exactly, once (AX-IM-02): never the drafter's version of it
+        const orig = await tx.get('journal_entries', p.reversesJeId);
+        const already = orig ? await tx.findOne('journal_entries', { reverses_je_id: orig.id }) : undefined;
+        const mirror = orig ? reversalLines(orig, await tx.find('journal_lines', { journal_entry_id: orig.id }), chart) : [];
+        const key = (l: { account: string; debit?: number; credit?: number; department?: string | null; location?: string | null; project?: string | null; product_class?: string | null }) => [l.account, l.debit ?? 0, l.credit ?? 0, l.department ?? '', l.location ?? '', l.project ?? '', l.product_class ?? ''].join('|');
+        const same = mirror.map(key).sort().join('\n') === p.lines.map(key).sort().join('\n');
+        if (!orig || orig.entity_id !== p.entityId || orig.status !== 'posted') out.push(fail('Reverses a posted entry', orig ? `${orig.je_number} is ${orig.status}` : 'the entry to reverse does not exist', 'AX-IM-02'));
+        else if (already) out.push(fail('Reverses a posted entry', `${orig.je_number} is already reversed by ${already.je_number}`, 'AX-IM-02'));
+        else out.push(same ? ok('Reversal mirrors the entry', `${orig.je_number}, line for line`, 'AX-IM-02') : fail('Reversal mirrors the entry', `the lines do not cancel ${orig.je_number} exactly`, 'AX-IM-02'));
+      }
       for (const id of p.dependsOnProposalIds ?? []) {
         const dep = await tx.get('proposals', id);
         out.push(dep ? ok('Prerequisite proposal exists', `${dep.ref} (${dep.status})`) : fail('Prerequisite proposal exists', `Proposal ${id} not found`));
@@ -91,7 +104,11 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       const p = CodingPayloadSchema.parse(draft.payload);
       const t = await tx.get('card_transactions', p.target.id);
       if (!t) out.push(fail('Card transaction exists', p.target.id));
-      else out.push(t.status === 'pending_coding' ? ok('Still waiting for coding', `${t.merchant_name} ${t.txn_date}`) : fail('Still waiting for coding', `status is ${t.status}`));
+      else {
+        out.push(t.status === 'pending_coding' ? ok('Still waiting for coding', `${t.merchant_name} ${t.txn_date}`) : fail('Still waiting for coding', `status is ${t.status}`));
+        // the charge decides the amount; a drafter that restates it differently is wrong about the charge
+        out.push(t.amount_minor === p.amountMinor ? ok('Amount matches the card charge', money(t.amount_minor, t.currency)) : fail('Amount matches the card charge', `the charge is ${money(t.amount_minor, t.currency)}, not ${money(p.amountMinor, t.currency)}`));
+      }
       const a = chart.tryAccount(p.accountCode);
       if (!a) out.push(fail('Account exists', p.accountCode, 'AX-AC-01'));
       else {
@@ -138,6 +155,10 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       const p = FluxPayloadSchema.parse(draft.payload);
       out.push(chart.tryAccount(p.accountCode) ? ok('Account exists', p.accountCode) : fail('Account exists', p.accountCode));
       out.push(p.currentMinor - p.comparativeMinor === p.varianceMinor ? ok('Variance arithmetic', 'current − comparative = variance') : fail('Variance arithmetic', 'variance does not equal current − comparative'));
+      // the explanation is about the variance as the ledger has it now, not figures the drafter supplied
+      const live = await svc.flux.line(p.entityId, p.periodKey, p.accountCode, p.comparison);
+      const ccy = chart.entity(p.entityId).functional_currency;
+      out.push(live && covers(p, live) ? ok('Figures match the ledger', `${p.accountCode} as it stands`, 'AX-FLX-01') : fail('Figures match the ledger', live ? `the ledger shows ${money(live.currentMinor, ccy)} this month against ${money(live.comparativeMinor, ccy)}, not the figures given; restate them from flux.compute` : 'the account has no activity to explain', 'AX-FLX-01'));
       out.push(fromOutcome(onto.check('AX-FLX-02', { varianceMinor: p.varianceMinor, driverMinors: p.drivers.map((d) => d.amountMinor) })));
       out.push(p.text.trim().length >= 20 ? ok('Explanation is substantive', `${p.text.length} characters`, 'AX-FLX-01') : fail('Explanation is substantive', 'too short', 'AX-FLX-01'));
       break;

@@ -5,4 +5,4 @@ export type { PolicyThresholds, PolicyMapping, PolicyRule } from '../core/skills
 export type { EvalCaseResult } from '../core/skills/eval-types';
 export type { RunBudget, RunSummary, InjectionFlag, EvidenceRef, VerificationResult, ProposalPayload } from '../core/agent/types';
 export type { ImportError } from '../integrations/types';
-export type { MaterialitySettings, DimensionKey, FluxDriver, SodRuleConfig, ClosePackageContent } from '../packs/accounting/model/types';
+export type { MaterialitySettings, DimensionKey, FluxDriver, SodRuleConfig, ClosePackageContent, AccessChange } from '../packs/accounting/model/types';

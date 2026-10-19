@@ -2,14 +2,19 @@
  * Idempotent imports with provenance: the raw file is stored once (content hash), every record
  * keeps its source document and line, re-imports are recognised, and duplicate records (same
  * external id) are skipped. Bank memos are scanned for instruction-like text on the way in.
+ *
+ * Imports fail closed: a file with an unreadable line, a statement whose balances do not tie, a
+ * statement for an account this connector does not feed, or a record the importer cannot place
+ * (an unknown card or vendor) is refused as a whole, with every problem listed. Nothing is ever
+ * guessed (no default sign, no fallback account) and nothing is half-imported.
  */
 import { scanText } from '../core/agent/injection';
 import { audit } from '../core/audit/audit';
 import { notFound, validation } from '../core/util/errors';
 import { sha256Hex } from '../core/util/hash';
-import type { ImportBatchRow } from '../schema';
+import type { BankAccountRow, ConnectorRow, DbTx, ImportBatchRow } from '../schema';
 import { adapter } from '../integrations/adapters';
-import type { ImportError } from '../integrations/types';
+import { ImportRejected, type ImportError, type ParsedBankStatement } from '../integrations/types';
 import type { AppContext, RequestUser } from './context';
 import { assertCanActOn, requirePermission } from './context';
 
@@ -47,7 +52,17 @@ export async function importFile(ctx: AppContext, u: RequestUser, connectorKey: 
     try {
       parsed = ad.parse(content);
     } catch (e) {
-      throw validation(`Could not read the file as ${ad.name}: ${(e as Error).message}`);
+      throw validation(`Nothing was imported: the file could not be read as ${ad.name}. ${(e as Error).message}`, e instanceof ImportRejected ? { problems: e.problems } : {});
+    }
+    // every record must have a home before anything is stored
+    const homes = parsed.kind === 'bank_statement' ? await statementAccounts(tx, connector, parsed.statements) : [];
+    if (parsed.kind === 'card_transactions') {
+      const cards = new Set((await tx.find('cards', connector.entity_id ? { entity_id: connector.entity_id } : {})).map((c) => c.last4));
+      refuse(parsed.transactions.filter((t) => !cards.has(t.cardLast4)).map((t) => ({ line: t.sourceLine, message: `no card ending ${t.cardLast4}` })));
+    }
+    if (parsed.kind === 'bills') {
+      const vendors = new Set((await tx.find('vendors', {})).filter((v) => v.entity_id).map((v) => v.code));
+      refuse(parsed.bills.filter((b) => !vendors.has(b.vendorCode)).map((b) => ({ line: b.sourceLine, message: `unknown vendor ${b.vendorCode}` })));
     }
     const doc = await tx.insert('source_documents', { connector_id: connector.id, kind: parsed.kind, filename: safeName, mime: ad.mime, content, content_hash: hash, size_bytes: size, received_at: now, uploaded_by: u.actor.id });
     const batch = await tx.insert('import_batches', { connector_id: connector.id, source_document_id: doc.id, status: 'processing', records_total: 0, records_created: 0, records_skipped: 0, records_failed: 0, errors: [], imported_by: u.actor.id, started_at: now, finished_at: null });
@@ -56,30 +71,24 @@ export async function importFile(ctx: AppContext, u: RequestUser, connectorKey: 
     let total = 0;
     const errors: ImportError[] = [];
     if (parsed.kind === 'bank_statement') {
-      const st = parsed.statement;
-      errors.push(...st.warnings);
-      const accounts = await tx.find('bank_accounts', connector.entity_id ? { entity_id: connector.entity_id } : {});
-      const ba = accounts.find((a) => st.accountNumber.endsWith(a.account_last4) || String(connector.config.bankLast4 ?? '') === a.account_last4) ?? accounts[0];
-      if (!ba) throw validation('No bank account matches this statement.');
-      for (const t of st.transactions) {
-        total++;
-        if (await tx.findOne('bank_transactions', { bank_account_id: ba.id, external_id: t.externalId })) {
-          skipped++;
-          continue;
+      for (const [st, ba] of homes) {
+        errors.push(...st.warnings);
+        for (const t of st.transactions) {
+          total++;
+          if (await tx.findOne('bank_transactions', { bank_account_id: ba.id, external_id: t.externalId })) {
+            skipped++;
+            continue;
+          }
+          await tx.insert('bank_transactions', { entity_id: ba.entity_id, bank_account_id: ba.id, txn_date: t.bookingDate, value_date: t.valueDate, amount_minor: t.amountMinor, currency: ba.currency, description: t.description.slice(0, 500), counterparty: t.counterparty, reference: t.reference, type_code: t.typeCode, status: 'unmatched', injection_suspected: scanText('description', t.description).length > 0, import_batch_id: batch.id, source_document_id: doc.id, source_line: t.sourceLine, external_id: t.externalId });
+          created++;
         }
-        await tx.insert('bank_transactions', { entity_id: ba.entity_id, bank_account_id: ba.id, txn_date: t.bookingDate, value_date: t.valueDate, amount_minor: t.amountMinor, currency: ba.currency, description: t.description.slice(0, 500), counterparty: t.counterparty, reference: t.reference, type_code: t.typeCode, status: 'unmatched', injection_suspected: scanText('description', t.description).length > 0, import_batch_id: batch.id, source_document_id: doc.id, source_line: t.sourceLine, external_id: t.externalId });
-        created++;
       }
     } else if (parsed.kind === 'card_transactions') {
       errors.push(...parsed.warnings);
       const cards = await tx.find('cards', connector.entity_id ? { entity_id: connector.entity_id } : {});
       for (const t of parsed.transactions) {
         total++;
-        const card = cards.find((c) => c.last4 === t.cardLast4);
-        if (!card) {
-          errors.push({ line: t.sourceLine, message: `No card ending ${t.cardLast4}` });
-          continue;
-        }
+        const card = cards.find((c) => c.last4 === t.cardLast4)!;
         if (await tx.findOne('card_transactions', { external_id: t.externalId })) {
           skipped++;
           continue;
@@ -92,16 +101,12 @@ export async function importFile(ctx: AppContext, u: RequestUser, connectorKey: 
       const vendors = await tx.find('vendors', {});
       for (const b of parsed.bills) {
         total++;
-        const v = vendors.find((x) => x.code === b.vendorCode);
-        if (!v || !v.entity_id) {
-          errors.push({ line: b.sourceLine, message: `Unknown vendor ${b.vendorCode}` });
-          continue;
-        }
+        const v = vendors.find((x) => x.code === b.vendorCode && x.entity_id)!;
         if (await tx.findOne('bills', { external_id: b.externalId })) {
           skipped++;
           continue;
         }
-        const bill = await tx.insert('bills', { entity_id: v.entity_id, vendor_id: v.id, bill_number: b.billNumber, bill_date: b.billDate, due_date: b.dueDate, received_date: now.slice(0, 10), service_period_start: b.servicePeriodStart, service_period_end: b.servicePeriodEnd, currency: b.currency, total_minor: b.totalMinor, status: 'received', purchase_order_id: null, journal_entry_id: null, source_document_id: doc.id, import_batch_id: batch.id, external_id: b.externalId, description: b.description.slice(0, 300) });
+        const bill = await tx.insert('bills', { entity_id: v.entity_id!, vendor_id: v.id, bill_number: b.billNumber, bill_date: b.billDate, due_date: b.dueDate, received_date: now.slice(0, 10), service_period_start: b.servicePeriodStart, service_period_end: b.servicePeriodEnd, currency: b.currency, total_minor: b.totalMinor, status: 'received', purchase_order_id: null, journal_entry_id: null, source_document_id: doc.id, import_batch_id: batch.id, external_id: b.externalId, description: b.description.slice(0, 300) });
         const accounts = await tx.find('accounts', {});
         let n = 0;
         for (const l of b.lines) {
@@ -121,4 +126,32 @@ export async function importFile(ctx: AppContext, u: RequestUser, connectorKey: 
     await audit(tx, u.actor, ctx.clock, { action: 'import.complete', subjectType: 'import_batch', subjectId: batch.id, entityId: connector.entity_id, summary: `${safeName} via ${connector.name}: ${created} created, ${skipped} duplicates skipped`, data: { sourceDocumentId: doc.id, contentHash: hash } }, u.ip);
     return { batch: finished, duplicateOfBatchId: null, created, skipped, errors };
   });
+}
+
+/** Refuse the whole file when any record has no home. */
+function refuse(problems: ImportError[]) {
+  if (problems.length) throw validation(`Nothing was imported: ${new ImportRejected(problems).message}`, { problems });
+}
+
+/**
+ * The bank account each statement belongs to: the account the statement names, among this
+ * connector's entity's accounts, and the one the connector feeds when it is set up for one
+ * account. A statement in another currency, for an unknown account, or for another account than
+ * the connector's is refused; one without an account number goes to the connector's account only.
+ */
+async function statementAccounts(tx: DbTx, connector: ConnectorRow, statements: ParsedBankStatement[]): Promise<[ParsedBankStatement, BankAccountRow][]> {
+  const accounts = await tx.find('bank_accounts', connector.entity_id ? { entity_id: connector.entity_id } : {});
+  const fed = connector.config.bankLast4 ? accounts.find((a) => a.account_last4 === String(connector.config.bankLast4)) : undefined;
+  const problems: ImportError[] = [];
+  const out: [ParsedBankStatement, BankAccountRow][] = [];
+  for (const st of statements) {
+    const named = st.accountNumber ? accounts.filter((a) => st.accountNumber.endsWith(a.account_last4)) : [];
+    const ba = st.accountNumber ? named[0] : fed;
+    if (!ba || named.length > 1) problems.push({ line: null, message: st.accountNumber ? `the statement is for account …${st.accountNumber.slice(-4)}, which is not one of this connector's bank accounts` : 'the statement names no account, and the connector feeds no single account' });
+    else if (fed && fed.id !== ba.id) problems.push({ line: null, message: `the statement is for account …${ba.account_last4}; this connector feeds account …${fed.account_last4}` });
+    else if (st.currency && st.currency !== ba.currency) problems.push({ line: null, message: `the statement is in ${st.currency}; account …${ba.account_last4} is in ${ba.currency}` });
+    else out.push([st, ba]);
+  }
+  refuse(problems);
+  return out;
 }

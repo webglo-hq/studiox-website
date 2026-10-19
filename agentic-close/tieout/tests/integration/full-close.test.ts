@@ -9,6 +9,7 @@ import type { AuditRecord } from '../../src/core/store/types';
 import { SCENARIO } from '../../src/packs/accounting/seed/company';
 import { testApp, type TestApp } from '../support/app';
 import { closeTheMonth, type CloseOutcome } from '../support/full-close';
+import { readLedger } from '../support/ledger';
 
 const P = SCENARIO.closeKey;
 let t: TestApp;
@@ -24,6 +25,17 @@ describe('closing September end to end', () => {
     expect(out.decided).toBeGreaterThan(30);
     const view = (await out.people.casey!.get<{ periods: { status: string }[]; readiness: { ready: boolean } }>(`/api/close/${P}`)).body;
     expect(view.periods.every((p) => p.status === 'locked')).toBe(true);
+  });
+
+  it('TO-ACC-C1: the signed package’s net income equals the ledger, and says each statement was checked', async () => {
+    const view = (await out.people.casey!.get<{ packages: { id: string; status: string }[] }>(`/api/close/${P}`)).body;
+    const pkg = (await out.people.casey!.get<{ status: string; content: { kpis: { netIncomeMinor: number }; incomeStatement: { code: string; amountMinor: number }[]; statementChecks: { statement: string; netIncomeMinor: number; ledgerNetIncomeMinor: number }[] } }>(`/api/packages/${view.packages[0]!.id}`)).body;
+    expect(pkg.status).toBe('final');
+    const ledgerNi = await t.ctx.db.tx(t.fx.tenantId, async (tx) => (await readLedger(tx)).consolidatedPnl(P));
+    expect(pkg.content.kpis.netIncomeMinor).toBe(ledgerNi);
+    expect(pkg.content.incomeStatement.find((l) => l.code === 'IS.T.NI')!.amountMinor).toBe(ledgerNi);
+    expect(pkg.content.statementChecks.map((c) => c.statement)).toEqual(['BWL-US income statement', 'BWL-UK income statement', 'BWL-ELIM income statement', 'Consolidated income statement']);
+    expect(pkg.content.statementChecks.every((c) => c.netIncomeMinor === c.ledgerNetIncomeMinor)).toBe(true);
   });
 
   it('records the explanation a person wrote, approved by someone else', async () => {

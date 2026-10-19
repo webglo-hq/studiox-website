@@ -3,6 +3,9 @@
  * imports, erased at build time), so the UI and the API cannot drift apart silently.
  * The transport is swappable: real fetch on the server, an in-page call in the static demo.
  */
+import type * as Access from '../app/access';
+import type * as Credentials from '../app/credentials';
+import type * as Outbox from '../app/outbox';
 import type * as Q from '../app/queries';
 import type * as Close from '../packs/accounting/close/orchestrate';
 
@@ -33,10 +36,16 @@ export type AdminData = R<typeof Q.adminView>;
 export type ImportsData = R<typeof Q.importsView>;
 export type PackageData = R<typeof Q.closePackage>;
 export type CloseRunResult = Close.CloseRunResult;
+export type AccessRequests = R<typeof Access.listAccessRequests>;
+export type AccessRequest = AccessRequests['items'][number];
+export type LinkInfo = R<typeof Credentials.peekLink>;
+export type LinkSent = Credentials.LinkSent;
+export type Mailbox = R<typeof Outbox.mailbox>;
+export type MailMessage = R<typeof Outbox.openMail>;
 
 export interface AuthOptions {
   demo: boolean;
-  personas: { email: string; name: string; title: string; role: string }[];
+  personas: { email: string; name: string; title: string; role: string; part: string }[];
   demoPassword: string | null;
   demoPasswordHint: string | null;
   oidc: { enabled: boolean; issuer: string | null; note: string };

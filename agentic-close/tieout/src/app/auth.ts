@@ -30,13 +30,18 @@ function unauthenticated(msg = 'Please sign in.') {
   return new DomainError('unauthenticated', msg);
 }
 
+/** Sign-in emails are unique across tenants: the directory names the tenant, the row is read inside it. */
+export async function userByEmail(ctx: AppContext, email: string): Promise<UserRow | undefined> {
+  const tenantId = await ctx.db.tenantOf('user_email', email);
+  return tenantId ? ctx.db.tx(tenantId, (tx) => tx.findOne('users', { email })) : undefined;
+}
+
 export async function login(ctx: AppContext, email: string, password: string, meta: { ip: string | null; userAgent: string | null }): Promise<LoginResult> {
   const normalized = String(email ?? '').trim().toLowerCase();
   const ipGate = ctx.limiter.check(`login:ip:${meta.ip ?? '-'}`, 20, 60_000);
   const userGate = ctx.limiter.check(`login:user:${normalized}`, 8, 60_000);
   if (!ipGate.ok || !userGate.ok) throw new DomainError('rate_limited', 'Too many sign-in attempts. Wait a minute and try again.', { retryAfterSec: Math.max(ipGate.retryAfterSec, userGate.retryAfterSec) });
-  const users = await ctx.db.system((sys) => sys.findGlobal('users', { email: normalized }));
-  const user = users[0] as UserRow | undefined;
+  const user = await userByEmail(ctx, normalized);
   const now = ctx.clock.now();
   const generic = 'Email or password is incorrect, or the account is temporarily locked.';
   const ok = await ctx.hasher.verify(String(password ?? ''), user?.password_hash ?? null);
@@ -117,13 +122,15 @@ export async function oidcCallback(ctx: AppContext, params: { code: string | nul
   }
   const email = String(claims.email ?? '').trim().toLowerCase();
   if (!email || claims.email_verified !== true) throw unauthenticated('Your identity provider did not confirm a verified email address.');
-  const user = (await ctx.db.system((sys) => sys.findGlobal('users', { email })))[0] as UserRow | undefined;
-  if (!user || user.status !== 'active' || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
+  const user = await userByEmail(ctx, email);
+  if (!user || (user.status !== 'active' && user.status !== 'invited') || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
   return ctx.db.tx(user.tenant_id, async (tx) => {
     const now = ctx.clock.now().toISOString();
-    // signing in through the identity provider retires any temporary Tieout password
+    // signing in through the identity provider retires any temporary Tieout password, and it
+    // completes an invitation: the account becomes active and the invitation link stops working
     const retire = user.must_change_password ? { must_change_password: false, password_hash: await ctx.hasher.hash(`${secureToken(24)}-retired`) } : {};
-    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now, ...retire });
+    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now, ...retire, ...(user.status === 'invited' ? { status: 'active' as const } : {}) });
+    if (user.status === 'invited') for (const l of await tx.find('credential_links', { user_id: user.id, purpose: 'enrolment', used_at: { isNull: true }, revoked_at: { isNull: true } })) await tx.update('credential_links', l.id, { revoked_at: now });
     const actor = await resolveUserActor(tx, user.id);
     const tenant = await tx.get('tenants', user.tenant_id);
     const mfaRequired = (tenant?.settings.mfaRequiredRoles ?? []).some((r) => actor.roles.includes(r));
@@ -140,8 +147,8 @@ export async function oidcCallback(ctx: AppContext, params: { code: string | nul
 export async function authenticate(ctx: AppContext, token: string | null, opts: { ip: string | null; allowPendingMfa?: boolean; allowPasswordChange?: boolean }): Promise<Authenticated> {
   if (!token || token.length < 20 || token.length > 200) throw unauthenticated();
   const id = sha256Hex(token);
-  const rows = await ctx.db.system((sys) => sys.findGlobal('sessions', { id }));
-  const s = rows[0] as SessionRow | undefined;
+  const tenantId = await ctx.db.tenantOf('session', id);
+  const s = tenantId ? await ctx.db.tx(tenantId, (tx) => tx.get('sessions', id)) : undefined;
   const now = ctx.clock.now().toISOString();
   if (!s || s.revoked_at || s.idle_expires_at < now || s.absolute_expires_at < now) throw unauthenticated('Your session has ended. Please sign in again.');
   if (s.mfa_state === 'pending' && !opts.allowPendingMfa) throw new DomainError('unauthenticated', 'Finish two-factor verification first.', { mfa: 'pending' });
@@ -313,8 +320,9 @@ export async function revokeApiToken(ctx: AppContext, u: RequestUser, id: string
 
 export async function authenticateApiToken(ctx: AppContext, token: string): Promise<RequestUser> {
   if (!token.startsWith('tko_')) throw unauthenticated();
-  const rows = await ctx.db.system((sys) => sys.findGlobal('api_tokens', { token_hash: sha256Hex(token) }));
-  const t = rows[0];
+  const hash = sha256Hex(token);
+  const tenantId = await ctx.db.tenantOf('api_token', hash);
+  const t = tenantId ? await ctx.db.tx(tenantId, (tx) => tx.findOne('api_tokens', { token_hash: hash })) : undefined;
   const now = ctx.clock.now().toISOString();
   if (!t || t.revoked_at || t.expires_at < now) throw unauthenticated('Invalid or expired API token.');
   return ctx.db.tx(t.tenant_id, async (tx) => {

@@ -180,17 +180,19 @@ export interface PersonDef {
   email: string;
   title: string;
   roles: string[];
+  /** what this person does in the demo close, shown on their sign-in card */
+  part: string;
 }
 
 export const PEOPLE: PersonDef[] = [
-  { key: 'sam', name: 'Sam Rivera', email: 'sam@bramblewood.example', title: 'Staff Accountant', roles: ['staff_accountant'] },
-  { key: 'priya', name: 'Priya Natarajan', email: 'priya@bramblewood.example', title: 'AP Specialist', roles: ['ap_specialist'] },
-  { key: 'jordan', name: 'Jordan Lee', email: 'jordan@bramblewood.example', title: 'Senior Accountant', roles: ['senior_accountant'] },
-  { key: 'casey', name: 'Casey Morgan', email: 'casey@bramblewood.example', title: 'Controller', roles: ['controller'] },
-  { key: 'riley', name: 'Riley Chen', email: 'riley@bramblewood.example', title: 'CFO', roles: ['cfo'] },
-  { key: 'devon', name: 'Devon Park', email: 'devon@bramblewood.example', title: 'FP&A Analyst', roles: ['fpa_analyst'] },
-  { key: 'alex', name: 'Alex Quinn', email: 'alex@brightline-audit.example', title: 'External Auditor, Brightline Audit Partners', roles: ['auditor'] },
-  { key: 'avery', name: 'Avery Stone', email: 'avery@bramblewood.example', title: 'IT Administrator', roles: ['admin'] },
+  { key: 'sam', name: 'Sam Rivera', email: 'sam@bramblewood.example', title: 'Staff Accountant', roles: ['staff_accountant'], part: 'Certifies reconciliations and explains variances.' },
+  { key: 'priya', name: 'Priya Natarajan', email: 'priya@bramblewood.example', title: 'AP Specialist', roles: ['ap_specialist'], part: 'Owns vendor bills and the AP subledger.' },
+  { key: 'jordan', name: 'Jordan Lee', email: 'jordan@bramblewood.example', title: 'Senior Accountant', roles: ['senior_accountant'], part: 'Start here: runs the close agents.' },
+  { key: 'casey', name: 'Casey Morgan', email: 'casey@bramblewood.example', title: 'Controller', roles: ['controller'], part: 'Approves agent work and signs off the checklist.' },
+  { key: 'riley', name: 'Riley Chen', email: 'riley@bramblewood.example', title: 'CFO', roles: ['cfo'], part: 'Approves the large items, signs the package, locks the month.' },
+  { key: 'devon', name: 'Devon Park', email: 'devon@bramblewood.example', title: 'FP&A Analyst', roles: ['fpa_analyst'], part: 'Explains variances against budget.' },
+  { key: 'alex', name: 'Alex Quinn', email: 'alex@brightline-audit.example', title: 'External Auditor, Brightline Audit Partners', roles: ['auditor'], part: 'Read-only: checks the audit trail.' },
+  { key: 'avery', name: 'Avery Stone', email: 'avery@bramblewood.example', title: 'IT Administrator', roles: ['admin'], part: 'Invites people and manages access; approves nothing.' },
 ];
 
 export interface VendorDef {

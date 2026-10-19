@@ -14,8 +14,8 @@
       "@type": "owl:Ontology",
       "dcterms:title": "Tieout Close Ontology",
       "dcterms:description": "A formal, machine-readable ontology of the financial close: REA economic primitives, double-entry structure, multi-entity GL and subledgers, periods, accruals and deferrals, reconciliation, variance analysis, intercompany and FX, internal control (COSO 2013 / SOX 404), audit assertions and materiality, close management and AI-agent governance.",
-      "owl:versionInfo": "1.2.0",
-      "tie:contentHash": "55ef854508a6bc3a8fe8287965703c051a7cf9e36672d5c7c66ed6d62cc741c2"
+      "owl:versionInfo": "1.3.0",
+      "tie:contentHash": "4d9c1e8ae3e07ccd7a8b2a8e054472d0c322cdd2791575a46a435eb3a53be492"
     },
     {
       "@id": "https://tieout.example/ontology/close#Thing",
@@ -2245,7 +2245,9 @@
         "recurring",
         "reclass",
         "elimination",
-        "fx_revaluation"
+        "fx_revaluation",
+        "opening",
+        "closing"
       ]
     },
     {
@@ -2588,6 +2590,29 @@
       "skos:scopeNote": "Opening balances are audited once and then become history.",
       "skos:example": "Opening balances at 31 Aug 2025.",
       "tie:group": "entries"
+    },
+    {
+      "@id": "https://tieout.example/ontology/close#ClosingEntry",
+      "@type": "owl:Class",
+      "rdfs:label": "Closing entry",
+      "rdfs:subClassOf": [
+        {
+          "@id": "https://tieout.example/ontology/close#JournalEntry"
+        }
+      ],
+      "skos:definition": "The year-end entry that moves the year’s income and expense balances into retained earnings, leaving them at zero for the new year.",
+      "skos:scopeNote": "It transfers profit; it is not income or expense of the month it is dated in, so period income statements and variance analysis leave it out (AX-FS-01).",
+      "skos:example": "FY2025 close at 31 Dec 2025: income and expense accounts to 3200 Retained earnings.",
+      "skos:altLabel": [
+        "year-end close",
+        "closing entry"
+      ],
+      "tie:group": "entries",
+      "dcterms:source": [
+        {
+          "@id": "https://tieout.example/ontology/close#cite_conceptual-framework"
+        }
+      ]
     },
     {
       "@id": "https://tieout.example/ontology/close#AccountingPeriod",
@@ -6609,6 +6634,32 @@
       ]
     },
     {
+      "@id": "https://tieout.example/ontology/close#AX-FS-01",
+      "@type": "tie:Axiom",
+      "rdfs:label": "Income statement ties to the ledger",
+      "tie:formal": "∀e, p: netIncome(IS(e, p)) = −Σ_{l ∈ lines(e, p), class(account(l)) ∈ {revenue, expense}, type(entry(l)) ≠ closing} (debit(l) − credit(l))",
+      "skos:definition": "Net income on every income statement equals the income and expenses posted in the ledger for that period (year-end closing entries excluded). Presentation may regroup amounts, never change the total.",
+      "tie:severity": "error",
+      "tie:enforcedBy": [
+        "ontology",
+        "runtime"
+      ],
+      "tie:executable": true,
+      "tie:appliesTo": [
+        {
+          "@id": "https://tieout.example/ontology/close#IncomeStatement"
+        }
+      ],
+      "dcterms:source": [
+        {
+          "@id": "https://tieout.example/ontology/close#cite_conceptual-framework"
+        },
+        {
+          "@id": "https://tieout.example/ontology/close#cite_usgaap-taxonomy"
+        }
+      ]
+    },
+    {
       "@id": "https://tieout.example/ontology/close#AX-IM-01",
       "@type": "tie:Axiom",
       "rdfs:label": "Posted entries are immutable",
@@ -7265,8 +7316,8 @@
       "@id": "https://tieout.example/ontology/close#AX-FLX-01",
       "@type": "tie:Axiom",
       "rdfs:label": "Significant variances are explained",
-      "tie:formal": "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ explains(x, v)",
-      "skos:definition": "Every variance over both thresholds needs an approved explanation before the period can be locked.",
+      "tie:formal": "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ covers(x) = (current(v), comparative(v))",
+      "skos:definition": "Every variance over both thresholds needs an approved explanation of the variance as it stands before the period can be locked. A later posting that moves the figures puts the explanation out of date.",
       "tie:severity": "error",
       "tie:enforcedBy": [
         "runtime",
@@ -7363,8 +7414,8 @@
       "@id": "https://tieout.example/ontology/close#AX-CL-02",
       "@type": "tie:Axiom",
       "rdfs:label": "Lock only a finished close",
-      "tie:formal": "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ ∃ final ClosePackage(p)",
-      "skos:definition": "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained and a close package exists.",
+      "tie:formal": "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p) matching the ledger and the current explanations",
+      "skos:definition": "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and an approved close package still matches the books.",
       "tie:severity": "error",
       "tie:enforcedBy": [
         "runtime",

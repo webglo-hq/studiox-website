@@ -16,6 +16,10 @@ export type DbTx = Tx<DbTables, DbInserts>;
 export const ID_PREFIX: Record<TableName, string> = {
   schema_migrations: 'mig',
   tenants: 'ten',
+  tenant_directory: 'dir',
+  credential_links: 'lnk',
+  outbox_messages: 'out',
+  access_requests: 'acr',
   counters: 'ctr',
   users: 'usr',
   permissions: 'perm',

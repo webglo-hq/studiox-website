@@ -26,7 +26,7 @@ import { PEOPLE, SCENARIO } from '../../src/packs/accounting/seed/company';
 import { DEMO_TENANT_ID, seedScenario } from '../../src/packs/accounting/seed/scenario';
 import { accountingSkills, installAccountingSkills } from '../../src/packs/accounting/skills/install';
 import { testApp, TEST_PASSWORD } from '../support/app';
-import { storeContract } from '../support/contract';
+import { draft, storeContract } from '../support/contract';
 import { closeTheMonth } from '../support/full-close';
 import { pgTestEnv } from '../support/pg';
 
@@ -100,6 +100,72 @@ describe.skipIf(!env)('PostgreSQL 16 (real database)', () => {
     ).rejects.toThrow(/row-level security/);
   });
 
+  it('TO-DB-RLS: the application role cannot switch tenant isolation off for itself', async () => {
+    const seen = await app.transaction(async (q) => {
+      await q.query("SELECT set_config('tieout.bypass', 'on', true)"); // honoured before migration 0010
+      return Number((await q.query('SELECT count(*) AS n FROM journal_entries')).rows[0]!.n);
+    });
+    expect(seen).toBe(0);
+    const policies = await app.query("SELECT count(*) AS n FROM pg_policies WHERE policyname = 'tenant_isolation' AND (qual LIKE '%bypass%' OR with_check LIKE '%bypass%')");
+    expect(Number(policies.rows[0]!.n)).toBe(0);
+    // the only table without row-level security names a tenant for a lookup key, nothing more
+    const cols = await app.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'tenant_directory' ORDER BY column_name");
+    expect(cols.rows.map((r) => r.column_name)).toEqual(['id', 'tenant_id']);
+  });
+
+  it('TO-M1: posting holds its period: a period change waits for a posting in flight, and a posting after a lock is refused', async () => {
+    const asTenant = <R>(fn: (q: Parameters<Parameters<SqlDriver['transaction']>[0]>[0]) => Promise<R>) =>
+      app.transaction(async (q) => {
+        await q.query("SELECT set_config('tieout.tenant_id', $1, true)", [DEMO_TENANT_ID]);
+        return fn(q);
+      });
+    const period = (await asTenant((q) => q.query("SELECT p.id FROM periods p JOIN entities e ON e.id = p.entity_id WHERE p.period_key = '2026-09' AND e.code = 'BWL-US'"))).rows[0]!.id as string;
+    const riley = (await db.tx(DEMO_TENANT_ID, (tx) => tx.findOne('users', { email: PEOPLE.find((p) => p.key === 'riley')!.email })))!.id;
+    const postSql = "UPDATE journal_entries SET status = 'posted', posted_by = $2, posted_at = now() WHERE id = $1";
+    const settle = (p: Promise<unknown>) => p.then(() => 'done', (e: Error) => e.message);
+    const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    // 1. an entry is being posted: soft-closing its period waits until the posting commits
+    const first = await draft(db, { lines: [[2_500, 0], [0, 2_500]], period: 'open' });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const posting = asTenant(async (q) => {
+      await q.query(postSql, [first, riley]);
+      await held;
+    });
+    await pause(150);
+    let closedAt = 0;
+    const closing = asTenant((q) => q.query("UPDATE periods SET status = 'soft_closed' WHERE id = $1", [period])).then(() => (closedAt = Date.now()));
+    await pause(400);
+    expect(closedAt).toBe(0);
+    const releasedAt = Date.now();
+    release();
+    await posting;
+    await closing;
+    expect(closedAt).toBeGreaterThanOrEqual(releasedAt);
+
+    // 2. the period is being locked: a posting waits, then sees the lock and is refused
+    const second = await draft(db, { lines: [[3_500, 0], [0, 3_500]], period: 'open' });
+    let unlock!: () => void;
+    const locking = new Promise<void>((r) => (unlock = r));
+    const locker = asTenant(async (q) => {
+      await q.query("UPDATE periods SET status = 'locked' WHERE id = $1", [period]);
+      await locking;
+    });
+    await pause(150);
+    const late = settle(asTenant((q) => q.query(postSql, [second, riley])));
+    await pause(400);
+    unlock();
+    await locker;
+    expect(await late).toMatch(/AX-PD-01: cannot post adjusting entry .* into a locked period/);
+
+    // reopen September for the rest of this file
+    await asTenant(async (q) => {
+      await q.query("UPDATE periods SET status = 'soft_closed', status_reason = 'Reopened after the concurrency probe' WHERE id = $1", [period]);
+      await q.query("UPDATE periods SET status = 'open' WHERE id = $1", [period]);
+    });
+  });
+
   it('forbids rewriting history even with raw SQL as the application role', async () => {
     const asTenant = <R>(fn: (q: Parameters<Parameters<SqlDriver['transaction']>[0]>[0]) => Promise<R>) =>
       app.transaction(async (q) => {
@@ -114,7 +180,7 @@ describe.skipIf(!env)('PostgreSQL 16 (real database)', () => {
   it('runs the whole close with agents on PostgreSQL and keeps the audit chain intact', async () => {
     const clock = scenarioClock(SCENARIO.businessDate);
     const runtime = new AgentRuntime({ db, clock, pack: accountingPack, skills: accountingSkills(), llm: null, resolveActor: resolveUserActor });
-    const jordanId = await db.system(async (sys) => (await sys.findGlobal('users', { email: PEOPLE.find((p) => p.key === 'jordan')!.email }))[0]!.id as string);
+    const jordanId = (await db.tx(DEMO_TENANT_ID, (tx) => tx.findOne('users', { email: PEOPLE.find((p) => p.key === 'jordan')!.email })))!.id;
     const jordan = await db.tx(DEMO_TENANT_ID, (tx) => resolveUserActor(tx, jordanId));
     const result = await runCloseAgents({ db, runtime, clock }, { tenantId: DEMO_TENANT_ID, periodKey: SCENARIO.closeKey, requester: jordan });
     expect(result.tasks.every((t) => t.outcome === 'succeeded')).toBe(true);

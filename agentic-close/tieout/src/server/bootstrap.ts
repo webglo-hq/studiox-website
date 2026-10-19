@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { scrypt as nodeScryptCb, randomBytes } from 'node:crypto';
 import { createAppContext, type AppConfig, type AppContext } from '../app/context';
+import { startRunRecovery, type RunRecovery, type RunRecoveryOptions } from '../app/recovery';
 import { DEMO_SCRYPT, PasswordHasher, PRODUCTION_SCRYPT, type ScryptImpl } from '../core/auth/password';
 import { AnthropicProvider } from '../core/llm/anthropic';
 import type { MemoryStore } from '../core/store/memory';
@@ -30,6 +31,8 @@ export interface BootOptions {
   env?: NodeJS.ProcessEnv;
   root?: string;
   log?: (msg: string) => void;
+  /** resume agent runs a crashed process left behind, now and then every minute (the server does) */
+  recoverRuns?: boolean | RunRecoveryOptions;
 }
 
 export interface Booted {
@@ -38,6 +41,7 @@ export interface Booted {
   driver: SqlDriver | null;
   storeLabel: string;
   seeded: boolean;
+  recovery: RunRecovery | null;
   close: () => Promise<void>;
 }
 
@@ -95,8 +99,9 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     seeded = true;
   };
   if (demo) {
-    const existing = await db.system((sys) => sys.findGlobal('tenants', { id: DEMO_TENANT_ID }));
-    if (!existing.length) {
+    // a tenant can always read its own row (row-level security: tenants.id = the transaction's tenant)
+    const existing = await db.tx(DEMO_TENANT_ID, (tx) => tx.get('tenants', DEMO_TENANT_ID));
+    if (!existing) {
       log('seeding the fictional Bramblewood Labs demo (first run)…');
       const t0 = Date.now();
       await seedNow();
@@ -127,5 +132,17 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     log: (m, d) => log(`${m}${d ? ` ${JSON.stringify(d)}` : ''}`),
     resetDemo: snapshot ? async () => (db as unknown as MemoryStore<unknown>).restore(snapshot) : undefined,
   });
-  return { ctx, db, driver, storeLabel, seeded, close: async () => db.close() };
+  const recovery = opts.recoverRuns ? startRunRecovery(ctx, opts.recoverRuns === true ? {} : opts.recoverRuns) : null;
+  return {
+    ctx,
+    db,
+    driver,
+    storeLabel,
+    seeded,
+    recovery,
+    close: async () => {
+      recovery?.stop();
+      await db.close();
+    },
+  };
 }

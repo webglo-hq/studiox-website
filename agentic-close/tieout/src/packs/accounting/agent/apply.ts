@@ -13,6 +13,7 @@ import type { ProposalRow } from '../../../schema';
 import { approveAndPost, createJournalEntry, runAutoReversals } from '../ledger/journal';
 import type { ClosePackageContent } from '../model/types';
 import type { AccountingServices } from '../services';
+import { covers, staleExplanationMessage } from '../services/flux';
 import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
 import { jeInput } from './verify';
 
@@ -52,6 +53,11 @@ async function applyJournal(svc: AccountingServices, proposal: ProposalRow, p: J
   for (const id of p.dependsOnProposalIds ?? []) {
     const dep = await tx.get('proposals', id);
     if (!dep || dep.status !== 'applied') throw precondition(`Approve ${dep?.ref ?? id} first: this entry was computed assuming it is posted.`);
+  }
+  if (p.reversesJeId) {
+    // reversed once only (AX-IM-02): someone may have reversed it by hand since this was proposed
+    const already = await tx.findOne('journal_entries', { reverses_je_id: p.reversesJeId });
+    if (already) throw precondition(`It is already reversed by ${already.je_number}; reject this proposal.`);
   }
   const je = await createJournalEntry(await svc.ctx.ledger(), jeInput(p, proposal.prepared_by, { proposalId: proposal.id, agentRunId: proposal.run_id, idempotencyKey: `proposal:${proposal.id}` }), 'pending_approval');
   const posted = await post(svc, je.id, approver, `Proposal ${proposal.ref}`);
@@ -114,6 +120,7 @@ async function applyJournal(svc: AccountingServices, proposal: ProposalRow, p: J
       await tx.update('bank_transactions', bt.id, { status: 'matched' });
     }
   }
+  await svc.flux.retireOutdatedDrafts(posted.entity_id, periodKeyOf(posted.posting_date), `${proposal.ref} posted`);
   return { refType: 'journal_entry', refId: posted.id };
 }
 
@@ -151,6 +158,7 @@ async function applyCoding(svc: AccountingServices, proposal: ProposalRow, appro
   );
   const posted = await post(svc, je.id, approver, `Coding ${proposal.ref}`);
   await tx.update('card_transactions', t.id, { account_id: acct.id, department: p.department, coding_source: approver.route === 'human' ? 'human' : 'agent', coding_confidence: Number(proposal.confidence), status: 'posted', journal_entry_id: posted.id });
+  await svc.flux.retireOutdatedDrafts(posted.entity_id, periodKeyOf(posted.posting_date), `${proposal.ref} posted`);
   return { refType: 'journal_entry', refId: posted.id };
 }
 
@@ -201,15 +209,19 @@ async function applyFlux(svc: AccountingServices, proposal: ProposalRow, approve
   const period = await svc.ctx.period(p.entityId, p.periodKey);
   const chart = await svc.ctx.chart();
   const acct = chart.account(p.accountCode);
+  // an explanation is approved for the variance as it stands, never for figures the ledger has left behind
+  const live = await svc.flux.line(p.entityId, p.periodKey, p.accountCode, p.comparison);
+  if (!live || !covers(p, live)) throw precondition(staleExplanationMessage(p, live, chart.entity(p.entityId).functional_currency));
   let fa = await tx.findOne('flux_analyses', { entity_id: p.entityId, period_id: period.id, comparison: p.comparison });
   const now = svc.ctx.clock.now().toISOString();
   if (!fa) fa = await tx.insert('flux_analyses', { entity_id: p.entityId, period_id: period.id, comparison: p.comparison, threshold_abs_minor: p.thresholdAbsMinor, threshold_pct: p.thresholdPct, status: 'in_review', agent_run_id: proposal.run_id, generated_at: now, approved_by: null, approved_at: null });
+  const figures = { current_minor: p.currentMinor, comparative_minor: p.comparativeMinor, budget_minor: p.budgetMinor, variance_minor: p.varianceMinor, variance_pct: p.variancePct, materiality: p.materiality, drivers: p.drivers };
   let line = await tx.findOne('flux_lines', { flux_analysis_id: fa.id, account_id: acct.id });
-  if (!line)
-    line = await tx.insert('flux_lines', { flux_analysis_id: fa.id, account_id: acct.id, current_minor: p.currentMinor, comparative_minor: p.comparativeMinor, budget_minor: p.budgetMinor, variance_minor: p.varianceMinor, variance_pct: p.variancePct, exceeds_threshold: true, materiality: p.materiality, drivers: p.drivers, status: 'needs_explanation' });
+  if (!line) line = await tx.insert('flux_lines', { flux_analysis_id: fa.id, account_id: acct.id, ...figures, exceeds_threshold: true, status: 'approved' });
+  else await tx.update('flux_lines', line.id, { ...figures, status: 'approved' });
   const version = (await tx.count('flux_explanations', { flux_line_id: line.id })) + 1;
-  const ex = await tx.insert('flux_explanations', { flux_line_id: line.id, version, text: p.text, drivers: p.drivers, author_type: 'agent', author_id: proposal.prepared_by, proposal_id: proposal.id, status: 'approved', approved_by: approver.id, approved_at: now, rejection_reason: null, created_at: now });
-  await tx.update('flux_lines', line.id, { status: 'approved' });
+  const ex = await tx.insert('flux_explanations', { flux_line_id: line.id, version, text: p.text, drivers: p.drivers, author_type: proposal.prepared_by.startsWith('agent:') ? 'agent' : 'user', author_id: proposal.prepared_by, proposal_id: proposal.id, status: 'approved', approved_by: approver.id, approved_at: now, rejection_reason: null, created_at: now, covered_current_minor: p.currentMinor, covered_comparative_minor: p.comparativeMinor });
+  await svc.flux.supersedeDrafts(p.entityId, p.periodKey, p.accountCode, { except: proposal.id, by: approver.id, reason: `Replaced by ${proposal.ref}, approved for the variance as it stands.` });
   return { refType: 'flux_explanation', refId: ex.id };
 }
 

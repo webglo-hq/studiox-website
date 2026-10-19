@@ -8,7 +8,9 @@
  * Durability: every action is recorded as it completes. A crashed run is resumed by replaying
  * its brain against the recorded tool results (deterministic replay, Temporal-style); proposals
  * are idempotent by key, so replays never duplicate work. Live (LLM) runs persist their
- * transcript append-only and continue from the last message.
+ * transcript append-only and continue from the last message. A recorded result is replayed only
+ * for the same call: the model's tool_use id (live) or position, tool and input (offline).
+ * Servers resume runs left behind by a crashed process on their own (recoverStale).
  *
  * Least privilege: tools are limited to the skill's `allowed-tools` AND the requesting user's
  * permissions ∩ the manifest's permissions. No tool can approve, post or pay (AX-AGT-03).
@@ -20,6 +22,7 @@ import { fromWireToolName, toWireToolName, type LlmBlock, type LlmMessage, type 
 import { currentPolicyRow, toEffective } from '../skills/policy';
 import type { LoadedSkill, SkillRegistry } from '../skills/skillmd';
 import { DomainError, forbidden, precondition } from '../util/errors';
+import { sha256Hex } from '../util/hash';
 import { canonicalJson, type JsonValue } from '../util/json';
 import type { Clock } from '../util/time';
 import type { AgentRunRow, Db, DbTx, ProposalRow } from '../../schema';
@@ -64,6 +67,8 @@ export interface DomainPack<Svc> {
   verify(svc: Svc, draft: ProposalDraft, run: RunContext): Promise<VerificationResult[]>;
   assess(svc: Svc, draft: ProposalDraft, run: RunContext): Promise<Assessment>;
   apply(svc: Svc, proposal: ProposalRow, approver: { id: string; route: 'human' | 'policy'; policyRef?: string }): Promise<ApplyResult | null>;
+  /** Runs in the unit of work that stores a new proposal: retire earlier proposals it replaces. */
+  afterPropose?(svc: Svc, proposal: ProposalRow): Promise<void>;
   offlineBrains: Readonly<Record<string, OfflineBrain>>;
   taskPrompt(skill: LoadedSkill, input: SkillRunInput): string;
   /** Permission the agent needs to prepare a proposal of this kind (least privilege for offline brains too). */
@@ -120,7 +125,8 @@ interface ExecState {
   flags: InjectionFlag[];
   flaggedIds: Set<string>;
   summary: Required<Pick<RunSummary, 'proposals' | 'autoApplied' | 'suggested' | 'pendingApproval' | 'duplicates' | 'verificationFailures' | 'injectionFlags'>> & { byKind: Record<string, number>; plan: string[]; notes: string[] };
-  replayTools: Map<number, unknown>;
+  /** recorded results by call key (see callKey) */
+  replayTools: Map<string, unknown>;
   startedAt: number;
   replaying: boolean;
 }
@@ -181,22 +187,43 @@ export class AgentRuntime<Svc> {
     return this.execute(req.tenantId, run.id);
   }
 
-  /** Resume (or start) a run; safe to call repeatedly. */
+  /**
+   * Resume a run someone asks to resume; safe to call repeatedly. A run that is still working (its
+   * heartbeat moved in the last minute) is left alone, and the claim keeps a person's resume and the
+   * server's recovery from both running it.
+   */
   async resume(tenantId: string, runId: string): Promise<AgentRunRow> {
-    return this.execute(tenantId, runId);
+    const r = await this.db.tx(tenantId, (tx) => tx.get('agent_runs', runId));
+    if (!r) throw new DomainError('not_found', `Run ${runId} not found`);
+    const fresh = r.heartbeat_at && Date.parse(r.heartbeat_at) > this.deps.clock.now().getTime() - 60_000 && r.status === 'running';
+    if (TERMINAL.has(r.status) || fresh) return r;
+    const claimed = await this.db.tx(tenantId, (tx) => tx.updateWhere('agent_runs', { id: r.id, status: r.status, attempts: r.attempts }, { attempts: r.attempts + 1, heartbeat_at: this.deps.clock.now().toISOString() }));
+    if (!claimed) return (await this.db.tx(tenantId, (tx) => tx.get('agent_runs', runId)))!;
+    return this.execute(tenantId, runId, { claimed: true });
   }
 
-  /** Find runs left `running`/`queued` with a stale heartbeat (crashed process) and resume them. */
+  /**
+   * Find runs left `running`/`queued` by a crashed process (no heartbeat for `staleMs`) and resume
+   * them. Each run is claimed first by moving its attempt counter on, atomically: of two servers
+   * that find the same stale run, only one resumes it.
+   */
   async recoverStale(tenantId: string, staleMs = 60_000): Promise<string[]> {
     const cutoff = new Date(this.deps.clock.now().getTime() - staleMs).toISOString();
     const runs = await this.db.tx(tenantId, (tx) => tx.find('agent_runs', { status: { in: ['running', 'queued'] } }));
-    const stale = runs.filter((r) => !r.heartbeat_at || r.heartbeat_at < cutoff);
-    for (const r of stale) await this.execute(tenantId, r.id);
-    return stale.map((r) => r.id);
+    const stale = runs.filter((r) => (r.heartbeat_at ?? r.created_at) < cutoff);
+    const resumed: string[] = [];
+    for (const r of stale) {
+      const claimed = await this.db.tx(tenantId, (tx) => tx.updateWhere('agent_runs', { id: r.id, status: r.status, attempts: r.attempts }, { attempts: r.attempts + 1, heartbeat_at: this.deps.clock.now().toISOString() }));
+      if (!claimed) continue;
+      await this.execute(tenantId, r.id, { claimed: true });
+      resumed.push(r.id);
+    }
+    return resumed;
   }
 
   // ---------------------------------------------------------------- execute
-  async execute(tenantId: string, runId: string): Promise<AgentRunRow> {
+  /** `claimed`: recovery has already counted this attempt (recoverStale). */
+  async execute(tenantId: string, runId: string, opts: { claimed?: boolean } = {}): Promise<AgentRunRow> {
     const loaded = await this.db.tx(tenantId, async (tx) => {
       const run = await tx.get('agent_runs', runId);
       if (!run) throw new DomainError('not_found', `Run ${runId} not found`);
@@ -205,8 +232,9 @@ export class AgentRuntime<Svc> {
       const steps = await tx.find('agent_steps', { run_id: runId }, { orderBy: [['seq', 'desc']], limit: 1 });
       const calls = await tx.find('agent_tool_calls', { run_id: runId, status: 'ok' });
       const now = this.deps.clock.now().toISOString();
-      const updated = await tx.update('agent_runs', runId, { status: 'running', attempts: run.attempts + 1, started_at: run.started_at ?? now, heartbeat_at: now });
-      if (run.attempts > 0) await audit(tx, { type: 'system', id: 'system', label: 'Tieout runtime' }, this.deps.clock, { action: 'agent.run.resume', subjectType: 'agent_run', subjectId: runId, entityId: run.entity_id, summary: `${run.ref} resumed (attempt ${run.attempts + 1}) after interruption`, data: { lastSeq: steps[0]?.seq ?? 0 } });
+      const attempts = opts.claimed ? run.attempts : run.attempts + 1;
+      const updated = await tx.update('agent_runs', runId, { status: 'running', attempts, started_at: run.started_at ?? now, heartbeat_at: now });
+      if (attempts > 1) await audit(tx, { type: 'system', id: 'system', label: 'Tieout runtime' }, this.deps.clock, { action: 'agent.run.resume', subjectType: 'agent_run', subjectId: runId, entityId: run.entity_id, summary: `${run.ref} resumed (attempt ${attempts}) after interruption`, data: { lastSeq: steps[0]?.seq ?? 0 } });
       return { run: updated, done: false as const, requester, lastSeq: steps[0]?.seq ?? 0, calls };
     });
     if (loaded.done) return loaded.run;
@@ -227,14 +255,15 @@ export class AgentRuntime<Svc> {
       skill,
       ctx: { runId, tenantId, skillKey: run.skill_key, skillVersion: run.skill_version, entityId: run.entity_id, periodKey: run.period_key, policy, requestedBy: run.requested_by, agent, mode: run.mode },
       seq: lastSeq,
-      actionSeq: 0,
+      // the offline brain replays from its first action; a live conversation continues after its last call
+      actionSeq: run.mode === 'live' ? Math.max(0, ...calls.map((c) => c.seq)) : 0,
       toolCalls: calls.length,
       usage: { inputTokens: run.input_tokens, outputTokens: run.output_tokens, cacheReadTokens: run.cache_read_tokens, cacheWriteTokens: run.cache_write_tokens },
       costMicros: run.cost_micros,
       flags: [],
       flaggedIds: new Set(),
       summary: { proposals: 0, autoApplied: 0, suggested: 0, pendingApproval: 0, duplicates: 0, verificationFailures: 0, injectionFlags: 0, byKind: {}, plan: [], notes: [] },
-      replayTools: new Map(calls.map((c) => [c.seq, c.output])),
+      replayTools: new Map(calls.map((c) => [c.call_key, c.output])),
       startedAt: Date.now(),
       replaying: lastSeq > 0,
     };
@@ -261,7 +290,7 @@ export class AgentRuntime<Svc> {
       st.actionSeq++;
       this.checkBudget(st);
       const result = await this.perform(st, next.value);
-      if (this.deps.faults?.crashAfterAction === st.actionSeq && !st.replayTools.has(st.actionSeq) && st.run.attempts === 1) throw new SimulatedCrash(st.actionSeq);
+      if (this.deps.faults?.crashAfterAction === st.actionSeq && st.run.attempts === 1) throw new SimulatedCrash(st.actionSeq);
       next = await brain.next(result);
     }
     return next.value;
@@ -278,7 +307,7 @@ export class AgentRuntime<Svc> {
         await this.recordStep(st, 'observe', action.text.slice(0, 120), { actionSeq: st.actionSeq, note: action.text });
         return undefined;
       case 'tool':
-        return this.runTool(st, action.name, action.input);
+        return this.runTool(st, action.name, action.input, `brain:${st.actionSeq}:${action.name}:${sha256Hex(canonicalJson(action.input ?? {}))}`);
       case 'propose':
         return this.propose(st, action.draft);
     }
@@ -290,10 +319,10 @@ export class AgentRuntime<Svc> {
     return t;
   }
 
-  /** Execute a read tool (or replay its recorded result). */
-  private async runTool(st: ExecState, name: string, input: unknown): Promise<unknown> {
-    if (st.replayTools.has(st.actionSeq)) {
-      const out = st.replayTools.get(st.actionSeq);
+  /** Execute a read tool, or replay the recorded result of this very call (`key`) after a crash. */
+  private async runTool(st: ExecState, name: string, input: unknown, key: string): Promise<unknown> {
+    if (st.replayTools.has(key)) {
+      const out = st.replayTools.get(key);
       this.trackFlags(st, this.toolDef(name), out, false);
       return out;
     }
@@ -313,7 +342,7 @@ export class AgentRuntime<Svc> {
     const flags = this.trackFlags(st, tool, output, true);
     await this.db.tx(st.ctx.tenantId, async (tx) => {
       const act = await this.insertStep(tx, st, 'act', tool.title, { actionSeq: st.actionSeq, tool: name, input: input as JsonValue }, 'succeeded', Date.now() - t0);
-      await tx.insert('agent_tool_calls', { run_id: st.ctx.runId, step_id: act.id, seq: st.actionSeq, tool: name, effect: 'read', input: (input ?? {}) as Record<string, unknown>, output: output as unknown, status: 'ok', error: null, untrusted_flags: flags, duration_ms: Date.now() - t0, created_at: this.deps.clock.now().toISOString() });
+      await tx.insert('agent_tool_calls', { run_id: st.ctx.runId, step_id: act.id, seq: st.actionSeq, call_key: key, tool: name, effect: 'read', input: (input ?? {}) as Record<string, unknown>, output: output as unknown, status: 'ok', error: null, untrusted_flags: flags, duration_ms: Date.now() - t0, created_at: this.deps.clock.now().toISOString() });
       await this.insertStep(tx, st, 'observe', observationTitle(tool.outputType, output, flags), { actionSeq: st.actionSeq, outputType: tool.outputType, size: sizeOf(output), injectionFlags: flags as unknown as JsonValue }, 'succeeded', 0);
       await this.heartbeat(tx, st);
     });
@@ -427,6 +456,7 @@ export class AgentRuntime<Svc> {
       await this.insertStep(tx, st, 'propose', `${p.ref} ${draft.title}`, { actionSeq: st.actionSeq, proposalId: p.id, kind: draft.kind, confidence: draft.confidence, amountMinor: assessment.amountMinor }, 'succeeded', 0);
       await this.insertStep(tx, st, 'route', decision.reasons.join(' '), { actionSeq: st.actionSeq, proposalId: p.id, route: decision.route, status: decision.status, reviewStatus: decision.reviewStatus, flags: allFlags }, 'succeeded', 0);
       await audit(tx, ctx.agent, this.deps.clock, { action: 'proposal.create', subjectType: 'proposal', subjectId: p.id, entityId: draft.entityId, summary: `${p.ref} proposed: ${draft.title}`, data: { route: decision.route, confidence: draft.confidence, amountMinor: assessment.amountMinor, runId: ctx.runId } });
+      if (pack.afterPropose) await pack.afterPropose(pack.services(tx, ctx.agent, this.deps.clock), p);
       await this.heartbeat(tx, st);
       return p;
     });
@@ -531,7 +561,7 @@ export class AgentRuntime<Svc> {
             const tool = this.toolDef(name);
             if (!skill.allowedTools.includes(name)) throw forbidden(`${name} is not in this skill's allowed tools`);
             if (tool.effect === 'read') {
-              const out = await this.runTool(st, name, u.input);
+              const out = await this.runTool(st, name, u.input, `tool_use:${u.id}`);
               results.push({ type: 'tool_result', tool_use_id: u.id, content: wrapUntrusted(name, out) });
             } else {
               const parsed = tool.input.safeParse(u.input);

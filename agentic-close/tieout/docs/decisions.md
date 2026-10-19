@@ -101,6 +101,30 @@ writes).
 Approval limits route by USD equivalent at the closing rate (AX-SOD-04). Journal-entry maker-checker
 is also a database trigger.
 
+**Revised 2026-10-19 (independent review, TO-C1).** An administrator could invite a CFO, read the
+temporary password on screen, sign in as that CFO and approve entries: one person minted an approver.
+Now nobody handles another person's credential and nobody grants authority alone
+(`migrations/0012_access_control.sql`):
+
+* Invitations and password resets send the person a single-use link (72 hours for an invitation,
+  24 for a reset; only its SHA-256 is stored; a newer link replaces older ones) through an outbox
+  whose bodies are sealed with the application key. Production queues them for the email relay. The
+  demo delivers them to a demo mailbox on the sign-in page that opens a message only in a signed-out
+  browser and writes every opening to the audit log, so the demo stays usable without letting the
+  acting administrator use a link from their own session, or unnoticed. The administrator's screens
+  and API show where a link went, never the link.
+* A grant that gives someone approval authority they did not hold (approving entries, reconciliations,
+  variances or payments, signing off, packaging or locking the close, setting agent autonomy or
+  policy, approving access), or any change to an SoD rule, is an access request. It changes nothing
+  until a second person approves it: never the requester, never the person who gains the access
+  (both also CHECK constraints), and someone whose own authority covers what is granted (a
+  Controller cannot approve a CFO). Narrowing access and preparer roles apply at once.
+
+**Revised 2026-10-19 (T-10).** A checklist task is signed off by its named reviewer, or by someone
+with at least the reviewer role's authority (a Controller may stand in for a Senior Accountant, never
+for the CFO), and never by the task's owner, whoever completed it or whoever ran its agents. The
+cockpit shows the same rule the API applies (`signOffBlockers` in `src/app/close.ts`).
+
 ## ADR-010 · Sessions and CSRF without client-readable secrets
 
 **Decision.** Server-side sessions: random 256-bit token in an HttpOnly, SameSite=Strict cookie; only
@@ -119,18 +143,27 @@ Until two-factor is finished, a session may call only `/api/auth/me`, logout, en
 password alone never yields an API token or a changed credential. Switching two-factor on issues ten
 one-time recovery codes (hashed, `migrations/0004_mfa_recovery.sql`); a lost authenticator is reset by
 an administrator with a documented reason, which signs the person out everywhere. TOTP is checked
-against wall-clock time, never the demo's shifted business clock. A temporary password (invitation or
-administrator reset) must be replaced at the next sign-in before the session can do anything else; a
-reset also retires the person's API tokens, and signing in through SSO retires the temporary password.
+against wall-clock time, never the demo's shifted business clock. An administrator reset sends the
+person a single-use link (ADR-009) and retires their password, sessions and API tokens; signing in
+through SSO completes an invitation and retires its link. (A temporary password from before migration
+0012 must still be replaced at the next sign-in before the session can do anything else.)
 
 ## ADR-012 · Tenant isolation in the database (row-level security)
 
 **Context.** Store-level tenant filters are one missed `WHERE` away from a leak.
 
 **Decision.** Migration 0003 enables and FORCEs row-level security on every tenant table. Each
-transaction sets `tieout.tenant_id`; the few identity lookups that must cross tenants set
-`tieout.bypass` for their transaction only. The application must connect as an ordinary role
-(superusers bypass RLS); tests prove isolation as such a role.
+transaction sets `tieout.tenant_id`. The application must connect as an ordinary role (superusers
+bypass RLS); tests prove isolation as such a role.
+
+**Revised 2026-10-19 (independent review).** 0003 let the identity lookups that run before the
+tenant is known (sign-in by email, session and API-token resolution) set `tieout.bypass` — and any
+session can set a custom setting, so the application role could switch isolation off for itself.
+Migration 0010 removes the bypass from every policy. Those lookups now read `tenant_directory`, the
+one table without row-level security, which holds only a lookup key (email, session-id hash,
+API-token hash; each unique across tenants) and its tenant, kept in step by triggers; the row itself
+is then read inside that tenant (`Store.tenantOf`). The database also recomputes every audit hash on
+insert (migration 0009) and checks both entries when a journal line moves (migration 0008).
 
 **Entity scope (within a tenant).** Role grants can be limited to legal entities (Admin → People →
 Roles). Reads hide rows of entities outside the scope and keep group-level rows (the checklist);

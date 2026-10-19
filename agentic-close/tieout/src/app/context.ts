@@ -12,8 +12,10 @@ import { forbidden } from '../core/util/errors';
 import type { Clock } from '../core/util/time';
 import type { Db, DbTx } from '../schema';
 import { accountingPack } from '../packs/accounting/agent/pack';
+import { permissionNeeded } from '../packs/accounting/controls/permissions';
 import { AccountingServices } from '../packs/accounting/services';
 import { accountingSkills } from '../packs/accounting/skills/install';
+import { demoMailboxDelivery, emailRelayDelivery, type OutboxDelivery } from './outbox';
 import { RateLimiter } from './rate-limit';
 
 export interface AppConfig {
@@ -46,15 +48,18 @@ export interface AppContext {
   log: (msg: string, data?: Record<string, unknown>) => void;
   /** optional hook to restore demo data (browser demo / demo server) */
   resetDemo?: () => Promise<void>;
+  /** how messages to people (invitations, password-reset links) are delivered */
+  outbox: OutboxDelivery;
 }
 
-export function createAppContext(opts: { db: Db; clock: Clock; config: AppConfig; hasher: PasswordHasher; llm?: LlmProvider | null; log?: AppContext['log']; resetDemo?: () => Promise<void>; oidcFetch?: typeof fetch }): AppContext {
+export function createAppContext(opts: { db: Db; clock: Clock; config: AppConfig; hasher: PasswordHasher; llm?: LlmProvider | null; log?: AppContext['log']; resetDemo?: () => Promise<void>; oidcFetch?: typeof fetch; outbox?: OutboxDelivery }): AppContext {
   const skills = accountingSkills();
   const llm = opts.llm ?? null;
   const runtime = new AgentRuntime<AccountingServices>({ db: opts.db, clock: opts.clock, pack: accountingPack, skills, llm, resolveActor: resolveUserActor });
   // token lifetimes are checked against real time (the demo's business clock is shifted)
   const oidc = opts.config.oidc ? new OidcClient(opts.config.oidc, opts.oidcFetch) : null;
-  return { db: opts.db, clock: opts.clock, config: opts.config, hasher: opts.hasher, llm, skills, runtime, limiter: new RateLimiter(), oidc, log: opts.log ?? (() => undefined), resetDemo: opts.resetDemo };
+  const outbox = opts.outbox ?? (opts.config.demoMode ? demoMailboxDelivery : emailRelayDelivery);
+  return { db: opts.db, clock: opts.clock, config: opts.config, hasher: opts.hasher, llm, skills, runtime, limiter: new RateLimiter(), oidc, log: opts.log ?? (() => undefined), resetDemo: opts.resetDemo, outbox };
 }
 
 /** A request's identity after authentication. */
@@ -66,7 +71,7 @@ export interface RequestUser {
 }
 
 export function requirePermission(u: RequestUser, permission: string) {
-  if (!u.actor.permissions.has(permission)) throw forbidden(`This needs the “${permission}” permission.`);
+  if (!u.actor.permissions.has(permission)) throw forbidden(permissionNeeded(permission));
 }
 
 /**

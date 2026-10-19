@@ -62,6 +62,8 @@ export interface LineSumQuery {
   toDate?: string;
   /** Include only entries with these statuses; default ['posted']. */
   statuses?: readonly string[];
+  /** Leave out entries of these types (period activity excludes year-end closing entries). */
+  excludeEntryTypes?: readonly string[];
   groupBy: readonly ('account_id' | 'entity_id' | 'department' | 'period' | 'counterparty_entity_id' | 'txn_currency')[];
 }
 
@@ -125,16 +127,18 @@ export interface Store<M, I = M> {
   readonly kind: 'postgres' | 'memory';
   /** Run `fn` in a serialisable unit of work scoped to one tenant. Rolls back on throw. */
   tx<R>(tenantId: string, fn: (tx: Tx<M, I>) => Promise<R>): Promise<R>;
-  /** Cross-tenant system operations (login lookup, migrations bookkeeping). Use sparingly. */
-  system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R>;
+  /**
+   * The only read that crosses tenants: which tenant a sign-in email, a session id, an API-token
+   * hash or a credential-link hash belongs to (each is unique across tenants). The row itself is then read inside that
+   * tenant, so nothing ever switches tenant isolation off (migration 0010).
+   */
+  tenantOf(kind: DirectoryKind, key: string): Promise<string | null>;
+  /** Ids of the tenants that have people (no tenant data): for background work such as crash recovery. */
+  tenantIds(): Promise<string[]>;
   close(): Promise<void>;
 }
 
-export interface SystemTx<M> {
-  findGlobal<T extends keyof M & string>(table: T, where: Where<M[T]>, opts?: FindOptions<M[T]>): Promise<M[T][]>;
-  insertGlobal<T extends keyof M & string>(table: T, row: Partial<M[T]>): Promise<M[T]>;
-  updateGlobal<T extends keyof M & string>(table: T, id: string, patch: Partial<M[T]>): Promise<M[T]>;
-}
+export type DirectoryKind = 'user_email' | 'session' | 'api_token' | 'credential_link';
 
 export class StoreError extends Error {
   readonly code: string;

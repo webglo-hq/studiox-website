@@ -10,11 +10,14 @@ import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { DomainError, fromStorageError, validation } from '../core/util/errors';
 import { PEOPLE, SCENARIO } from '../packs/accounting/seed/company';
+import * as access from '../app/access';
 import * as admin from '../app/admin';
 import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcCallback, oidcStart, oidcStatus, regenerateRecoveryCodes, revokeApiToken, type Authenticated } from '../app/auth';
 import * as close from '../app/close';
 import type { AppContext, RequestUser } from '../app/context';
+import { peekLink, redeemLink } from '../app/credentials';
 import { importFile } from '../app/imports';
+import { mailbox, openMail } from '../app/outbox';
 import * as ledger from '../app/ledger';
 import * as proposals from '../app/proposals';
 import * as q from '../app/queries';
@@ -33,6 +36,8 @@ const APP_ROOT_FROM_CALLBACK = '../../../';
  * yields a token or a changed credential.
  */
 const PENDING_MFA_ROUTES = new Set(['/api/auth/me', '/api/auth/logout', '/api/auth/mfa/enroll', '/api/auth/mfa/verify']);
+/** Routes that need no session: sign-in, single sign-on, invitation/reset links and the demo mailbox (demo mode only). */
+const PUBLIC_ROUTES = new Set(['/api/health', '/api/auth/options', '/api/auth/login', `${OIDC_PATH}/start`, `${OIDC_PATH}/callback`, '/api/auth/link', '/api/demo/mailbox']);
 /** With a temporary password, a (two-factor verified) session can only replace it. */
 const PASSWORD_CHANGE_ROUTES = new Set([...PENDING_MFA_ROUTES, '/api/auth/password']);
 
@@ -118,7 +123,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.get('/api/health', (c) => c.json({ ok: true, version: ctx.config.version, store: ctx.db.kind, liveAgents: !!ctx.llm }));
 
   app.get('/api/auth/options', async (c) => {
-    const personas = ctx.config.demoMode ? PEOPLE.map((p) => ({ email: p.email, name: p.name, title: p.title, role: p.roles[0] })) : [];
+    const personas = ctx.config.demoMode ? PEOPLE.map((p) => ({ email: p.email, name: p.name, title: p.title, role: p.roles[0], part: p.part })) : [];
     return c.json({ demo: ctx.config.demoMode, personas, demoPassword: ctx.config.demoMode ? ctx.config.demoPassword : null, demoPasswordHint: ctx.config.demoMode ? 'Every fictional demo user shares one documented, dev-only password.' : null, oidc: oidcStatus(ctx), scenarioDate: ctx.config.demoMode ? SCENARIO.businessDate : null });
   });
 
@@ -128,6 +133,29 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const r = await login(ctx, b.email, b.password, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
     issueSession(c, r.sessionToken);
     return c.json({ user: r.user, csrfToken: r.csrfToken, mfa: r.mfa, passwordChange: r.passwordChange });
+  });
+
+  // ------------------------------------------------------------------ links and the demo mailbox (no session)
+  // an invitation or password-reset link: what it is for, then the person's own password
+  app.get('/api/auth/link', async (c) => c.json(await peekLink(ctx, c.req.query('token') ?? '')));
+  app.post('/api/auth/link', async (c) => {
+    if (!sameOrigin(c, ctx)) throw new DomainError('forbidden', 'Cross-site request blocked.');
+    const b = await body<{ token?: string; password?: string }>(c, 5000);
+    return c.json(await redeemLink(ctx, String(b.token ?? ''), String(b.password ?? ''), { ip: ipOf(c) }));
+  });
+  /** whether this browser is signed in (the demo mailbox opens messages only for signed-out browsers) */
+  const signedIn = async (c: Context<Env>) => {
+    const token = getCookie(c, SESSION_COOKIE) ?? (opts.cookieBridge ? c.req.header(SESSION_BRIDGE_HEADER) || undefined : undefined) ?? null;
+    if (!token) return false;
+    return authenticate(ctx, token, { ip: ipOf(c), allowPendingMfa: true, allowPasswordChange: true }).then(
+      () => true,
+      () => false,
+    );
+  };
+  app.get('/api/demo/mailbox', async (c) => c.json(await mailbox(ctx)));
+  app.post('/api/demo/mailbox/:id/open', async (c) => {
+    if (!sameOrigin(c, ctx)) throw new DomainError('forbidden', 'Cross-site request blocked.');
+    return c.json(await openMail(ctx, c.req.param('id'), await signedIn(c), ipOf(c)));
   });
 
   // ------------------------------------------------------------------ single sign-on (OpenID Connect)
@@ -162,7 +190,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   // ------------------------------------------------------------------ auth gate
   app.use('/api/*', async (c, next) => {
     const path = c.req.path;
-    if (path === '/api/health' || path === '/api/auth/options' || path === '/api/auth/login' || path === `${OIDC_PATH}/start` || path === `${OIDC_PATH}/callback`) return next();
+    if (PUBLIC_ROUTES.has(path) || /^\/api\/demo\/mailbox\/[\w-]+\/open$/.test(path)) return next();
     const bearer = c.req.header('authorization')?.match(/^Bearer\s+(tko_[A-Za-z0-9_-]+)$/)?.[1];
     if (bearer) {
       if (c.req.method !== 'GET' && !path.startsWith('/api/runs')) throw new DomainError('forbidden', 'API tokens are read-only (plus starting agent runs).');
@@ -318,10 +346,10 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.get('/api/admin', async (c) => c.json(await q.adminView(ctx, U(c))));
   app.post('/api/admin/users', async (c) => c.json(await admin.inviteUser(ctx, U(c), await body(c, 5000))));
   app.post('/api/admin/users/:id/roles', async (c) => {
-    const b = await body<{ roles?: unknown[]; entityIds?: unknown[] | null }>(c, 5000);
+    const b = await body<{ roles?: unknown[]; entityIds?: unknown[] | null; reason?: string }>(c, 5000);
     // a missing or malformed role list fails validation instead of silently removing every role
     const roles = Array.isArray(b.roles) ? b.roles.map(String) : (null as unknown as string[]);
-    return c.json(await admin.assignRoles(ctx, U(c), c.req.param('id'), roles, Array.isArray(b.entityIds) ? b.entityIds.map(String) : null));
+    return c.json(await admin.assignRoles(ctx, U(c), c.req.param('id'), roles, Array.isArray(b.entityIds) ? b.entityIds.map(String) : null, String(b.reason ?? '')));
   });
   app.post('/api/admin/users/:id/mfa-reset', async (c) => c.json(await admin.resetMfa(ctx, U(c), c.req.param('id'), String((await body<{ reason?: string }>(c, 2000)).reason ?? ''))));
   app.post('/api/admin/users/:id/password-reset', async (c) => c.json(await admin.resetPassword(ctx, U(c), c.req.param('id'))));
@@ -333,6 +361,10 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const b = await body<{ enabled: boolean; reason: string }>(c, 5000);
     return c.json(await admin.setSodRule(ctx, U(c), c.req.param('code'), !!b.enabled, String(b.reason ?? '')));
   });
+  app.get('/api/access-requests', async (c) => c.json(await access.listAccessRequests(ctx, U(c))));
+  app.post('/api/access-requests/:id/approve', async (c) => c.json(await access.approveAccessRequest(ctx, U(c), c.req.param('id'), String((await body<{ note?: string }>(c, 2000)).note ?? ''))));
+  app.post('/api/access-requests/:id/reject', async (c) => c.json(await access.rejectAccessRequest(ctx, U(c), c.req.param('id'), String((await body<{ reason?: string }>(c, 2000)).reason ?? ''))));
+  app.post('/api/access-requests/:id/cancel', async (c) => c.json(await access.cancelAccessRequest(ctx, U(c), c.req.param('id'))));
   app.post('/api/admin/settings', async (c) => c.json(await admin.updateSettings(ctx, U(c), await body(c, 5000))));
   app.post('/api/admin/entities/:id/materiality', async (c) => c.json(await admin.updateMateriality(ctx, U(c), c.req.param('id'), await body(c, 5000))));
   app.get('/api/imports', async (c) => c.json(await q.importsView(ctx, U(c))));

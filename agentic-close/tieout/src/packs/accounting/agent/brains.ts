@@ -467,7 +467,7 @@ export const fxRevaluation: OfflineBrain = async function* (input): Gen {
 // =========================================================================== JE review
 export const jeReview: OfflineBrain = async function* (input): Gen {
   const { entityId, pk } = need(input);
-  yield plan(['Scan every posted entry in the period with the risk tests', 'Look for duplicate payments', 'Run the Benford first-digit test', 'Raise findings with recommended actions']);
+  yield plan(['Scan every posted entry in the period with the risk tests', 'Look for duplicate payments', 'Run the Benford first-digit test', 'Raise findings with recommended actions', 'Propose reversing self-approved entries until someone independent reviews their support']);
   const e = yield* entityInfo(pk, entityId);
   const r = (yield tool('anomaly.scan', { entityId, periodKey: pk })) as { flagged: FlaggedEntry[]; duplicates: DuplicatePayment[]; benford: BenfordResult; scanned: number };
   let n = 0;
@@ -477,11 +477,28 @@ export const jeReview: OfflineBrain = async function* (input): Gen {
     yield {
       type: 'propose',
       draft: findingDraft(
-        { entityId, periodKey: pk, category: f.hits[0]!.test, severity, recommendation: f.hits.some((h) => h.test === 'self_approval') ? 'Have an independent approver review the support. If it cannot be supported, reverse it; either way, remove the ability to approve imported entries you uploaded.' : 'Review the support for this entry and document the business reason.', subjects: [{ type: 'journal_entry', id: f.jeId, label: f.jeNumber }], tests: f.hits.map((h) => h.test), score: f.score },
+        { entityId, periodKey: pk, category: f.hits[0]!.test, severity, recommendation: f.reversal ? 'Have someone independent review the support. Until then the entry is held out of the month by the proposed reversal: approve the reversal if the support is missing, or reject it with a note if the support holds. Either way, remove the ability to approve imported entries you uploaded.' : 'Review the support for this entry and document the business reason.', subjects: [{ type: 'journal_entry', id: f.jeId, label: f.jeNumber }], tests: f.hits.map((h) => h.test), score: f.score },
         { title: `${severity === 'critical' ? 'Critical' : 'Risky'} entry ${f.jeNumber}: ${clipText(memo, 70)} ${money(f.amountMinor, e.currency)}`, why: `${f.hits.map((h) => h.detail).join(' ')} Risk score ${f.score} (self-approval 50, threshold skirting 20, weekend 15, round amount 10).`, confidence: 0.95, evidence: [rec(`${f.jeNumber} prepared by ${f.preparedBy}, approved by ${f.approvedBy ?? 'nobody'}`, 'journal_entry', f.jeId)], dedupeKey: `jerisk:${f.jeId}` },
       ),
     };
     n++;
+    // nobody independent has checked a self-approved entry: hold it out of the month until someone does
+    if (f.reversal) {
+      yield {
+        type: 'propose',
+        draft: jeDraft(
+          { entityId, periodKey: pk, postingDate: periodEnd(pk), entryType: 'reversing', memo: `Reversal of ${f.jeNumber} pending an independent review of its support`, source: 'agent', reversesJeId: f.jeId, autoEligible: false, lines: f.reversal.map((l) => ({ account: l.account, ...(l.debit ? { debit: l.debit } : {}), ...(l.credit ? { credit: l.credit } : {}), department: l.department, location: l.location, project: l.project, product_class: l.product_class, memo: `Reverses ${f.jeNumber}` })) },
+          {
+            title: `Reverse ${f.jeNumber} until its support is reviewed: ${clipText(memo, 60)} ${money(f.amountMinor, e.currency)}`,
+            why: `${f.jeNumber} was prepared and approved by ${f.preparedBy}, so nobody independent has checked it${f.source === 'import' ? ' (an imported entry bypasses the in-app maker-checker)' : ''}. Reversing it on ${periodEnd(pk)} keeps ${money(f.amountMinor, e.currency)} out of ${periodLabel(pk)} until someone other than ${f.preparedBy} has reviewed the support. If the support holds, reject this reversal with a note and the entry stands; if it does not, approve it.`,
+            confidence: 0.9,
+            evidence: [rec(`${f.jeNumber} prepared and approved by ${f.preparedBy}`, 'journal_entry', f.jeId)],
+            dedupeKey: `jerev:${f.jeId}`,
+          },
+        ),
+      };
+      n++;
+    }
   }
   for (const d of r.duplicates) {
     yield {
@@ -494,7 +511,8 @@ export const jeReview: OfflineBrain = async function* (input): Gen {
     n++;
   }
   yield note(`Benford first-digit test on ${r.benford.sample} line amounts (trailing 12 months): MAD ${r.benford.mad} → ${r.benford.conformity.replace('_', ' ')}. Population-level only; it does not single out entries, so it is reported here rather than as a finding.`);
-  return { headline: `Scanned ${r.scanned} entries for ${e.code}: ${n} finding${n === 1 ? '' : 's'}` };
+  const reversals = r.flagged.filter((f) => f.reversal).length;
+  return { headline: `Scanned ${r.scanned} entries for ${e.code}: ${n - reversals} finding${n - reversals === 1 ? '' : 's'}${reversals ? `, ${reversals} reversal${reversals === 1 ? '' : 's'} pending support` : ''}` };
 };
 
 // =========================================================================== flux
@@ -505,8 +523,12 @@ export const fluxAnalysis: OfflineBrain = async function* (input): Gen {
   const r = (yield tool('flux.compute', { entityId, periodKey: pk })) as { lines: FluxLineView[]; comparativeKey: string; thresholds: { absMinor: number; pct: number; performanceMinor: number }; currency: string };
   let n = 0;
   for (const l of r.lines.filter((x) => x.exceeds)) {
-    if (l.explanation && (l.explanation.status === 'approved' || l.explanation.status === 'submitted')) continue;
+    // an explanation stands while it covers the variance; once the ledger moves it, draft again.
+    // A draft already waiting for the variance as it stands (the agent's or a person's) is left alone.
+    if (l.explanation && (l.explanation.status === 'approved' || l.explanation.status === 'submitted') && !l.explanation.stale) continue;
+    if (l.draft?.current) continue;
     const text = fluxNarrative({ ...l, drivers: l.drivers.map((d) => ({ ...d, label: redactInstructions(d.label) })) }, r.currency, pk, r.comparativeKey);
+    const redraft = l.explanation?.stale && l.explanation.covered ? ` It replaces the explanation approved for a change of ${money(l.explanation.covered.varianceMinor, r.currency)}: the ledger has moved since.` : '';
     const coverage = l.drivers.filter((d) => !d.label.startsWith('Other')).reduce((s, d) => s + Math.abs(d.amountMinor), 0) / Math.max(1, Math.abs(l.varianceMinor));
     yield {
       type: 'propose',
@@ -514,10 +536,11 @@ export const fluxAnalysis: OfflineBrain = async function* (input): Gen {
         { entityId, periodKey: pk, comparison: 'pop', accountCode: l.code, currentMinor: l.currentMinor, comparativeMinor: l.comparativeMinor, budgetMinor: l.budgetMinor, varianceMinor: l.varianceMinor, variancePct: l.variancePct, thresholdAbsMinor: r.thresholds.absMinor, thresholdPct: r.thresholds.pct, materiality: l.materiality, text, drivers: l.drivers.map((d) => ({ label: redactInstructions(d.label).slice(0, 200), kind: d.kind, amountMinor: d.amountMinor, ...(d.detail ? { detail: d.detail } : {}), ...(d.refType ? { refType: d.refType } : {}), ...(d.refId ? { refId: d.refId } : {}) })), pending: l.pending.map((p) => ({ proposalId: p.proposalId, proposalRef: p.proposalRef, label: p.label.slice(0, 200), amountMinor: p.amountMinor })) },
         {
           title: `Explain ${l.code} ${l.name}: ${l.varianceMinor >= 0 ? '+' : '−'}${money(Math.abs(l.varianceMinor), r.currency)} vs ${periodLabel(r.comparativeKey)}`,
-          why: `The change exceeds the review threshold (${money(r.thresholds.absMinor, r.currency)} and ${(r.thresholds.pct * 100).toFixed(0)}%${l.materiality === 'material' ? '; it is above performance materiality' : ''}). The drivers come from the ledger and add up to the variance exactly.`,
+          why: `The change exceeds the review threshold (${money(r.thresholds.absMinor, r.currency)} and ${(r.thresholds.pct * 100).toFixed(0)}%${l.materiality === 'material' ? '; it is above performance materiality' : ''}). The drivers come from the ledger and add up to the variance exactly.${redraft}`,
           confidence: Math.min(0.95, 0.6 + 0.35 * Math.min(1, coverage)),
           evidence: [{ kind: 'computation', label: `Flux ${l.code} ${pk} vs ${r.comparativeKey}` }, ...l.drivers.filter((d) => d.refType && d.refId).slice(0, 4).map((d) => rec(d.label, d.refType!, d.refId!)), ...l.pending.map((p) => ({ kind: 'run' as const, label: `${p.proposalRef} awaiting approval`, refType: 'proposal', refId: p.proposalId }))],
-          dedupeKey: `flux:${l.code}:${r.comparativeKey}`,
+          // one draft per variance as it stands: when the ledger moves the figures, a new draft replaces it
+          dedupeKey: `flux:${l.code}:${r.comparativeKey}:${l.currentMinor}:${l.comparativeMinor}`,
         },
       ),
     };
@@ -542,12 +565,13 @@ export const closePackage: OfflineBrain = async function* (input): Gen {
     `Agents: ${d.content.agentActivity.runs} runs, ${d.content.agentActivity.proposals} proposals, ${d.content.agentActivity.autoApplied} applied by policy.`,
     ...d.content.commentary.slice(0, 4).map((c) => `${c.entityCode} ${c.accountName}: ${c.text.split('. ')[0]}.`),
   ];
-  const summary = `${periodLabel(pk)} close package (draft). ${d.readiness.ready ? 'All lock conditions are met.' : `Not ready to lock: ${d.readiness.messages.join('; ')}.`} ${highlights[0]}`;
+  // the package is not a blocker to itself: readiness covers every other lock condition
+  const summary = `${periodLabel(pk)} close package. ${d.readiness.ready ? 'Every other lock condition is met: the period can lock once this package is approved.' : `Before the period can lock: ${d.readiness.messages.join('; ')}.`} ${highlights[0]}`;
   yield {
     type: 'propose',
     draft: reportDraft(
       { periodKey: pk, summary, highlights, readiness: { ready: d.readiness.ready, messages: d.readiness.messages }, content: d.content as Record<string, unknown> },
-      { title: `${periodLabel(pk)} close package (draft)`, why: `Compiles the trial balances, consolidated statements, approved commentary, reconciliation status and open items so the Controller can review and finalize. ${d.readiness.ready ? 'Every lock condition (AX-CL-02) is met.' : 'It lists what still blocks the lock (AX-CL-02).'}`, confidence: 0.95, evidence: [{ kind: 'computation', label: 'report.package_data' }], dedupeKey: `package:${pk}:${hashLite(JSON.stringify(k))}:${d.content.openItems.length}` },
+      { title: `${periodLabel(pk)} close package (draft)`, why: `Compiles the trial balances, consolidated statements, approved commentary, reconciliation status and open items so the Controller can review and finalize. ${d.readiness.ready ? 'Every other lock condition (AX-CL-02) is met.' : 'It lists what still blocks the lock (AX-CL-02); a package drafted now has to be drafted again before the period can lock.'}`, confidence: 0.95, evidence: [{ kind: 'computation', label: 'report.package_data' }], dedupeKey: `package:${pk}:${hashLite(JSON.stringify(k))}:${d.content.openItems.length}` },
     ),
   };
   return { headline: `Close package draft for ${periodLabel(pk)} ${d.readiness.ready ? '(ready to lock)' : `(${d.readiness.messages.length} blocker${d.readiness.messages.length === 1 ? '' : 's'})`}` };

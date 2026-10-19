@@ -9,6 +9,7 @@ import { conflict, notFound, validation } from '../core/util/errors';
 import type { ProposalRow } from '../schema';
 import { FluxPayloadSchema } from '../packs/accounting/agent/payloads';
 import { closeOntology } from '../packs/accounting/ontology';
+import { isExplained } from '../packs/accounting/services/flux';
 import { asUser, requirePermission, type AppContext, type RequestUser } from './context';
 
 export async function writeFluxExplanation(ctx: AppContext, u: RequestUser, input: { entityId: string; periodKey: string; accountCode: string; text: string }): Promise<ProposalRow> {
@@ -20,11 +21,11 @@ export async function writeFluxExplanation(ctx: AppContext, u: RequestUser, inpu
     const f = await svc.flux.compute(input.entityId, input.periodKey);
     const line = f.lines.find((l) => l.code === input.accountCode);
     if (!line) throw notFound('Variance line', input.accountCode);
-    if (line.explanation?.status === 'approved') throw conflict('This variance already has an approved explanation.');
-    const open = await tx.find('proposals', { entity_id: input.entityId, period_key: input.periodKey, kind: 'flux_explanation', status: { in: ['pending_approval', 'suggested'] } });
+    // an approved explanation stands until the ledger moves the variance (then it is stale and can be replaced)
+    if (isExplained(line)) throw conflict('This variance already has an approved explanation.');
     const now = ctx.clock.now().toISOString();
     // a newer explanation replaces any draft still waiting for this account
-    for (const p of open.filter((x) => (x.payload as { accountCode?: string }).accountCode === line.code)) await tx.update('proposals', p.id, { status: 'superseded', decided_by: u.actor.id, decided_at: now, decision_reason: 'Replaced by an explanation written by a person', updated_at: now });
+    await svc.flux.supersedeDrafts(input.entityId, input.periodKey, line.code, { by: u.actor.id, reason: 'Replaced by an explanation written by a person' });
     const payload = FluxPayloadSchema.parse({
       entityId: input.entityId,
       periodKey: input.periodKey,

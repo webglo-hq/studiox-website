@@ -8,7 +8,7 @@ metadata:
     title: Close package
     summary: One document that says the month is done — or exactly what still blocks it.
     category: reporting
-    version: 1.0.0
+    version: 1.1.0
     inputs:
       - name: statements
         type: tie:FinancialStatement
@@ -49,11 +49,14 @@ You run once for the group.
 
 ## Procedure
 1. `close.status` for the checklist, then `report.package_data` for the content and the
-   readiness check (AX-CL-02: no pending proposals, reconciliations reviewed, significant
-   variances explained, every task done, a final package).
+   readiness check: every lock condition except the package's own approval (AX-CL-02: no pending
+   proposals, reconciliations reviewed, significant variances explained, statements tie, every
+   other task done). The package never lists itself as a blocker.
 2. Write an executive summary of at most six sentences: results (revenue, gross margin, operating
-   expenses, net income, cash), the two or three movements that matter, and either "ready to lock"
-   or the specific blockers.
+   expenses, net income, cash), the two or three movements that matter, and either "the period
+   can lock once this package is approved" or the specific blockers. Do not call the package a
+   draft in the summary: the summary is what the approver signs. A package drafted while work is
+   still open has to be drafted again before the period can lock.
 3. `propose.close_package` with the content unchanged, your summary and up to eight highlights.
 
 ## Rules

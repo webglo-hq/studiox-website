@@ -67,10 +67,25 @@ export interface ClosePackageContent {
   balanceSheet: StatementLine[];
   incomeStatement: StatementLine[];
   consolidation: { eliminationsMinor: number; ctaMinor: number; closingRate: number | null; averageRate: number | null };
-  commentary: { accountCode: string; accountName: string; entityCode: string; varianceMinor: number; variancePct: number | null; text: string; approvedBy: string | null }[];
+  /** one entry per significant variance; only an approved explanation of the variance as it stands carries its text */
+  commentary: { accountCode: string; accountName: string; entityCode: string; currency?: string; varianceMinor: number; variancePct: number | null; text: string; status?: 'approved' | 'out_of_date' | 'pending'; approvedBy: string | null }[];
   reconciliations: { entityCode: string; account: string; recType: string; status: string; unreconciledMinor: number; preparer: string | null; reviewer: string | null }[];
-  openItems: { kind: string; ref: string; title: string; amountMinor: number }[];
+  /** what is still open when the package is assembled: proposals awaiting a decision and open reconciling exceptions */
+  openItems: { kind: string; ref: string; title: string; amountMinor: number; currency?: string; entityCode?: string | null }[];
   agentActivity: { runs: number; proposals: number; autoApplied: number; approved: number; rejected: number; costMicros: number; mode: string };
   signoffs: { role: string; name: string; at: string }[];
+  /** grossMarginPct is a percentage (88.9 means 88.9%), not a fraction */
   kpis: { revenueMinor: number; grossMarginPct: number | null; opexMinor: number; netIncomeMinor: number; cashMinor: number };
+  /** AX-FS-01 when the package was assembled: each income statement's net income against the ledger */
+  statementChecks?: { statement: string; currency: string; netIncomeMinor: number; ledgerNetIncomeMinor: number }[];
+  /** the preparer's summary, and every lock condition other than this package as it stood when it was drafted */
+  summary?: string;
+  highlights?: string[];
+  readiness?: { ready: boolean; messages: string[] };
 }
+
+/** What an access request changes once a second person approves it (two-person rule). */
+export type AccessChange =
+  /** a person's complete set of roles, limited to some entities or (null) every entity */
+  | { kind: 'role_grant'; roles: string[]; entityIds: string[] | null; entityCodes: string[] | null }
+  | { kind: 'sod_rule'; code: string; enabled: boolean };

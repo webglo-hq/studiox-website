@@ -13,9 +13,16 @@ export function money(minor: number | null | undefined, currency: string | null 
   return opts.signed && minor > 0 ? `+${sym}${body}` : `${sym}${body}`;
 }
 
+/** A change, given as a fraction, as a signed percentage: 0.14 → "+14%". */
 export function pct(x: number | null | undefined, digits = 0): string {
   if (x === null || x === undefined || !Number.isFinite(x)) return '—';
   return `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(digits)}%`;
+}
+
+/** A level the server already gives in percent, such as a margin: 88.9 → "88.9%" (no sign, no scaling). */
+export function percent(x: number | null | undefined, digits = 0): string {
+  if (x === null || x === undefined || !Number.isFinite(x)) return '—';
+  return `${x < 0 ? '−' : ''}${Math.abs(x).toFixed(digits)}%`;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -76,6 +83,12 @@ export const STATUS_LABEL: Record<string, string> = {
   rejected: 'Rejected',
   superseded: 'Superseded',
   failed: 'Failed',
+};
+
+export const MATERIALITY_LABEL: Record<string, string> = {
+  trivial: 'Clearly trivial',
+  below_pm: 'Below performance materiality',
+  material: 'Above performance materiality',
 };
 
 export const ROUTE_LABEL: Record<string, string> = {

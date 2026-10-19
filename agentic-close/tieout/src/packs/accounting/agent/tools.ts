@@ -282,7 +282,7 @@ export const READ_TOOLS: AnyTool[] = [
     permission: 'ledger.read',
     input: z.object({ entityId, periodKey: pk }).strict(),
     outputType: 'tie:Finding[]',
-    untrustedFields: ['flagged.*.memo'],
+    untrustedFields: ['flagged.*.memo', 'flagged.*.reversal.*.memo'],
     async handler({ services }, { entityId: e, periodKey }) {
       return services.anomaly.scan(e, periodKey);
     },
@@ -302,14 +302,15 @@ export const READ_TOOLS: AnyTool[] = [
   tool({
     name: 'report.package_data',
     title: 'Assemble close package data',
-    description: 'Trial balances, consolidated statements (ASC 830 translation, eliminations, CTA), approved commentary, reconciliation status, open items and agent activity for the period.',
+    description: 'Trial balances, consolidated statements (ASC 830 translation, eliminations, CTA), approved commentary, reconciliation status, open items and agent activity for the period, with readiness to lock once this package is approved.',
     effect: 'read',
     permission: 'report.view',
     input: z.object({ periodKey: pk }).strict(),
     outputType: 'tie:ClosePackage',
     async handler({ services, actor }, { periodKey }) {
       const content = await services.close.packageContent(periodKey, actor.id);
-      const readiness = await services.close.readiness(periodKey);
+      // what the package reports: every lock condition except its own approval
+      const readiness = await services.close.readiness(periodKey, { forPackage: true });
       return { content, readiness };
     },
   }),

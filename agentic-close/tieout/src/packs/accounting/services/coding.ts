@@ -129,8 +129,8 @@ export class CodingService {
         const cr = c as CompiledCodingRule;
         if ((cr.merchantContains && merchantN.includes(norm(cr.merchantContains))) || (cr.mcc && s.mcc === cr.mcc)) signals.push({ source: 'rule', accountCode: cr.account, weight: 0.97, detail: `Rule: “${r.text}”` });
       }
-      if (c.type === 'never_auto' && 'match' in c && c.match?.merchantContains && merchantN.includes(norm(c.match.merchantContains))) neverAuto = true;
     }
+    if (neverAutoRule(policy.rules, s.merchant, null)) neverAuto = true;
     // 3. history (same merchant, previously coded)
     const hist = (await this.c.tx.find('card_transactions', { entity_id: s.entityId, merchant_name: s.merchant, status: 'posted' })).filter((h) => h.id !== opts.excludeId && h.account_id);
     if (hist.length) {
@@ -227,4 +227,18 @@ function pickAccount(accts: AccountRow[], s: CodingSubject): AccountRow {
   // prefer an account whose name shares a word with the merchant/description
   const text = `${s.merchant} ${s.description}`.toLowerCase();
   return accts.find((a) => a.name.toLowerCase().split(/\W+/).some((w) => w.length > 4 && text.includes(w))) ?? accts[0]!;
+}
+
+/**
+ * The Controller's never-auto rules for a charge, evaluated on the record itself (its merchant and
+ * the account it would post to), never on what a drafter says about it. Returns the rule's text.
+ */
+export function neverAutoRule(rules: readonly Pick<EffectivePolicy['rules'][number], 'text' | 'compiled'>[], merchant: string, accountCode: string | null): string | null {
+  for (const r of rules) {
+    const c = r.compiled as { type?: string; match?: { merchantContains?: string; accountCode?: string } } | null;
+    if (c?.type !== 'never_auto') continue;
+    if (c.match?.merchantContains && norm(merchant).includes(norm(c.match.merchantContains))) return r.text;
+    if (c.match?.accountCode && accountCode === c.match.accountCode) return r.text;
+  }
+  return null;
 }

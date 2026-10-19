@@ -125,7 +125,7 @@ export class BankService {
     const ledger = await this.ledgerLines(bankAccountId, periodKey);
     const openBank = lines.filter((l) => l.status === 'unmatched');
     const openLedger = ledger.filter((l) => !l.matched);
-    const result = matchLines(openBank, openLedger);
+    const result = matchLines(openBank, openLedger, { currency: (await this.account(bankAccountId)).currency });
     const bankById = new Map(lines.map((l) => [l.id, l]));
     const ledgerById = new Map(ledger.map((l) => [l.id, l]));
     const vendors = await this.c.tx.find('vendors', {});

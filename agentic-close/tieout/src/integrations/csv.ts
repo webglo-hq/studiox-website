@@ -63,28 +63,61 @@ export function toCsv(rows: readonly (readonly (string | number | null | undefin
     .join('\r\n');
 }
 
-/** "1,234.56", "(1,234.56)", "-1234.56", "$1,234.56" -> minor units. */
+/**
+ * "1,234.56", "(1,234.56)", "-1234.56", "1234.56-", "$1,234.56" -> minor units. One sign at most,
+ * thousands separators only in their places, at most two decimals; anything else ("12-34",
+ * "--5", "1,23", "12.345") is refused rather than read as some other number.
+ */
 export function parseAmountMinor(s: string): number {
-  const t = s.trim();
+  let t = s.trim();
   if (!t) throw new Error('empty amount');
-  const negative = /^\(.*\)$/.test(t) || /^-/.test(t) || /-$/.test(t);
-  const digits = t.replace(/[()$£€,\s-]/g, '');
-  if (!/^\d+(\.\d{1,2})?$/.test(digits)) throw new Error(`invalid amount "${s}"`);
-  const [whole, frac = ''] = digits.split('.') as [string, string?];
+  let negative = false;
+  const minus = () => {
+    if (negative) throw new Error(`invalid amount "${s}"`);
+    negative = true;
+  };
+  if (/^\(.*\)$/.test(t)) {
+    minus();
+    t = t.slice(1, -1).trim();
+  }
+  if (t.startsWith('-')) {
+    minus();
+    t = t.slice(1).trim();
+  } else if (t.endsWith('-')) {
+    minus();
+    t = t.slice(0, -1).trim();
+  }
+  t = t.replace(/^[$£€]\s*/, '');
+  if (t.startsWith('-')) {
+    minus();
+    t = t.slice(1);
+  }
+  if (!/^(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$/.test(t)) throw new Error(`invalid amount "${s}"`);
+  const [whole, frac = ''] = t.replace(/,/g, '').split('.') as [string, string?];
   const minor = Number(whole) * 100 + Number((frac + '00').slice(0, 2));
-  return negative ? -minor : minor;
+  if (!Number.isSafeInteger(minor)) throw new Error(`invalid amount "${s}"`);
+  return negative && minor !== 0 ? -minor : minor;
 }
 
-/** Accepts YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY (with hint), YYYYMMDD. */
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * Accepts YYYY-MM-DD, YYYYMMDD, MM/DD/YYYY and DD/MM/YYYY (with hint) — and only dates that exist
+ * ("13/45/2026" and "2026-02-30" are refused, not turned into nonsense).
+ */
 export function parseDate(s: string, hint: 'us' | 'uk' = 'us'): string {
   const t = s.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-  if (/^\d{8}$/.test(t)) return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`;
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
-  if (m) {
-    const [a, b2, y] = [Number(m[1]), Number(m[2]), m[3]!];
-    const [mm, dd] = hint === 'us' ? [a, b2] : [b2, a];
-    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-  }
-  throw new Error(`invalid date "${s}"`);
+  let y: number;
+  let mo: number;
+  let d: number;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t) ?? /^(\d{4})(\d{2})(\d{2})$/.exec(t);
+  const slashed = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  if (iso) [y, mo, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+  else if (slashed) {
+    const [a, b] = [Number(slashed[1]), Number(slashed[2])];
+    [mo, d] = hint === 'us' ? [a, b] : [b, a];
+    y = Number(slashed[3]);
+  } else throw new Error(`invalid date "${s}"`);
+  if (mo < 1 || mo > 12 || d < 1 || d > new Date(Date.UTC(y, mo, 0)).getUTCDate()) throw new Error(`invalid date "${s}"`);
+  return `${y}-${pad2(mo)}-${pad2(d)}`;
 }

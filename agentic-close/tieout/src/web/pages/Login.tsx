@@ -139,7 +139,7 @@ export function Login() {
               <div>
                 <h2 style={{ fontSize: 24, fontFamily: 'var(--font-display)', fontWeight: 400 }}>Sign in</h2>
                 <p className="muted" style={{ marginTop: 4 }}>
-                  {opts?.demo ? 'Pick a person to see the close from their seat, or use the form.' : 'Use your work email.'}
+                  {opts?.demo ? 'Pick a person to see the close from their seat. New here? Start as Jordan Lee, then follow “What’s next” on My close.' : 'Use your work email.'}
                 </p>
               </div>
               {opts?.demo && opts.personas.length ? (
@@ -151,7 +151,7 @@ export function Login() {
                         <span style={{ fontWeight: 600 }}>{p.name}</span>
                         <br />
                         <span className="muted" style={{ fontSize: 13 }}>
-                          {p.title}
+                          {p.title} · {p.part}
                         </span>
                       </span>
                       <span className="badge neutral">{ROLE_LABEL[p.role] ?? p.role}</span>
@@ -191,6 +191,11 @@ export function Login() {
                   </a>
                 ) : null}
               </form>
+              {opts?.demo ? (
+                <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+                  Invited, or reset your password? In the demo, those links arrive in the <a href="#/mailbox">demo mailbox</a> instead of by email.
+                </p>
+              ) : null}
             </>
           ) : stage === 'newpw' ? (
             <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void choosePassword(e)}>

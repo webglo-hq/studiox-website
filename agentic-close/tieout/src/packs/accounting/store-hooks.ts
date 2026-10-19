@@ -10,7 +10,7 @@ type Row = Record<string, unknown>;
 const fail = (axiom: string, msg: string, code = '23514') => {
   throw new StoreError(code, `${axiom}: ${msg}`);
 };
-const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening']);
+const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening', 'closing']);
 
 function postingChecks(je: Row, db: HookReader) {
   const period = db.get('periods', je.period_id as string);
@@ -98,7 +98,9 @@ export const accountingHooks: MemoryHooks = {
       if (next.status === 'posted') postingChecks(next, db);
     },
     journal_lines: (old, next, db) => {
+      // the entry a line leaves and the entry it joins must both still be editable (AX-IM-01)
       lineGuard(old.journal_entry_id as string, db);
+      if (next.journal_entry_id !== old.journal_entry_id) lineGuard(next.journal_entry_id as string, db);
       lineRowChecks(next, db);
     },
     periods: (old, next) => {

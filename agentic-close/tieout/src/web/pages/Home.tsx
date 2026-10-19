@@ -1,9 +1,13 @@
-/** "My close": what needs me today, how far the close is, and the one button that starts the agents. */
-import { ArrowRight, Bot, CircleCheck, FileText, Lock, Play } from 'lucide-react';
+/**
+ * "My close": what's next for me (or, when nothing is, who the close waits on), a short guide to
+ * how the close runs for first-time users, how far the close is, and the button that starts the
+ * agents.
+ */
+import { ArrowRight, Bot, CircleCheck, Compass, FileText, Lock, Play, X } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError, type CloseRunResult, type HomeData } from '../api';
 import { Badge, Confidence, Dialog, ErrorBox, FlagBadges, Loading, Meter, Money, ProposalStatus, Stat, Term } from '../components/ui';
-import { can, useApp, useData, useMe } from '../lib/app-state';
+import { can, readPref, useApp, useData, useMe, writePref } from '../lib/app-state';
 import { date, dateTime, KIND_LABEL, periodName } from '../lib/format';
 
 export function Home() {
@@ -12,6 +16,7 @@ export function Home() {
   const { data, error, loading, reload } = useData(() => api<HomeData>(`/home?period=${period}`), [period]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<CloseRunResult | null>(null);
+  const [guide, setGuide] = useState(() => readPref('guide') !== 'hidden');
 
   async function runAgents() {
     setRunning(true);
@@ -83,8 +88,46 @@ export function Home() {
         </div>
       ) : null}
 
+      {!closed ? (
+        <section className="card card-pad stack next-steps" aria-labelledby="h-next" style={{ marginBottom: 16, gap: 10 }}>
+          <h2 id="h-next" style={{ margin: 0 }}>
+            What’s next for you
+          </h2>
+          {data.next.steps.length ? (
+            <ol className="next-list">
+              {data.next.steps.map((s) => (
+                <li key={s.text}>
+                  {s.action === 'run-agents' ? (
+                    <>
+                      <span>{s.text}</span>{' '}
+                      <button className="btn small primary" onClick={() => void runAgents()} disabled={running}>
+                        <Play className="icon" aria-hidden="true" /> {running ? 'Agents are working…' : 'Run close agents'}
+                      </button>
+                    </>
+                  ) : (
+                    <a href={s.href}>{s.text}</a>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p style={{ margin: 0 }}>
+              <CircleCheck className="icon" aria-hidden="true" style={{ verticalAlign: -3 }} /> Nothing needs you right now.
+            </p>
+          )}
+          {data.next.waitingOn.length ? (
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              {data.next.steps.length ? 'Also open, with other people: ' : 'The close is waiting on: '}
+              {data.next.waitingOn.join('; ')}.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {!closed && guide ? <Guide data={data} onHide={() => { writePref('guide', 'hidden'); setGuide(false); }} /> : null}
+
       <div className="grid cols-4" style={{ marginBottom: 16 }}>
-        <Stat label="Waiting for you" value={<span>{data.inbox.awaitingMe}</span>} sub={<a href="#/inbox">{data.inbox.pending} need approval overall</a>} />
+        <Stat label="Waiting for you" value={<span>{data.inbox.awaitingMe}</span>} sub={<a href="#/inbox">{data.inbox.open} need a decision overall</a>} />
         <Stat label="Applied by policy" value={data.inbox.autoApplied} sub={<span>{data.inbox.reviewQueue} sampled for review</span>} />
         <div className="card stat">
           <div className="label">Close progress</div>
@@ -118,7 +161,7 @@ export function Home() {
             <h2 id="h-wait">Needs a decision</h2>
             <span className="right">
               <a href="#/inbox" className="btn small ghost">
-                All {data.inbox.pending + data.inbox.suggested} <ArrowRight className="icon" aria-hidden="true" />
+                All {data.inbox.open} <ArrowRight className="icon" aria-hidden="true" />
               </a>
             </span>
           </div>
@@ -170,7 +213,7 @@ export function Home() {
                     <div className="title">{t.title}</div>
                     <div className="meta">
                       Due {t.dueLabel} ({date(t.due_date)}) · {t.owner_id === me.user.id ? 'You prepare' : 'You review'}
-                      {t.openDependencies.length ? ` · waiting on ${t.openDependencies.join(', ')}` : ''}
+                      {t.waitingOn.length ? ` · waiting on “${t.waitingOn.join('”, “')}”` : ''}
                     </div>
                   </div>
                   <Badge tone={t.overdue ? 'bad' : t.status === 'ready_for_review' ? 'info' : 'neutral'}>{t.overdue ? 'Overdue' : t.status.replace(/_/g, ' ')}</Badge>
@@ -234,6 +277,14 @@ export function Home() {
         </div>
       </div>
 
+      {!closed && !guide ? (
+        <p style={{ marginTop: 16 }}>
+          <button className="linklike" onClick={() => { writePref('guide', null); setGuide(true); }}>
+            Show how the close runs
+          </button>
+        </p>
+      ) : null}
+
       <Dialog open={!!result} onClose={() => setResult(null)} title="Close agents finished" actions={<a className="btn primary" href="#/inbox" onClick={() => setResult(null)}>Review the inbox</a>}>
         {result ? (
           <>
@@ -244,7 +295,7 @@ export function Home() {
               {result.tasks.map((t) => (
                 <li key={t.key}>
                   <Badge tone={t.outcome === 'succeeded' ? 'good' : t.outcome === 'skipped' ? 'warn' : 'bad'}>
-                    {t.key}
+                    {t.title}
                   </Badge>
                   <span style={{ fontSize: 13 }}>{t.runs.map((r) => r.headline).join(' · ') || 'Skipped: a prerequisite did not finish.'}</span>
                 </li>
@@ -254,5 +305,44 @@ export function Home() {
         ) : null}
       </Dialog>
     </div>
+  );
+}
+
+/** The close in six steps, who does each, and where this month is — for a first visit (dismissible). */
+const STEPS: { title: string; who: string; href: string }[] = [
+  { title: 'Run the close agents', who: 'Senior Accountant', href: '#/home' },
+  { title: 'Decide what the agents prepared', who: 'Senior Accountant up to $25,000, Controller up to $250,000, CFO above', href: '#/inbox' },
+  { title: 'Certify and review the reconciliations', who: 'Staff Accountant, then a reviewer', href: '#/recs' },
+  { title: 'Explain significant variances', who: 'Staff Accountant or FP&A; the Controller approves', href: '#/flux' },
+  { title: 'Sign off the checklist and draft the close package', who: 'Each task’s reviewer, then the Controller', href: '#/close' },
+  { title: 'Approve the package and lock the month', who: 'CFO', href: '#/close' },
+];
+
+function Guide({ data, onHide }: { data: HomeData; onHide: () => void }) {
+  const r = data.readiness;
+  const current = !data.agentsRun ? 0 : r.pendingProposals ? 1 : r.openRecs ? 2 : r.unexplainedFlux ? 3 : r.openTasks || !data.latestPackage ? 4 : 5;
+  return (
+    <section className="card card-pad stack guide" aria-labelledby="h-guide" style={{ marginBottom: 16, gap: 10 }}>
+      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+        <h2 id="h-guide" style={{ margin: 0 }}>
+          <Compass className="icon" aria-hidden="true" style={{ verticalAlign: -3 }} /> How the close runs
+        </h2>
+        <button className="btn ghost small" onClick={onHide} aria-label="Hide the guide">
+          <X className="icon" aria-hidden="true" />
+        </button>
+      </div>
+      <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+        Agents prepare; people decide. Every step is done by a different person than the one who prepared it, and the period locks only when all of it is done.
+      </p>
+      <ol className="guide-steps">
+        {STEPS.map((s, i) => (
+          <li key={s.title} aria-current={i === current ? 'step' : undefined} className={i < current ? 'done' : i === current ? 'now' : undefined}>
+            <a href={s.href}>{s.title}</a>
+            <span className="muted"> · {s.who}</span>
+            {i === current ? <Badge tone="info" icon={false}>This month is here</Badge> : null}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

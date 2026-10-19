@@ -32,6 +32,12 @@ test.afterAll(async () => {
   await page.close();
 });
 
+test('0 · T-4: the sign-in cards say what each person does and where a first-time user starts', async () => {
+  await expect(page.getByText('New here? Start as Jordan Lee')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Jordan Lee/ })).toContainText('Start here: runs the close agents.');
+  await expect(page.getByRole('button', { name: /Sam Rivera/ })).toContainText('Certifies reconciliations and explains variances.');
+});
+
 test('1 · sign in as the Senior Accountant of the fictional company', async () => {
   await expect(page.getByText('Bramblewood Labs is a fictional company')).toBeVisible();
   await page.getByRole('button', { name: /Jordan Lee/ }).click();
@@ -40,14 +46,36 @@ test('1 · sign in as the Senior Accountant of the fictional company', async () 
   await expect(page.locator('.period-chip')).toContainText('WD+2');
 });
 
+test('1b · T-4: My close says what is next, with a short guide to the whole close', async () => {
+  const next = page.getByRole('region', { name: 'What’s next for you' });
+  await expect(next).toContainText('Run the close agents for September 2026');
+  await expect(next.getByRole('button', { name: 'Run close agents' })).toBeVisible();
+  const guide = page.getByRole('region', { name: 'How the close runs' });
+  await expect(guide.locator('[aria-current="step"]')).toContainText('Run the close agents');
+  await expect(guide).toContainText('Approve the package and lock the month');
+});
+
 test('2 · run the close agents: nine checklist tasks in dependency waves', async () => {
   await page.getByRole('button', { name: /Run close agents/ }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Close agents finished' });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
   await expect(dialog).toContainText('9 of 9 checklist tasks ran in 3 dependency waves');
-  await expect(dialog).toContainText('Proposed 4 accruals totalling $561,381.00 for BWL-US');
+  await expect(dialog).toContainText('Proposed 4 accruals totalling $515,469.00 for BWL-US');
+  // T-5: checklist tasks by their names, not their keys
+  await expect(dialog).toContainText('Code card transactions and bills');
+  await expect(dialog).not.toContainText('code-transactions');
   await dialog.getByRole('link', { name: 'Review the inbox' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
+});
+
+test('2b · T-7: My close and the inbox count what needs a decision the same way', async () => {
+  await go('/home');
+  const overall = Number((await page.getByRole('link', { name: /need a decision overall/ }).innerText()).match(/\d+/)![0]);
+  await go('/inbox');
+  await expect(page.getByRole('button', { name: `Needs a decision (${overall})` })).toBeVisible();
+  // once the agents ran, running them is no longer what's next
+  await go('/home');
+  await expect(page.getByRole('region', { name: 'What’s next for you' })).not.toContainText('Run the close agents');
 });
 
 test('3 · the planted prompt injection in a bank memo is withheld and held for a person', async () => {
@@ -86,6 +114,40 @@ test('5 · the Controller approves the accrual; it posts with why, evidence and 
   await expect(page.locator('main')).toContainText(/Posted/);
   // accruals reverse on day 1 of the next period, posted automatically once October is open
   await expect(page.locator('main')).toContainText(/JE-2026-10-US-\d+ \(posted\)/);
+});
+
+test('5b · T-3: a keyboard user opens a proposal with Enter, reads its evidence and approves it', async () => {
+  await go('/inbox?q=depreciation – computer equipment');
+  await inboxLoaded();
+  const row = page.locator('.prop').filter({ hasText: 'Post September 2026 depreciation – computer equipment' }).first();
+  // T-8: the checkbox says which item it selects
+  await expect(row.getByRole('checkbox')).toHaveAccessibleName(/^Select P-\d+: Post September 2026 depreciation – computer equipment/);
+  await row.focus();
+  await page.keyboard.press('Enter');
+  const drawer = page.getByRole('dialog', { name: /Post September 2026 depreciation – computer equipment/ });
+  await expect(drawer).toBeVisible();
+  await page.waitForTimeout(400); // it used to close again at once
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole('heading', { level: 2 })).toBeFocused();
+  await expect(drawer.getByRole('heading', { name: 'Evidence' })).toBeVisible();
+  // T-5: who decides, in words, and materiality spelled out
+  await expect(drawer).toContainText('Who can decide');
+  await expect(drawer).toContainText('Senior Accountant, Controller, CFO, within their approval limit');
+  await expect(drawer).not.toContainText(/\b(?:je|flux|close|recon|coding)\.[a-z]+\b/);
+  await expect(drawer).not.toContainText('below pm');
+  // Tab moves through the panel to the decision; Enter decides
+  const approve = drawer.getByRole('button', { name: /Approve & post/ });
+  for (let i = 0; i < 60 && !(await approve.evaluate((b) => b === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await expect(approve).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(toast(/approved and applied/)).toBeVisible();
+});
+
+test('5c · T-8: the theme button is named by the word it shows', async () => {
+  const theme = page.locator('.topbar button[title*="heme"]');
+  const shown = (await theme.innerText()).trim();
+  expect(shown).toBe('Auto');
+  await expect(theme).toHaveAccessibleName(/^Auto theme/);
 });
 
 test('6 · approval limits route the payroll accrual to the CFO', async () => {
@@ -149,6 +211,8 @@ const signInAs = async (name: string) => {
   await page.getByRole('button', { name: new RegExp(name) }).click();
   await expect(page.locator('.topbar')).toContainText(name);
 };
+/** A checklist task by its title (other tasks mention it as a prerequisite). */
+const taskNamed = (title: string) => page.locator('.task').filter({ has: page.locator('.title').getByText(title, { exact: true }) });
 /** The inbox list shows the data for the current URL (it is aria-busy while a query loads). */
 const inboxLoaded = async () => {
   await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
@@ -185,6 +249,14 @@ test('12 · decide everything: the Controller approves in bulk, rejects the flag
   await go('/inbox');
   await inboxLoaded();
   await expect(page.getByText('Nothing needs a decision')).toBeVisible();
+});
+
+test('12b · T-4: once the decisions are made, the Staff Accountant is told what is next', async () => {
+  await signInAs('Sam Rivera');
+  await go('/home');
+  const next = page.getByRole('region', { name: 'What’s next for you' });
+  await expect(next).toContainText('Certify 6 reconciliations as preparer, noting anything still open.');
+  await expect(next.getByRole('link', { name: /Certify 6 reconciliations/ })).toHaveAttribute('href', '#/recs');
 });
 
 test('13 · reconciliations: the Staff Accountant certifies, documenting what is still open', async () => {
@@ -254,13 +326,32 @@ test('15 · the Controller approves the explanations, reviews the reconciliation
     await expect(review).toHaveCount(before - 1);
   }
   await go('/close');
+  // T-7: every agent item is decided, and the checklist says so without contradicting itself
+  await expect(page.locator('main')).toContainText('All agent items decided.');
+  await expect(page.locator('main')).not.toContainText('waiting for a decision');
+  // each task the Controller reviews (or may stand in for a Senior Accountant who ran its agents),
+  // in dependency order: signing one can make the next one ready
   const signOff = page.getByRole('button', { name: 'Sign off' });
   await expect(signOff.first()).toBeVisible();
   for (let i = 0; i < 12 && (await signOff.count()); i++) {
-    const before = await signOff.count();
+    const task = page.locator('.task').filter({ has: page.getByRole('button', { name: 'Sign off' }) }).first();
+    const title = await task.locator('.title').innerText();
     await signOff.first().click();
-    await expect(signOff).toHaveCount(before - 1);
+    await expect(toast(`${title}: signed off.`)).toBeVisible();
+    await expect(taskNamed(title).getByRole('button', { name: 'Sign off' })).toHaveCount(0);
   }
+});
+
+test('15b · T-10: the CFO signs off the journal-entry review the Controller owns; then the package is drafted', async () => {
+  const review = taskNamed('Review journal entries for risk');
+  await expect(review).toContainText('You own this task, so its reviewer signs it off (SOD-01).');
+  await expect(review.getByRole('button', { name: 'Sign off' })).toHaveCount(0);
+  await signInAs('Riley Chen');
+  await go('/close');
+  await review.getByRole('button', { name: 'Sign off' }).click();
+  await expect(toast('Review journal entries for risk: signed off.')).toBeVisible();
+  await signInAs('Casey Morgan');
+  await go('/close');
   await expect(page.locator('main')).toContainText('generate the close package first');
   await page.getByRole('button', { name: 'Draft close package' }).click();
   await expect(toast(/Close package drafted/)).toBeVisible({ timeout: 60_000 });
@@ -282,6 +373,12 @@ test('16 · the CFO approves and signs the close package, then locks September',
   await expect(page.getByRole('heading', { name: 'Period locked' })).toBeVisible();
   await page.getByRole('link', { name: 'Open package' }).click();
   await expect(page.locator('main')).toContainText(/final/i);
+});
+
+test('16b · T-1: the signed package shows the gross margin once, as a percentage', async () => {
+  await expect(page.getByRole('heading', { level: 1, name: /close package/ })).toBeVisible();
+  // a share of revenue, not a change and not scaled twice (it read "+8890.0%")
+  await expect(page.locator('.stat').filter({ hasText: 'Gross margin' }).locator('.value')).toHaveText(/^\d{1,2}\.\d%$/);
 });
 
 test('17 · My close now says the month is closed and points to the signed package', async () => {

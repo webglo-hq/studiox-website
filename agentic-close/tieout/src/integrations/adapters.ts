@@ -3,11 +3,11 @@
  * standard parsers (BAI2, ISO 20022 camt.053, OFX, CSV); card, GL, AP and payroll adapters parse
  * documented CSV/JSON layouts that mirror common exports, with realistic sample payloads.
  */
-import { parseBai2 } from './bai2';
-import { parseCamt053, writeCamt053 } from './camt053';
+import { parseBai2Statements } from './bai2';
+import { parseCamt053Statements, writeCamt053 } from './camt053';
 import { parseAmountMinor, parseCsvObjects, parseDate } from './csv';
-import { parseOfx } from './ofx';
-import type { ConnectorFormat, ConnectorKind, ImportError, ParseResult, ParsedBill, ParsedCardTransaction, ParsedGlLine, ParsedPayrollRun } from './types';
+import { parseOfxStatements } from './ofx';
+import { failClosed, type ConnectorFormat, type ConnectorKind, type ImportError, type ParseResult, type ParsedBill, type ParsedCardTransaction, type ParsedGlLine, type ParsedPayrollRun } from './types';
 
 export interface ConnectorAdapter {
   id: string;
@@ -63,6 +63,7 @@ const cardCsv: ConnectorAdapter = {
         warnings.push({ line, message: (e as Error).message });
       }
     }
+    failClosed(warnings);
     return { kind: 'card_transactions', transactions, warnings };
   },
 };
@@ -99,9 +100,11 @@ const bankCsv: ConnectorAdapter = {
         warnings.push({ line, message: (e as Error).message });
       }
     }
+    failClosed(warnings);
     const net = transactions.reduce((s, t) => s + t.amountMinor, 0);
     const date = transactions.map((t) => t.bookingDate).sort().pop() ?? '';
-    return { kind: 'bank_statement', statement: { format: 'csv', accountNumber: account, currency: 'USD', statementDate: date, openingBalanceMinor: 0, closingBalanceMinor: net, transactions, warnings } };
+    // a bank CSV carries no currency or balances: the bank account it is imported into decides the currency
+    return { kind: 'bank_statement', statements: [{ format: 'csv', accountNumber: account, currency: '', statementDate: date, openingBalanceMinor: 0, closingBalanceMinor: net, transactions, warnings }] };
   },
 };
 
@@ -129,6 +132,7 @@ const glCsv: ConnectorAdapter = {
         warnings.push({ line, message: (e as Error).message });
       }
     }
+    failClosed(warnings);
     return { kind: 'gl_lines', lines, warnings };
   },
 };
@@ -181,6 +185,7 @@ const apJson: ConnectorAdapter = {
         warnings.push({ line: i + 1, message: (e as Error).message });
       }
     });
+    failClosed(warnings);
     return { kind: 'bills', bills, warnings };
   },
 };
@@ -212,6 +217,7 @@ const payrollCsv: ConnectorAdapter = {
         warnings.push({ line, message: (e as Error).message });
       }
     }
+    failClosed(warnings);
     return { kind: 'payroll_runs', runs, warnings };
   },
 };
@@ -243,9 +249,9 @@ const CAMT_SAMPLE = () =>
   });
 
 export const ADAPTERS: ConnectorAdapter[] = [
-  { id: 'bank:bai2', kind: 'bank_feed', format: 'bai2', name: 'Bank statement (BAI2)', description: 'BAI2 cash management balance report: 01/02/03/16/88/49/98/99 records; 010/015 ledger balances.', mime: 'text/plain', fileExtension: '.bai', sample: () => BAI2_SAMPLE, parse: (c) => ({ kind: 'bank_statement', statement: parseBai2(c) }) },
-  { id: 'bank:camt053', kind: 'bank_feed', format: 'camt053', name: 'Bank statement (ISO 20022 camt.053)', description: 'BankToCustomerStatement XML with OPBD/CLBD balances and Ntry entries.', mime: 'application/xml', fileExtension: '.xml', sample: () => CAMT_SAMPLE(), parse: (c) => ({ kind: 'bank_statement', statement: parseCamt053(c) }) },
-  { id: 'bank:ofx', kind: 'bank_feed', format: 'ofx', name: 'Bank statement (OFX)', description: 'Open Financial Exchange STMTRS with STMTTRN entries.', mime: 'application/x-ofx', fileExtension: '.ofx', sample: () => 'OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD<BANKACCTFROM><ACCTID>4417</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261001<TRNAMT>275.00<FITID>OFX-1<NAME>ALDERGROVE</STMTTRN></BANKTRANLIST><LEDGERBAL><BALAMT>275.00<DTASOF>20261001</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>', parse: (c) => ({ kind: 'bank_statement', statement: parseOfx(c) }) },
+  { id: 'bank:bai2', kind: 'bank_feed', format: 'bai2', name: 'Bank statement (BAI2)', description: 'BAI2 cash management balance report: 01/02/03/16/88/49/98/99 records; 010/015 ledger balances.', mime: 'text/plain', fileExtension: '.bai', sample: () => BAI2_SAMPLE, parse: (c) => ({ kind: 'bank_statement', statements: parseBai2Statements(c) }) },
+  { id: 'bank:camt053', kind: 'bank_feed', format: 'camt053', name: 'Bank statement (ISO 20022 camt.053)', description: 'BankToCustomerStatement XML with OPBD/CLBD balances and Ntry entries.', mime: 'application/xml', fileExtension: '.xml', sample: () => CAMT_SAMPLE(), parse: (c) => ({ kind: 'bank_statement', statements: parseCamt053Statements(c) }) },
+  { id: 'bank:ofx', kind: 'bank_feed', format: 'ofx', name: 'Bank statement (OFX)', description: 'Open Financial Exchange STMTRS with STMTTRN entries.', mime: 'application/x-ofx', fileExtension: '.ofx', sample: () => 'OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD<BANKACCTFROM><ACCTID>4417</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261001<TRNAMT>275.00<FITID>OFX-1<NAME>ALDERGROVE</STMTTRN></BANKTRANLIST><LEDGERBAL><BALAMT>275.00<DTASOF>20261001</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>', parse: (c) => ({ kind: 'bank_statement', statements: parseOfxStatements(c) }) },
   bankCsv,
   cardCsv,
   glCsv,

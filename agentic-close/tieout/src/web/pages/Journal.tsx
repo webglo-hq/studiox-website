@@ -337,6 +337,8 @@ function NewEntry({ onClose }: { onClose: () => void }) {
   const { period, toast, bump } = useApp();
   const legal = me.entities.filter((e) => e.kind !== 'elimination');
   const [entityId, setEntity] = useState(legal[0]!.id);
+  // amounts are entered, and totalled, in the entity's functional currency
+  const currency = legal.find((e) => e.id === entityId)?.currency ?? 'USD';
   const [postingDate, setDate] = useState(`${period}-30`);
   const [memo, setMemo] = useState('');
   const [entryType, setType] = useState<'standard' | 'adjusting' | 'accrual' | 'reclass'>('adjusting');
@@ -437,7 +439,7 @@ function NewEntry({ onClose }: { onClose: () => void }) {
           <Plus className="icon" aria-hidden="true" /> Line
         </button>
         <span className={dr === cr && dr > 0 ? '' : 'error-text'} role="status">
-          Debits <Money minor={dr} /> · Credits <Money minor={cr} /> {dr === cr && dr > 0 ? '· balanced' : '· must balance'}
+          Debits <Money minor={dr} currency={currency} /> · Credits <Money minor={cr} currency={currency} /> {dr === cr && dr > 0 ? '· balanced' : '· must balance'}
         </span>
       </div>
       {error ? (
