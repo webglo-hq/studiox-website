@@ -1,0 +1,113 @@
+{
+  "skill": "transaction-coding",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "us-september-card-spend",
+      "description": "Codes every US card transaction, follows the plain-English rules (Figma to 6420, Apple Store needs approval) and flags the expensed laptop for capitalization",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:card-coding:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "summary": "123 uncoded transaction\\(s\\) reviewed, 0 left for a person",
+        "proposals": [
+          {
+            "title": "^Capitalize APPLE STORE #R102 \\$14,800\\.00: expensed to 6600 Office supplies, belongs in 1500 Computer equipment",
+            "kind": "schedule",
+            "status": "pending"
+          },
+          {
+            "title": "^Code FIGMA INC .* to 6420 Software subscriptions",
+            "kind": "transaction_coding",
+            "status": "auto_applied"
+          },
+          {
+            "title": "^Code APPLE STORE #R102 .* to 6610 Small equipment",
+            "kind": "transaction_coding",
+            "status": "pending"
+          }
+        ],
+        "counts": {
+          "blocked": 0,
+          "minAutoApplied": 100
+        }
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "l1-autonomy-queues-everything",
+      "description": "At autonomy L1 nothing is applied without a person",
+      "policy": {
+        "autonomy": "L1"
+      },
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:card-coding:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "counts": {
+          "autoApplied": 0,
+          "minPending": 100
+        }
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "plain-english-rule-requires-review",
+      "description": "A new plain-English rule (\"Require approval for Figma\") sends Figma charges to the inbox",
+      "policy": {
+        "rulesText": "Always code Figma to 6420\nRequire approval for Figma"
+      },
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:card-coding:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Code FIGMA INC .* to 6420",
+            "status": "pending"
+          }
+        ],
+        "absent": [
+          "^Code FIGMA INC .* to (?!6420)"
+        ]
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "uk-gbp-card-spend",
+      "description": "Codes the UK card feed in GBP with the same rules",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:card-coding:BW-UK",
+        "entity": "BW-UK",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Code FIGMA INC £.* to 6420",
+            "status": "auto_applied"
+          }
+        ],
+        "counts": {
+          "blocked": 0,
+          "pending": 0
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

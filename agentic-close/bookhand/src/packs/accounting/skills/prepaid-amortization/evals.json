@@ -1,0 +1,32 @@
+{
+  "skill": "prepaid-amortization",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "us-amortize-and-catch-up",
+      "description": "Posts this month of the software license and proposes a schedule for the unscheduled insurance prepayment with a catch-up",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:prepaids:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Amortize Penrose Design Suite annual license 2026-27 \\$3,000\\.00",
+            "kind": "journal_entry",
+            "status": "auto_applied"
+          },
+          {
+            "title": "^Create prepaid schedule for Ironclad Mutual Insurance .* catch up 2 month\\(s\\) \\(\\$8,000\\.00\\)",
+            "kind": "schedule",
+            "status": "pending"
+          }
+        ]
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

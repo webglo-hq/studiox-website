@@ -1,0 +1,91 @@
+import type { RelationDef } from '../../../ontology/kernel';
+
+const r = (id: string, label: string, domain: string, range: string, definition: string, inverse?: string): RelationDef => ({ id, label, domain, range, definition, inverse });
+
+export const relations: RelationDef[] = [
+  // REA
+  r('bh:changesResource', 'changes resource', 'bh:EconomicEvent', 'bh:EconomicResource', 'The event increments or decrements this resource (REA stock-flow).'),
+  r('bh:participant', 'has participant', 'bh:EconomicEvent', 'bh:EconomicAgent', 'An agent taking part in the event (provider or recipient).'),
+  r('bh:fulfills', 'fulfills', 'bh:EconomicEvent', 'bh:Commitment', 'The event executes a prior commitment (e.g. a receipt fulfils a PO).'),
+  r('bh:dualOf', 'is dual of', 'bh:EconomicEvent', 'bh:EconomicEvent', 'Exchange duality: the decrement paired with this increment.'),
+  // Ledger
+  r('bh:recordsEvent', 'records event', 'bh:JournalEntry', 'bh:EconomicEvent', 'The economic event this entry records.'),
+  r('bh:hasLine', 'has line', 'bh:JournalEntry', 'bh:JournalLine', 'Lines of the entry (two or more).'),
+  r('bh:postsTo', 'posts to', 'bh:JournalLine', 'bh:PostableAccount', 'Account the line posts to.'),
+  r('bh:taggedWith', 'tagged with', 'bh:JournalLine', 'bh:Dimension', 'Dimension values on the line.'),
+  r('bh:inPeriod', 'in period', 'bh:JournalEntry', 'bh:AccountingPeriod', 'Period the entry posts to.'),
+  r('bh:ofEntity', 'of entity', 'bh:JournalEntry', 'bh:ReportingEntity', 'Entity whose books it belongs to.'),
+  r('bh:evidencedBy', 'evidenced by', 'bh:JournalEntry', 'bh:SourceDocument', 'Source document supporting the entry.'),
+  r('bh:preparedBy', 'prepared by', 'bh:JournalEntry', 'bh:Person', 'Maker of the entry (or the accountable requester for agent work).'),
+  r('bh:approvedBy', 'approved by', 'bh:JournalEntry', 'bh:Person', 'Checker who approved the entry; never the preparer.'),
+  r('bh:reverses', 'reverses', 'bh:Reversal', 'bh:JournalEntry', 'The posted entry this reversal undoes.'),
+  r('bh:rollsUpTo', 'rolls up to', 'bh:Account', 'bh:FinancialStatementLine', 'Statement line the account is presented in.'),
+  r('bh:childOf', 'child of', 'bh:Account', 'bh:HeaderAccount', 'Chart-of-accounts hierarchy.'),
+  r('bh:hasAccountClass', 'has account class', 'bh:Account', 'bh:AccountClass', 'Element of the financial statements.'),
+  r('bh:hasNormalBalance', 'has normal balance', 'bh:Account', 'bh:NormalBalance', 'Side that increases the account.'),
+  r('bh:periodState', 'has state', 'bh:AccountingPeriod', 'bh:PeriodState', 'Current lifecycle state.'),
+  r('bh:summarizes', 'summarizes', 'bh:TrialBalance', 'bh:Ledger', 'Balances of every account at a date.'),
+  r('bh:presents', 'presents', 'bh:FinancialStatement', 'bh:FinancialStatementLine', 'Lines on the statement.'),
+  // Subledgers
+  r('bh:tiesTo', 'ties to', 'bh:ControlAccount', 'bh:Subledger', 'The control account must equal this subledger\'s total.'),
+  r('bh:billFor', 'bill for', 'bh:VendorBill', 'bh:PurchaseOrder', 'PO the bill invoices.'),
+  r('bh:receiptFor', 'receipt for', 'bh:GoodsReceipt', 'bh:PurchaseOrder', 'PO line received.'),
+  r('bh:settles', 'settles', 'bh:VendorPayment', 'bh:VendorBill', 'Bills a payment is applied to.'),
+  r('bh:fromVendor', 'from vendor', 'bh:VendorBill', 'bh:Vendor', 'Supplier who issued the bill.'),
+  r('bh:toCustomer', 'to customer', 'bh:CustomerInvoice', 'bh:Customer', 'Customer billed.'),
+  r('bh:onStatement', 'on statement', 'bh:BankTransaction', 'bh:BankStatement', 'Statement the transaction appears on.'),
+  r('bh:depreciatedBy', 'depreciated by', 'bh:FixedAsset', 'bh:DepreciationScheduleLine', 'Schedule lines for the asset.'),
+  r('bh:amortizedBy', 'amortized by', 'bh:AmortizationSchedule', 'bh:AmortizationScheduleLine', 'Monthly release lines.'),
+  // Accruals
+  r('bh:accrues', 'accrues', 'bh:Accrual', 'bh:UnrecordedLiability', 'Liability the accrual records.'),
+  r('bh:reversesOn', 'auto-reverses via', 'bh:Accrual', 'bh:AutoReversal', 'Scheduled reversal next period.'),
+  // Reconciliation
+  r('bh:reconciles', 'reconciles', 'bh:Reconciliation', 'bh:Account', 'GL account being reconciled.'),
+  r('bh:against', 'against', 'bh:Reconciliation', 'bh:Subledger', 'Independent evidence (statement, subledger, counterparty).'),
+  r('bh:hasMatch', 'has match', 'bh:Reconciliation', 'bh:ReconciliationMatch', 'Match groups.'),
+  r('bh:matchType', 'match type', 'bh:ReconciliationMatch', 'bh:MatchType', 'How the items were matched.'),
+  r('bh:hasReconcilingItem', 'has reconciling item', 'bh:Reconciliation', 'bh:ReconcilingItem', 'Explained differences.'),
+  r('bh:certifiedBy', 'certified by', 'bh:Reconciliation', 'bh:Certification', 'Preparer and reviewer sign-offs.'),
+  // Flux
+  r('bh:hasVariance', 'has variance', 'bh:FluxAnalysis', 'bh:Variance', 'Variances by account.'),
+  r('bh:hasDriver', 'has driver', 'bh:Variance', 'bh:VarianceDriver', 'Components explaining the change.'),
+  r('bh:explains', 'explains', 'bh:FluxExplanation', 'bh:Variance', 'Explanation of a material variance.'),
+  r('bh:thresholdFrom', 'threshold derived from', 'bh:FluxThreshold', 'bh:Materiality', 'Flux thresholds derive from performance materiality.'),
+  r('bh:comparesTo', 'compares to', 'bh:BudgetVsActual', 'bh:Budget', 'Plan used as comparison.'),
+  // Intercompany & FX
+  r('bh:counterparty', 'counterparty', 'bh:IntercompanyTransaction', 'bh:ReportingEntity', 'The other group entity.'),
+  r('bh:eliminates', 'eliminates', 'bh:Elimination', 'bh:IntercompanyBalance', 'Balances removed in consolidation.'),
+  r('bh:consolidates', 'consolidates', 'bh:Consolidation', 'bh:ReportingEntity', 'Entities combined.'),
+  r('bh:functionalCurrency', 'functional currency', 'bh:ReportingEntity', 'bh:FunctionalCurrency', 'Entity\'s functional currency.'),
+  r('bh:denominatedIn', 'denominated in', 'bh:MonetaryItem', 'bh:Currency', 'Currency of the balance.'),
+  r('bh:usesRate', 'uses rate', 'bh:Remeasurement', 'bh:ExchangeRate', 'Closing rate for remeasurement.'),
+  // Controls
+  r('bh:supportsAssertion', 'supports assertion', 'bh:Control', 'bh:AuditAssertion', 'Assertion the control addresses.'),
+  r('bh:hasRole', 'has role', 'bh:Person', 'bh:Role', 'RBAC assignment.'),
+  r('bh:approvalLimit', 'approval limit', 'bh:Role', 'bh:ApprovalLimit', 'Maximum approvable amount.'),
+  r('bh:evidence', 'has evidence', 'bh:Control', 'bh:Evidence', 'Evidence of the control operating.'),
+  r('bh:logs', 'logged as', 'bh:Thing', 'bh:AuditEvent', 'Every mutation is logged in the hash-chained audit log.'),
+  // Close
+  r('bh:hasTask', 'has task', 'bh:Close', 'bh:CloseTask', 'Tasks of the close.'),
+  r('bh:dependsOn', 'depends on', 'bh:CloseTask', 'bh:CloseTask', 'Must finish first.'),
+  r('bh:dueOn', 'due on', 'bh:CloseTask', 'bh:Workday', 'Workday deadline.'),
+  r('bh:owner', 'owned by', 'bh:CloseTask', 'bh:Person', 'Responsible person.'),
+  r('bh:performedBySkill', 'performed by skill', 'bh:CloseTask', 'bh:Skill', 'Skill that does the work.'),
+  r('bh:signedBy', 'signed by', 'bh:SignOff', 'bh:Person', 'Signer.'),
+  r('bh:produces', 'produces', 'bh:Close', 'bh:ClosePackage', 'Deliverable of the close.'),
+  // Agents
+  r('bh:runsSkill', 'runs skill', 'bh:AgentRun', 'bh:Skill', 'Skill executed.'),
+  r('bh:governedBy', 'governed by', 'bh:AgentRun', 'bh:SkillPolicy', 'Policy version in force.'),
+  r('bh:autonomy', 'autonomy level', 'bh:SkillPolicy', 'bh:AutonomyLevel', 'How much the agent may do alone.'),
+  r('bh:callsTool', 'calls tool', 'bh:AgentRun', 'bh:ToolCall', 'Typed tool calls made.'),
+  r('bh:proposes', 'proposes', 'bh:AgentRun', 'bh:Proposal', 'Proposals produced.'),
+  r('bh:proposesEntry', 'proposes entry', 'bh:Proposal', 'bh:JournalEntry', 'Journal entry the proposal would post.'),
+  r('bh:hasRationale', 'has rationale', 'bh:Proposal', 'bh:Rationale', 'Plain-English why.'),
+  r('bh:hasConfidence', 'has confidence', 'bh:Proposal', 'bh:Confidence', 'Confidence score.'),
+  r('bh:decidedBy', 'decided by', 'bh:Proposal', 'bh:ApprovalDecision', 'Human decision.'),
+  r('bh:readsUntrusted', 'reads untrusted text', 'bh:ToolCall', 'bh:UntrustedText', 'External text returned as data.'),
+  // Integration
+  r('bh:importedVia', 'imported via', 'bh:SourceDocument', 'bh:ImportBatch', 'Import that ingested the document.'),
+  r('bh:fromConnector', 'from connector', 'bh:ImportBatch', 'bh:Connector', 'Connector that delivered the file.'),
+  r('bh:hasProvenance', 'has provenance', 'bh:BankTransaction', 'bh:Provenance', 'Where the record came from.'),
+];

@@ -1,0 +1,35 @@
+{
+  "skill": "je-review",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "september-red-flags",
+      "description": "Catches the duplicate vendor payment and the self-approved revenue entry from the legacy ERP",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:je-review:*",
+        "entity": null,
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Duplicate payment to Copperline Legal LLP: \\$18,400\\.00 paid twice for one invoice",
+            "kind": "anomaly",
+            "status": "pending"
+          },
+          {
+            "title": "^Reverse BW-US-2609-\\d{4}: \\$25,000\\.00 entry crediting revenue prepared and approved by the same person",
+            "kind": "anomaly",
+            "status": "pending"
+          }
+        ],
+        "counts": {
+          "total": 2
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}
