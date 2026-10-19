@@ -4,7 +4,7 @@
  * documented CSV/JSON layouts that mirror common exports, with realistic sample payloads.
  */
 import { parseBai2 } from './bai2';
-import { parseCamt053 } from './camt053';
+import { parseCamt053, writeCamt053 } from './camt053';
 import { parseAmountMinor, parseCsvObjects, parseDate } from './csv';
 import { parseOfx } from './ofx';
 import type { ConnectorFormat, ConnectorKind, ImportError, ParseResult, ParsedBill, ParsedCardTransaction, ParsedGlLine, ParsedPayrollRun } from './types';
@@ -225,9 +225,26 @@ const BAI2_SAMPLE = `01,FHBANK,BRAMBLEWOOD,261002,0600,1,80,,2/
 99,255000,1,8/
 `;
 
+/** A small, fictional October statement for the UK account (sample for the import screen). */
+const CAMT_SAMPLE = () =>
+  writeCamt053({
+    messageId: 'THMS-SAMPLE-0001',
+    createdAt: '2026-10-02T06:05:00Z',
+    iban: 'GB29THMS20150912342208',
+    currency: 'GBP',
+    from: '2026-10-01',
+    to: '2026-10-01',
+    openingMinor: 389_471_612,
+    closingMinor: 389_471_612 + 1_250_000 - 48_000,
+    entries: [
+      { ref: 'THMS-S-1', bookingDate: '2026-10-01', amountMinor: 1_250_000, info: 'Invoice UK-5521 settlement', counterparty: 'Northgate Labs Ltd', endToEnd: 'NGL-5521', subFamily: 'RCDT' },
+      { ref: 'THMS-S-2', bookingDate: '2026-10-01', amountMinor: -48_000, info: 'Courier services September', counterparty: 'Swiftline Couriers', endToEnd: null, subFamily: 'DMCT' },
+    ],
+  });
+
 export const ADAPTERS: ConnectorAdapter[] = [
   { id: 'bank:bai2', kind: 'bank_feed', format: 'bai2', name: 'Bank statement (BAI2)', description: 'BAI2 cash management balance report: 01/02/03/16/88/49/98/99 records; 010/015 ledger balances.', mime: 'text/plain', fileExtension: '.bai', sample: () => BAI2_SAMPLE, parse: (c) => ({ kind: 'bank_statement', statement: parseBai2(c) }) },
-  { id: 'bank:camt053', kind: 'bank_feed', format: 'camt053', name: 'Bank statement (ISO 20022 camt.053)', description: 'BankToCustomerStatement XML with OPBD/CLBD balances and Ntry entries.', mime: 'application/xml', fileExtension: '.xml', sample: () => '<?xml version="1.0"?><Document><BkToCstmrStmt><Stmt><Acct><Id><IBAN>GB29THMS20150912342208</IBAN></Id><Ccy>GBP</Ccy></Acct></Stmt></BkToCstmrStmt></Document>', parse: (c) => ({ kind: 'bank_statement', statement: parseCamt053(c) }) },
+  { id: 'bank:camt053', kind: 'bank_feed', format: 'camt053', name: 'Bank statement (ISO 20022 camt.053)', description: 'BankToCustomerStatement XML with OPBD/CLBD balances and Ntry entries.', mime: 'application/xml', fileExtension: '.xml', sample: () => CAMT_SAMPLE(), parse: (c) => ({ kind: 'bank_statement', statement: parseCamt053(c) }) },
   { id: 'bank:ofx', kind: 'bank_feed', format: 'ofx', name: 'Bank statement (OFX)', description: 'Open Financial Exchange STMTRS with STMTTRN entries.', mime: 'application/x-ofx', fileExtension: '.ofx', sample: () => 'OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD<BANKACCTFROM><ACCTID>4417</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261001<TRNAMT>275.00<FITID>OFX-1<NAME>ALDERGROVE</STMTTRN></BANKTRANLIST><LEDGERBAL><BALAMT>275.00<DTASOF>20261001</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>', parse: (c) => ({ kind: 'bank_statement', statement: parseOfx(c) }) },
   bankCsv,
   cardCsv,

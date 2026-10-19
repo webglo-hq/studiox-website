@@ -260,7 +260,7 @@ export class AgentRuntime<Svc> {
       st.actionSeq++;
       this.checkBudget(st);
       const result = await this.perform(st, next.value);
-      if (this.deps.faults?.crashAfterAction === st.actionSeq && !st.replayTools.has(st.actionSeq) && st.run.attempts === 0) throw new SimulatedCrash(st.actionSeq);
+      if (this.deps.faults?.crashAfterAction === st.actionSeq && !st.replayTools.has(st.actionSeq) && st.run.attempts === 1) throw new SimulatedCrash(st.actionSeq);
       next = await brain.next(result);
     }
     return next.value;
@@ -548,7 +548,7 @@ export class AgentRuntime<Svc> {
       const userMsg: LlmMessage = { role: 'user', content: results };
       messages.push(userMsg);
       await this.appendTranscript(st, userMsg, messages.length - 1);
-      if (this.deps.faults?.crashAfterAction !== undefined && st.actionSeq >= this.deps.faults.crashAfterAction && st.run.attempts === 0) throw new SimulatedCrash(st.actionSeq);
+      if (this.deps.faults?.crashAfterAction !== undefined && st.actionSeq >= this.deps.faults.crashAfterAction && st.run.attempts === 1) throw new SimulatedCrash(st.actionSeq);
     }
     return finished;
   }

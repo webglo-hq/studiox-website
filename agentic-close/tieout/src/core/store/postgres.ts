@@ -79,7 +79,11 @@ export class PgStore<M, I = M> implements Store<M, I> {
 
   async tx<R>(tenantId: string, fn: (tx: Tx<M, I>) => Promise<R>): Promise<R> {
     try {
-      return await this.driver.transaction((q) => fn(this.makeTx(q, tenantId)));
+      return await this.driver.transaction(async (q) => {
+        // row-level security (migration 0003) checks every row against this setting
+        await q.query("SELECT set_config('tieout.tenant_id', $1, true)", [tenantId]);
+        return fn(this.makeTx(q, tenantId));
+      });
     } catch (e) {
       throw normaliseError(e);
     }
@@ -87,13 +91,15 @@ export class PgStore<M, I = M> implements Store<M, I> {
 
   async system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R> {
     try {
-      return await this.driver.transaction((q) =>
-        fn({
+      return await this.driver.transaction(async (q) => {
+        // cross-tenant system lookups (sign-in, session/token resolution) bypass RLS for this transaction only
+        await q.query("SELECT set_config('tieout.bypass', 'on', true)");
+        return fn({
           findGlobal: (table, where, opts) => this.find(q, table, where as Record<string, Condition>, opts as FindOptions<SqlRow>, null) as never,
           insertGlobal: (table, row) => this.insert(q, table, row as SqlRow, null) as never,
           updateGlobal: (table, id, patch) => this.update(q, table, id, patch as SqlRow, null) as never,
-        }),
-      );
+        });
+      });
     } catch (e) {
       throw normaliseError(e);
     }
