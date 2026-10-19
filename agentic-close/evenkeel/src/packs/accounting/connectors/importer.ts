@@ -124,8 +124,6 @@ export async function importDocument(ctx: ServiceContext, input: { connectorId: 
   });
 }
 
-type ConnectorRow = NonNullable<Awaited<ReturnType<ServiceContext['db']['get']>>> & { id: string };
-
 async function ingestBank(ctx: ServiceContext, connector: { id: string; kind: string; bank_account_id: string | null; config: Record<string, unknown> }, docId: string, batchId: string, content: string, res: ImportResult): Promise<void> {
   if (!connector.bank_account_id) throw new AppError('VALIDATION', 'This bank connector is not linked to a bank account.');
   const bankAccount = await ctx.db.get('bank_account', connector.bank_account_id);
@@ -207,8 +205,6 @@ async function ingestCards(ctx: ServiceContext, connector: { entity_id: string |
   const acctMap = await accounts(ctx);
   const byCode = new Map([...acctMap.values()].map((a) => [a.code, a]));
   const depts = await dimensionValues(ctx, 'department');
-  const employees = await ctx.db.find('dimension_value', { tenant_id: ctx.tenantId });
-  void employees;
   for (const r of records) {
     const hash = sha256Hex(`card|${connector.entity_id}|${r.externalId}`);
     if (await ctx.db.findOne('card_transaction', { tenant_id: ctx.tenantId, dedupe_hash: hash })) {
@@ -217,8 +213,8 @@ async function ingestCards(ctx: ServiceContext, connector: { entity_id: string |
     }
     const user = byEmail.get(r.cardholderEmail);
     const suggested = r.suggestedAccount ? byCode.get(r.suggestedAccount.split(' ')[0]!) : undefined;
-    const deptFromCfg = (cardholder: string) => depts.find((d) => cardholder.toLowerCase().includes(d.code.toLowerCase()));
-    const cardholderDept = user?.department_id ?? deptFromCfg(r.cardholder)?.id ?? null;
+    const deptByRef = r.cardholderDepartment ? depts.find((d) => d.code.toLowerCase() === r.cardholderDepartment!.toLowerCase() || d.name.toLowerCase() === r.cardholderDepartment!.toLowerCase()) : undefined;
+    const cardholderDept = deptByRef?.id ?? user?.department_id ?? null;
     await ctx.db.insert('card_transaction', {
       tenant_id: ctx.tenantId,
       entity_id: connector.entity_id,
@@ -406,4 +402,3 @@ async function ingestErp(ctx: ServiceContext, docId: string, content: string, re
   }
 }
 
-export type { ConnectorRow };

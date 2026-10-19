@@ -905,6 +905,7 @@ export const schema = {
       reviewer_id: user(),
       status: t.enum(TASK_STATUSES).default('not_started'),
       skill_id: t.text().nullable(),
+      skill_input: t.json<Record<string, unknown>>().nullable(),
       control_ref: t.text().nullable(),
       blocked_reason: t.text().nullable(),
       prepared_by: user(),
@@ -950,7 +951,6 @@ export const schema = {
       statement: t.text(),
       content_hash: t.text().nullable(),
     },
-    unique: [['subject_type', 'subject_id', 'role']],
     indexes: [['subject_id']],
   }),
   close_package: table({

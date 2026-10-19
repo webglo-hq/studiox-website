@@ -170,7 +170,7 @@ export async function postEntry(ctx: ServiceContext, entryId: string, opts: Post
         status: 'posted',
         approved_by: opts.approvedBy ?? null,
         approval_policy: opts.approvalPolicy ?? null,
-        posted_by: opts.postedBy ?? ctx.actor.userId,
+        posted_by: opts.postedBy !== undefined ? opts.postedBy : ctx.actor.userId,
         posted_at: ctx.clock.nowIso(),
       });
       await audit(withDb(ctx, db), {

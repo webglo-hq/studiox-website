@@ -45,7 +45,9 @@ function assertPostable(next: Row, ctx: Ctx): void {
   if (bad.length) raise(`EK-ACC-01: entry ${String(next.entry_number)} posts to non-postable, inactive or foreign accounts: ${bad.join(', ')}`);
 
   const ent = ctx.reader.byId('entity', next.entity_id as string) as unknown as Row | undefined;
-  if ((next.entry_type === 'elimination') !== Boolean(ent?.is_elimination)) raise(`EK-JE-04: elimination entries belong only to the elimination entity (entry ${String(next.entry_number)})`);
+  const elim = Boolean(ent?.is_elimination);
+  const reversal = next.entry_type === 'reversing' && next.reverses_entry_id !== null;
+  if ((next.entry_type === 'elimination' && !elim) || (elim && next.entry_type !== 'elimination' && !reversal)) raise(`EK-JE-04: elimination entries belong only to the elimination entity (entry ${String(next.entry_number)})`);
 
   if (next.approved_by !== null && (next.approved_by === next.prepared_by || next.approved_by === next.requested_by)) {
     raise(`EK-SOD-01: the preparer or requester of ${String(next.entry_number)} cannot approve it`);
@@ -73,7 +75,7 @@ function appendOnly(table: string) {
 }
 
 const PROPOSAL_TRANSITIONS: Record<string, string[]> = {
-  pending: ['approved', 'rejected', 'applied', 'superseded', 'failed'],
+  pending: ['approved', 'rejected', 'applied', 'auto_applied', 'superseded', 'failed'],
   approved: ['applied', 'failed'],
   suggested: ['approved', 'applied', 'rejected', 'superseded'],
   failed: ['superseded', 'pending'],

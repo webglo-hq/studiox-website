@@ -294,13 +294,14 @@ export const AX_JE_ELIMINATION: JeAxiom = {
   name: 'Eliminations only in the elimination entity',
   appliesTo: 'ek:JournalEntry',
   severity: 'error',
-  formal: 'type(e) = Elimination ↔ entity(e) ∈ EliminationEntity',
-  plain: 'Elimination entries live only in the consolidation (elimination) entity, never in a subsidiary’s books.',
+  formal: '(type(e) = Elimination → entity(e) ∈ EliminationEntity) ∧ (entity(e) ∈ EliminationEntity → type(e) ∈ {Elimination, Reversing ∘ Elimination})',
+  plain: 'Elimination entries live only in the consolidation (elimination) entity, which holds nothing else apart from reversals of its own eliminations.',
   sources: ['asc810'],
   check: (je, ctx) => {
     const ent = need(ctx.entity, 'entity');
     if (je.entryType === 'elimination' && !ent.isElimination) return [{ message: 'Elimination entries must be posted to the elimination entity.' }];
-    if (je.entryType !== 'elimination' && ent.isElimination) return [{ message: 'The elimination entity accepts only elimination entries.' }];
+    const reversalOfElimination = je.entryType === 'reversing' && !!je.reversesEntryId;
+    if (je.entryType !== 'elimination' && !reversalOfElimination && ent.isElimination) return [{ message: 'The elimination entity accepts only elimination entries (and their reversals).' }];
     return [];
   },
 };

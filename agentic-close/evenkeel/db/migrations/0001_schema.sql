@@ -723,6 +723,7 @@ CREATE TABLE close_task (
   reviewer_id uuid REFERENCES app_user(id),
   status text NOT NULL DEFAULT 'not_started' CONSTRAINT close_task_status_check CHECK (status IN ('not_started','in_progress','blocked','ready_for_review','complete')),
   skill_id text,
+  skill_input jsonb,
   control_ref text,
   blocked_reason text,
   prepared_by uuid REFERENCES app_user(id),
@@ -757,9 +758,9 @@ CREATE TABLE signoff (
   user_id uuid NOT NULL REFERENCES app_user(id),
   signed_at timestamptz NOT NULL DEFAULT now(),
   statement text NOT NULL,
-  content_hash text,
-  UNIQUE (subject_type, subject_id, role)
+  content_hash text
 );
+-- Sign-offs are an append-only history: re-work after a reviewer returns an item adds a new sign-off.
 CREATE INDEX signoff_subject_idx ON signoff(subject_id);
 
 CREATE TABLE close_package (

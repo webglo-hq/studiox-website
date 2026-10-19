@@ -9,6 +9,7 @@ export interface CardRecord {
   cardLast4: string;
   cardholder: string;
   cardholderEmail: string;
+  cardholderDepartment: string | null;
   merchant: string;
   mcc: string | null;
   amount: number;
@@ -21,7 +22,7 @@ export interface CardRecord {
   sourceLine: string;
 }
 
-const CARD_COLUMNS = ['transaction_id', 'card_last4', 'cardholder', 'cardholder_email', 'merchant', 'mcc', 'amount', 'currency', 'transaction_date', 'posted_date', 'memo', 'receipt', 'suggested_account'];
+const CARD_COLUMNS = ['transaction_id', 'card_last4', 'cardholder', 'cardholder_email', 'cardholder_department', 'merchant', 'mcc', 'amount', 'currency', 'transaction_date', 'posted_date', 'memo', 'receipt', 'suggested_account'];
 
 export function parseCardCsv(text: string): CardRecord[] {
   const t = parseCsv(text, { required: ['transaction_id', 'merchant', 'amount', 'transaction_date'] });
@@ -30,6 +31,7 @@ export function parseCardCsv(text: string): CardRecord[] {
     cardLast4: r.card_last4 || '0000',
     cardholder: r.cardholder || 'Unknown',
     cardholderEmail: (r.cardholder_email || '').toLowerCase(),
+    cardholderDepartment: r.cardholder_department || null,
     merchant: r.merchant!,
     mcc: r.mcc || null,
     amount: toCents(r.amount!),
@@ -46,7 +48,7 @@ export function parseCardCsv(text: string): CardRecord[] {
 export function writeCardCsv(rows: Omit<CardRecord, 'sourceLine'>[]): string {
   return toCsv(
     CARD_COLUMNS,
-    rows.map((r) => [r.externalId, r.cardLast4, r.cardholder, r.cardholderEmail, r.merchant, r.mcc ?? '', centsToDecimalString(r.amount), r.currency, r.txnDate, r.postedDate, r.memo ?? '', r.receipt ? 'yes' : 'no', r.suggestedAccount ?? '']),
+    rows.map((r) => [r.externalId, r.cardLast4, r.cardholder, r.cardholderEmail, r.cardholderDepartment ?? '', r.merchant, r.mcc ?? '', centsToDecimalString(r.amount), r.currency, r.txnDate, r.postedDate, r.memo ?? '', r.receipt ? 'yes' : 'no', r.suggestedAccount ?? '']),
   );
 }
 

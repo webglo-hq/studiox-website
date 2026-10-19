@@ -76,7 +76,8 @@ BEGIN
     END IF;
 
     SELECT is_elimination INTO elim FROM entity WHERE id = NEW.entity_id;
-    IF (NEW.entry_type = 'elimination') <> elim THEN
+    IF (NEW.entry_type = 'elimination' AND NOT elim)
+       OR (elim AND NEW.entry_type <> 'elimination' AND NOT (NEW.entry_type = 'reversing' AND NEW.reverses_entry_id IS NOT NULL)) THEN
       RAISE EXCEPTION 'EK-JE-04: elimination entries belong only to the elimination entity (entry %)', NEW.entry_number;
     END IF;
 
@@ -286,7 +287,7 @@ BEGIN
     RAISE EXCEPTION 'EK-PRP-IMMUTABLE: a proposal''s content cannot change after it is made';
   END IF;
   IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
-       (OLD.status = 'pending' AND NEW.status IN ('approved','rejected','applied','superseded','failed'))
+       (OLD.status = 'pending' AND NEW.status IN ('approved','rejected','applied','auto_applied','superseded','failed'))
     OR (OLD.status = 'approved' AND NEW.status IN ('applied','failed'))
     OR (OLD.status = 'suggested' AND NEW.status IN ('approved','applied','rejected','superseded'))
     OR (OLD.status = 'failed' AND NEW.status IN ('superseded','pending'))
