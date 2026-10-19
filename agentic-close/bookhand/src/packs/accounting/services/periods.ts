@@ -80,9 +80,15 @@ export async function lockClose(tx: Tx, ctx: DomainContext, lookups: LedgerLooku
   const close = await tx.get('closes', closeId);
   if (!close || close.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'close not found');
   if (close.status === 'closed') return close;
+  // Take the period rows first: a posting in flight finishes (it holds them FOR UPDATE while posting) before
+  // the gate below is evaluated, and no posting can start until this lock commits.
+  const entities = [...lookups.operatingEntities(), ...(lookups.eliminationEntity() ? [lookups.eliminationEntity()!] : [])];
+  for (const e of entities) {
+    const p = lookups.period(e.id, close.fiscal_year, close.period_number);
+    if (p) await tx.get('periods', p.id, { forUpdate: true });
+  }
   const blockers = await closeBlockers(tx, lookups, closeId, { ignoreTaskKeys: ['lock'] });
   if (blockers.length) throw new DomainError('CONFLICT', `The period cannot be locked yet: ${blockers.slice(0, 3).map((b) => b.message).join('; ')}${blockers.length > 3 ? ` and ${blockers.length - 3} more` : ''}.`, { blockers });
-  const entities = [...lookups.operatingEntities(), ...(lookups.eliminationEntity() ? [lookups.eliminationEntity()!] : [])];
   for (const e of entities) {
     const p = lookups.period(e.id, close.fiscal_year, close.period_number);
     if (!p) continue;

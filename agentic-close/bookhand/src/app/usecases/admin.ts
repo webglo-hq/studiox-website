@@ -137,6 +137,7 @@ export async function updateSodRule(app: App, p: Principal, id: string, patch: {
   return app.tx(async (tx) => {
     const r = await tx.get('sod_rules', id);
     if (!r || r.tenant_id !== p.tenantId) app.notFound('SoD rule');
+    if (r.kind === 'requester_limit' && (patch.enabled === false || patch.severity === 'warn' || patch.params !== undefined)) throw new DomainError('VALIDATION', `${r.code} is enforced by the database: it cannot be switched off, relaxed to a warning or given a limit.`);
     const updated = await tx.update('sod_rules', id, { enabled: patch.enabled ?? r.enabled, severity: patch.severity ?? r.severity, params: patch.params ?? r.params, version: r.version + 1, updated_by: p.user.id, updated_at: app.clock.now() });
     await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'sod.update', objectType: 'sod_rule', objectId: id, summary: `${r.code} ${r.name} v${updated.version}: ${patch.enabled === false ? 'disabled' : patch.enabled === true ? 'enabled' : 'updated'} (${patch.reason.trim()})`, details: { before: { enabled: r.enabled, severity: r.severity, params: r.params }, after: { enabled: updated.enabled, severity: updated.severity, params: updated.params } } }, app.clock.now());
     return updated;

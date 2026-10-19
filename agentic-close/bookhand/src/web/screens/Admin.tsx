@@ -400,7 +400,7 @@ function SodRules() {
   const can = useCan();
   const { data, error, reload } = useApi<SodRule[]>('/api/admin/sod-rules');
   const { run, busy } = useAction();
-  const [editing, setEditing] = useState<{ rule: SodRule; enabled: boolean; severity: 'block' | 'warn'; limit: string } | null>(null);
+  const [editing, setEditing] = useState<{ rule: SodRule; enabled: boolean; severity: 'block' | 'warn' } | null>(null);
   const [reason, setReason] = useState('');
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Skeleton rows={6} />;
@@ -424,13 +424,14 @@ function SodRules() {
                 <strong className="grow">{r.name}</strong>
                 <Badge tone={!r.enabled ? '' : r.severity === 'block' ? 'success' : 'attention'}>{!r.enabled ? 'Off' : r.severity === 'block' ? 'Blocks' : 'Warns'}</Badge>
                 <span className="tiny muted">v{r.version}</span>
-                {editable && (
+                {editable && r.kind === 'requester_limit' && <span className="tiny muted">Always on (enforced by the database)</span>}
+                {editable && r.kind !== 'requester_limit' && (
                   <button
                     type="button"
                     className="btn btn-sm"
                     onClick={() => {
                       setReason('');
-                      setEditing({ rule: r, enabled: r.enabled, severity: r.severity, limit: typeof r.params.limit_minor === 'number' ? String((r.params.limit_minor as number) / 100) : '' });
+                      setEditing({ rule: r, enabled: r.enabled, severity: r.severity });
                     }}
                   >
                     Change
@@ -466,8 +467,7 @@ function SodRules() {
                 className="btn btn-primary"
                 disabled={busy || reason.trim().length < 5}
                 onClick={async () => {
-                  const params = editing.rule.kind === 'requester_limit' && editing.limit !== '' ? { ...editing.rule.params, limit_minor: Math.round(Number(editing.limit) * 100) } : undefined;
-                  const r = await run(() => api.patch(`/api/admin/sod-rules/${editing.rule.id}`, { enabled: editing.enabled, severity: editing.severity, ...(params ? { params } : {}), reason: reason.trim() }), 'Control updated.');
+                  const r = await run(() => api.patch(`/api/admin/sod-rules/${editing.rule.id}`, { enabled: editing.enabled, severity: editing.severity, reason: reason.trim() }), 'Control updated.');
                   if (r) setEditing(null);
                 }}
               >
@@ -488,12 +488,6 @@ function SodRules() {
               <option value="warn">Allow it, but flag and audit it</option>
             </select>
           </div>
-          {editing.rule.kind === 'requester_limit' && (
-            <div className="field">
-              <label htmlFor="sod-limit">Self-review limit (USD)</label>
-              <input id="sod-limit" className="input num" inputMode="decimal" value={editing.limit} onChange={(e) => setEditing({ ...editing, limit: e.target.value })} />
-            </div>
-          )}
           <div className="field">
             <label htmlFor="sod-reason">Why are you changing a control?</label>
             <textarea id="sod-reason" className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} />

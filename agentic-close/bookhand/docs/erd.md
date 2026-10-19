@@ -2,7 +2,7 @@
 
 Generated from `src/persistence/schema` by `scripts/gen-erd.ts`; do not edit by hand. 75 tables in 16 areas. Every business table is scoped by `tenant_id`; the tenant edges are omitted from the diagrams for readability.
 
-Invariants enforced by the database itself (`db/migrations/0002_invariants.sql`, mirrored by the in-memory adapter): balanced, immutable posted journals; posting only into open periods; reversal-only corrections; append-only audit, approvals, sign-offs, skill versions and agent traces; a hash-chained audit log; maker-checker on human approvals.
+Invariants enforced by the database itself (`db/migrations/0002_invariants.sql` and `0003_review_invariants.sql`, mirrored by the in-memory adapter): balanced, immutable posted journals whose lines can be neither added, changed, moved in nor moved out; posting only into open periods, with the period row locked while posting; reversal-only corrections; append-only audit, approvals, sign-offs, skill versions and agent traces; a hash-chained audit log whose every shown column must equal the hashed record; maker-checker on human approvals; nobody approves the output of an agent run they started.
 
 ## Tenancy & security
 
