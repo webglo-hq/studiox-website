@@ -1,0 +1,17 @@
+# Bookhand: nested ignore rules (the repository root ignores lockfiles and .env*; re-include ours)
+!package-lock.json
+!.env.example
+
+node_modules/
+dist/
+dist-demo/
+.data/
+.pgdata/
+*.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
+coverage/
+.vite/
+.env
+.env.local
