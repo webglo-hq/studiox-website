@@ -505,8 +505,12 @@ export const fluxAnalysis: OfflineBrain = async function* (input): Gen {
   const r = (yield tool('flux.compute', { entityId, periodKey: pk })) as { lines: FluxLineView[]; comparativeKey: string; thresholds: { absMinor: number; pct: number; performanceMinor: number }; currency: string };
   let n = 0;
   for (const l of r.lines.filter((x) => x.exceeds)) {
-    if (l.explanation && (l.explanation.status === 'approved' || l.explanation.status === 'submitted')) continue;
+    // an explanation stands while it covers the variance; once the ledger moves it, draft again.
+    // A draft already waiting for the variance as it stands (the agent's or a person's) is left alone.
+    if (l.explanation && (l.explanation.status === 'approved' || l.explanation.status === 'submitted') && !l.explanation.stale) continue;
+    if (l.draft?.current) continue;
     const text = fluxNarrative({ ...l, drivers: l.drivers.map((d) => ({ ...d, label: redactInstructions(d.label) })) }, r.currency, pk, r.comparativeKey);
+    const redraft = l.explanation?.stale && l.explanation.covered ? ` It replaces the explanation approved for a change of ${money(l.explanation.covered.varianceMinor, r.currency)}: the ledger has moved since.` : '';
     const coverage = l.drivers.filter((d) => !d.label.startsWith('Other')).reduce((s, d) => s + Math.abs(d.amountMinor), 0) / Math.max(1, Math.abs(l.varianceMinor));
     yield {
       type: 'propose',
@@ -514,10 +518,11 @@ export const fluxAnalysis: OfflineBrain = async function* (input): Gen {
         { entityId, periodKey: pk, comparison: 'pop', accountCode: l.code, currentMinor: l.currentMinor, comparativeMinor: l.comparativeMinor, budgetMinor: l.budgetMinor, varianceMinor: l.varianceMinor, variancePct: l.variancePct, thresholdAbsMinor: r.thresholds.absMinor, thresholdPct: r.thresholds.pct, materiality: l.materiality, text, drivers: l.drivers.map((d) => ({ label: redactInstructions(d.label).slice(0, 200), kind: d.kind, amountMinor: d.amountMinor, ...(d.detail ? { detail: d.detail } : {}), ...(d.refType ? { refType: d.refType } : {}), ...(d.refId ? { refId: d.refId } : {}) })), pending: l.pending.map((p) => ({ proposalId: p.proposalId, proposalRef: p.proposalRef, label: p.label.slice(0, 200), amountMinor: p.amountMinor })) },
         {
           title: `Explain ${l.code} ${l.name}: ${l.varianceMinor >= 0 ? '+' : '−'}${money(Math.abs(l.varianceMinor), r.currency)} vs ${periodLabel(r.comparativeKey)}`,
-          why: `The change exceeds the review threshold (${money(r.thresholds.absMinor, r.currency)} and ${(r.thresholds.pct * 100).toFixed(0)}%${l.materiality === 'material' ? '; it is above performance materiality' : ''}). The drivers come from the ledger and add up to the variance exactly.`,
+          why: `The change exceeds the review threshold (${money(r.thresholds.absMinor, r.currency)} and ${(r.thresholds.pct * 100).toFixed(0)}%${l.materiality === 'material' ? '; it is above performance materiality' : ''}). The drivers come from the ledger and add up to the variance exactly.${redraft}`,
           confidence: Math.min(0.95, 0.6 + 0.35 * Math.min(1, coverage)),
           evidence: [{ kind: 'computation', label: `Flux ${l.code} ${pk} vs ${r.comparativeKey}` }, ...l.drivers.filter((d) => d.refType && d.refId).slice(0, 4).map((d) => rec(d.label, d.refType!, d.refId!)), ...l.pending.map((p) => ({ kind: 'run' as const, label: `${p.proposalRef} awaiting approval`, refType: 'proposal', refId: p.proposalId }))],
-          dedupeKey: `flux:${l.code}:${r.comparativeKey}`,
+          // one draft per variance as it stands: when the ledger moves the figures, a new draft replaces it
+          dedupeKey: `flux:${l.code}:${r.comparativeKey}:${l.currentMinor}:${l.comparativeMinor}`,
         },
       ),
     };

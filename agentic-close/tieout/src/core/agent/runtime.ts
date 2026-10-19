@@ -64,6 +64,8 @@ export interface DomainPack<Svc> {
   verify(svc: Svc, draft: ProposalDraft, run: RunContext): Promise<VerificationResult[]>;
   assess(svc: Svc, draft: ProposalDraft, run: RunContext): Promise<Assessment>;
   apply(svc: Svc, proposal: ProposalRow, approver: { id: string; route: 'human' | 'policy'; policyRef?: string }): Promise<ApplyResult | null>;
+  /** Runs in the unit of work that stores a new proposal: retire earlier proposals it replaces. */
+  afterPropose?(svc: Svc, proposal: ProposalRow): Promise<void>;
   offlineBrains: Readonly<Record<string, OfflineBrain>>;
   taskPrompt(skill: LoadedSkill, input: SkillRunInput): string;
   /** Permission the agent needs to prepare a proposal of this kind (least privilege for offline brains too). */
@@ -427,6 +429,7 @@ export class AgentRuntime<Svc> {
       await this.insertStep(tx, st, 'propose', `${p.ref} ${draft.title}`, { actionSeq: st.actionSeq, proposalId: p.id, kind: draft.kind, confidence: draft.confidence, amountMinor: assessment.amountMinor }, 'succeeded', 0);
       await this.insertStep(tx, st, 'route', decision.reasons.join(' '), { actionSeq: st.actionSeq, proposalId: p.id, route: decision.route, status: decision.status, reviewStatus: decision.reviewStatus, flags: allFlags }, 'succeeded', 0);
       await audit(tx, ctx.agent, this.deps.clock, { action: 'proposal.create', subjectType: 'proposal', subjectId: p.id, entityId: draft.entityId, summary: `${p.ref} proposed: ${draft.title}`, data: { route: decision.route, confidence: draft.confidence, amountMinor: assessment.amountMinor, runId: ctx.runId } });
+      if (pack.afterPropose) await pack.afterPropose(pack.services(tx, ctx.agent, this.deps.clock), p);
       await this.heartbeat(tx, st);
       return p;
     });

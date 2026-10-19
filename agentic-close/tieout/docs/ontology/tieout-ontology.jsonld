@@ -15,7 +15,7 @@
       "dcterms:title": "Tieout Close Ontology",
       "dcterms:description": "A formal, machine-readable ontology of the financial close: REA economic primitives, double-entry structure, multi-entity GL and subledgers, periods, accruals and deferrals, reconciliation, variance analysis, intercompany and FX, internal control (COSO 2013 / SOX 404), audit assertions and materiality, close management and AI-agent governance.",
       "owl:versionInfo": "1.3.0",
-      "tie:contentHash": "b6d5454a07159878b9fc6426ce257e7f20917e0061f66d4155d59f8e648501af"
+      "tie:contentHash": "4d9c1e8ae3e07ccd7a8b2a8e054472d0c322cdd2791575a46a435eb3a53be492"
     },
     {
       "@id": "https://tieout.example/ontology/close#Thing",
@@ -7316,8 +7316,8 @@
       "@id": "https://tieout.example/ontology/close#AX-FLX-01",
       "@type": "tie:Axiom",
       "rdfs:label": "Significant variances are explained",
-      "tie:formal": "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ explains(x, v)",
-      "skos:definition": "Every variance over both thresholds needs an approved explanation before the period can be locked.",
+      "tie:formal": "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ covers(x) = (current(v), comparative(v))",
+      "skos:definition": "Every variance over both thresholds needs an approved explanation of the variance as it stands before the period can be locked. A later posting that moves the figures puts the explanation out of date.",
       "tie:severity": "error",
       "tie:enforcedBy": [
         "runtime",
@@ -7414,8 +7414,8 @@
       "@id": "https://tieout.example/ontology/close#AX-CL-02",
       "@type": "tie:Axiom",
       "rdfs:label": "Lock only a finished close",
-      "tie:formal": "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p)",
-      "skos:definition": "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and a close package exists.",
+      "tie:formal": "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p) matching the ledger and the current explanations",
+      "skos:definition": "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and an approved close package still matches the books.",
       "tie:severity": "error",
       "tie:enforcedBy": [
         "runtime",

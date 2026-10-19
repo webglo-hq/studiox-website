@@ -17,6 +17,11 @@ export const accountingPack: DomainPack<AccountingServices> = {
   verify: verifyDraft,
   assess: assessDraft,
   apply: applyProposal,
+  async afterPropose(svc, proposal) {
+    // a variance explained again (the ledger moved the figures) replaces the drafts written for the old figures
+    if (proposal.kind === 'flux_explanation' && proposal.entity_id && proposal.period_key)
+      await svc.flux.supersedeDrafts(proposal.entity_id, proposal.period_key, (proposal.payload as { accountCode: string }).accountCode, { except: proposal.id, by: null, reason: `Replaced by ${proposal.ref}: the variance changed since this draft.` });
+  },
   offlineBrains: OFFLINE_BRAINS,
   proposalPermission: (kind) => PROPOSAL_PERMISSION[kind],
   taskPrompt(skill, input) {

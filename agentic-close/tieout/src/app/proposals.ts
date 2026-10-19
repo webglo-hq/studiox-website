@@ -13,6 +13,7 @@ import { CodingPayloadSchema } from '../packs/accounting/agent/payloads';
 import { evaluateApproval } from '../packs/accounting/controls/sod';
 import { closeOntology } from '../packs/accounting/ontology';
 import { AccountingServices } from '../packs/accounting/services';
+import { covers, staleExplanationMessage, type FluxResult } from '../packs/accounting/services/flux';
 import { assertCanActOn, type AppContext, type RequestUser } from './context';
 
 export const DECISION_PERMISSION: Record<ProposalRow['kind'], string> = {
@@ -58,7 +59,23 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
     const dep = await tx.get('proposals', id);
     if (!dep || dep.status !== 'applied') reasons.push(`Approve ${dep?.ref ?? 'its prerequisite'} first (this entry assumes it is posted).`);
   }
+  if (p.kind === 'flux_explanation' && p.entity_id && p.period_key && ['pending_approval', 'suggested'].includes(p.status)) {
+    // an explanation is only approvable for the variance it was written for
+    const draft = p.payload as { accountCode: string; comparison?: 'pop' | 'yoy'; currentMinor: number; comparativeMinor: number };
+    const live = (await fluxFor(ctx, tx, u, p.entity_id, p.period_key, draft.comparison ?? 'pop')).lines.find((l) => l.code === draft.accountCode) ?? null;
+    if (!live || !covers(draft, live)) reasons.push(staleExplanationMessage(draft, live, p.currency ?? 'USD'));
+  }
   return { canDecide: reasons.length === 0, reasons, sod };
+}
+
+/** One flux computation per entity and period per unit of work (the inbox checks many drafts at once). */
+const fluxCache = new WeakMap<DbTx, Map<string, Promise<FluxResult>>>();
+function fluxFor(ctx: AppContext, tx: DbTx, u: RequestUser, entityId: string, periodKey: string, comparison: 'pop' | 'yoy'): Promise<FluxResult> {
+  let m = fluxCache.get(tx);
+  if (!m) fluxCache.set(tx, (m = new Map()));
+  const key = `${entityId}|${periodKey}|${comparison}`;
+  if (!m.has(key)) m.set(key, new AccountingServices(tx, u.actor, ctx.clock).flux.compute(entityId, periodKey, { comparison }));
+  return m.get(key)!;
 }
 
 async function load(tx: DbTx, id: string): Promise<ProposalRow> {

@@ -93,8 +93,10 @@ export async function finalizePackage(ctx: AppContext, u: RequestUser, packageId
     const now = ctx.clock.now().toISOString();
     const hash = sha256Hex(canonicalJson(pkg.content as unknown as Record<string, unknown>));
     if (hash !== pkg.content_hash) throw invariant('AX-AUD-01', 'the package content no longer matches its hash');
-    // nobody signs statements that disagree with the ledger (AX-FS-01)
-    await new AccountingServices(tx, u.actor, ctx.clock).close.assertStatementsTie(pkg.period_key);
+    // nobody signs statements that disagree with the ledger (AX-FS-01) or commentary that no longer explains them (AX-FLX-01)
+    const svc = new AccountingServices(tx, u.actor, ctx.clock);
+    await svc.close.assertStatementsTie(pkg.period_key);
+    await svc.close.assertVariancesExplained(pkg.period_key, pkg.content);
     const updated = await tx.update('close_packages', pkg.id, { status: 'final' });
     await tx.insert('signoffs', { subject_type: 'close_package', subject_id: pkg.id, role: 'approver', user_id: u.actor.id, statement: `I approve the ${pkg.period_key} close package v${pkg.version}.`, content_hash: hash, signed_at: now });
     // the checklist's "Generate the close package" task: prepared by whoever asked for the package,

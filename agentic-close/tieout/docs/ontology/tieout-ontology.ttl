@@ -2550,8 +2550,8 @@ tie:AX_FX_02 a tie:Axiom ;
 
 tie:AX_FLX_01 a tie:Axiom ;
   rdfs:label "Significant variances are explained"@en ;
-  tie:formal "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ explains(x, v)" ;
-  skos:definition "Every variance over both thresholds needs an approved explanation before the period can be locked."@en .
+  tie:formal "∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ covers(x) = (current(v), comparative(v))" ;
+  skos:definition "Every variance over both thresholds needs an approved explanation of the variance as it stands before the period can be locked. A later posting that moves the figures puts the explanation out of date."@en .
 
 tie:AX_FLX_02 a tie:Axiom ;
   rdfs:label "Drivers reconcile to the variance"@en ;
@@ -2570,8 +2570,8 @@ tie:AX_CL_01 a tie:Axiom ;
 
 tie:AX_CL_02 a tie:Axiom ;
   rdfs:label "Lock only a finished close"@en ;
-  tie:formal "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p)" ;
-  skos:definition "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and a close package exists."@en .
+  tie:formal "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p) matching the ledger and the current explanations" ;
+  skos:definition "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and an approved close package still matches the books."@en .
 
 tie:AX_AGT_01 a tie:Axiom ;
   rdfs:label "Proposals are explained"@en ;

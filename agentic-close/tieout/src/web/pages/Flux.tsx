@@ -31,9 +31,12 @@ export function Flux() {
   if (!data) return <Loading />;
   const lines = scope === 'significant' ? data.lines.filter((l) => l.exceeds) : data.lines;
   const sel = data.lines.find((l) => l.code === open) ?? null;
-  const waiting = (l: FluxData['lines'][number]) => !!l.proposal && ['pending_approval', 'suggested'].includes(l.proposal.status);
-  // significant variances with neither an approved explanation nor a draft waiting for a decision
-  const needed = data.lines.filter((l) => l.exceeds && l.explanation?.status !== 'approved' && !waiting(l));
+  type Line = FluxData['lines'][number];
+  // an explanation counts only while it covers the variance as it stands; a draft only while it is for these figures
+  const explained = (l: Line) => l.explanation?.status === 'approved' && !l.explanation.stale;
+  const waiting = (l: Line) => !!l.draft?.current;
+  // significant variances with neither a current approved explanation nor a current draft waiting for a decision
+  const needed = data.lines.filter((l) => l.exceeds && !explained(l) && !waiting(l));
 
   async function draftWithAgent() {
     setBusy(true);
@@ -145,10 +148,12 @@ export function Flux() {
                   <td className="r num">{pct(l.variancePct)}</td>
                   <td className="r hide-sm">{l.budgetMinor === null ? '—' : <Money minor={l.budgetMinor} currency={data.currency} />}</td>
                   <td>
-                    {l.explanation ? (
-                      <Badge tone={l.explanation.status === 'approved' ? 'good' : 'info'}>{l.explanation.status}</Badge>
-                    ) : l.proposal ? (
+                    {explained(l) ? (
+                      <Badge tone="good">Approved</Badge>
+                    ) : waiting(l) && l.proposal ? (
                       <ProposalStatus status={l.proposal.status} route={l.proposal.route} />
+                    ) : l.exceeds && l.explanation?.stale ? (
+                      <Badge tone="warn">Out of date · Needed</Badge>
                     ) : l.exceeds ? (
                       <Badge tone="warn">Needed</Badge>
                     ) : (
@@ -206,17 +211,29 @@ export function Flux() {
                 </div>
               </div>
             ) : null}
-            {sel.explanation ? (
+            {sel.explanation?.stale ? (
+              <div className="callout warn" role="note">
+                <div>
+                  <strong>The approved explanation is out of date.</strong> It was written for a change of{' '}
+                  {sel.explanation.covered ? <Money minor={sel.explanation.covered.varianceMinor} currency={data.currency} signed /> : 'an earlier figure'}; the ledger has moved the change to{' '}
+                  <Money minor={sel.varianceMinor} currency={data.currency} signed />. It no longer counts toward the lock or the close package until the variance is explained again.
+                  <blockquote className="why-box" style={{ margin: '8px 0 0' }}>
+                    {sel.explanation.text}
+                  </blockquote>
+                </div>
+              </div>
+            ) : null}
+            {explained(sel) ? (
               <section>
                 <h3 style={{ marginBottom: 6 }}>Approved explanation</h3>
                 <blockquote className="why-box" style={{ margin: 0 }}>
-                  {sel.explanation.text}
+                  {sel.explanation!.text}
                 </blockquote>
                 <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
                   Drafted by {sel.explanationAuthor}; approved by {sel.explanationApprover ?? '—'}.
                 </p>
               </section>
-            ) : sel.proposal ? (
+            ) : waiting(sel) && sel.proposal ? (
               <section>
                 <h3 style={{ marginBottom: 6 }}>Draft explanation ({sel.proposal.ref})</h3>
                 <blockquote className="why-box" style={{ margin: 0 }}>
@@ -227,10 +244,10 @@ export function Flux() {
                 </a>
               </section>
             ) : null}
-            {sel.exceeds && !sel.explanation && !waiting(sel) ? (
+            {sel.exceeds && !explained(sel) && !waiting(sel) ? (
               <section className="stack" style={{ gap: 8 }}>
                 <p className="callout warn" style={{ margin: 0 }}>
-                  {sel.proposal ? `The last draft was ${sel.proposal.status}.` : 'No explanation yet.'} Draft one with the agent, or write it yourself.
+                  {sel.explanation?.stale ? 'Explain the change as it stands now.' : sel.proposal ? `The last draft was ${sel.proposal.status.replace(/_/g, ' ')}${sel.draft && !sel.draft.current ? ' and covers figures the ledger has since moved' : ''}.` : 'No explanation yet.'} Draft one with the agent, or write it yourself.
                 </p>
                 {can(me, 'flux.explain') ? (
                   <>

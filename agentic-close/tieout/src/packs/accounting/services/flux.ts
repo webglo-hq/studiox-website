@@ -35,7 +35,36 @@ export interface FluxLineView {
   materiality: 'trivial' | 'below_pm' | 'material';
   drivers: FluxDriver[];
   pending: PendingDriver[];
-  explanation: (Pick<FluxExplanationRow, 'id' | 'text' | 'status' | 'author_type' | 'author_id' | 'approved_by' | 'version'> & { proposalId: string | null }) | null;
+  explanation: StoredExplanation | null;
+  /** the newest explanation draft waiting for a decision, and whether it still covers the variance */
+  draft: { proposalId: string; ref: string; preparedBy: string; current: boolean } | null;
+}
+
+export interface StoredExplanation extends Pick<FluxExplanationRow, 'id' | 'text' | 'status' | 'author_type' | 'author_id' | 'approved_by' | 'version'> {
+  proposalId: string | null;
+  /** the figures the explanation was written for (this month and the comparison month) */
+  covered: { currentMinor: number; comparativeMinor: number; varianceMinor: number } | null;
+  /** the ledger has moved since: the variance it explains is not the variance that stands now */
+  stale: boolean;
+}
+
+/** A variance is explained only by an approved explanation that covers it as it stands (AX-FLX-01). */
+export function isExplained(line: Pick<FluxLineView, 'explanation'>): boolean {
+  return line.explanation?.status === 'approved' && !line.explanation.stale;
+}
+
+/** Does a drafted or stored explanation cover these figures? */
+export function covers(covered: { currentMinor: number; comparativeMinor: number } | null, line: { currentMinor: number; comparativeMinor: number }): boolean {
+  return !!covered && covered.currentMinor === line.currentMinor && covered.comparativeMinor === line.comparativeMinor;
+}
+
+const signedMoney = (minor: number, currency: string) => `${minor < 0 ? '−' : '+'}${currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${(Math.abs(minor) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Why an explanation no longer counts, in words a reviewer can act on. */
+export function staleExplanationMessage(covered: { currentMinor: number; comparativeMinor: number } | null, line: { currentMinor: number; comparativeMinor: number } | null, currency: string): string {
+  const now = line ? `it is now ${signedMoney(line.currentMinor - line.comparativeMinor, currency)}` : 'the account no longer has activity to explain';
+  const was = covered ? `it explains a change of ${signedMoney(covered.currentMinor - covered.comparativeMinor, currency)}` : 'it does not record which change it explains';
+  return `The ledger moved after this explanation was written: ${was}; ${now}. Explain the variance as it stands (Flux → Draft explanations, or write one).`;
 }
 
 export interface FluxResult {
@@ -69,6 +98,9 @@ export class FluxService {
     const budget = await this.budgetFor(entityId, periodKey);
     const pending = await this.pendingDrivers(entityId, periodKey);
     const stored = await this.storedExplanations(entityId, periodKey, comparison);
+    const drafts = new Map<string, { id: string; ref: string; prepared_by: string; payload: { currentMinor: number; comparativeMinor: number } }>();
+    const open = await this.c.tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'flux_explanation', status: { in: ['pending_approval', 'suggested'] } }, { orderBy: [['created_at', 'asc'], ['ref', 'asc']] });
+    for (const p of open) if (((p.payload as { comparison?: string }).comparison ?? 'pop') === comparison) drafts.set((p.payload as { accountCode: string }).accountCode, p as unknown as { id: string; ref: string; prepared_by: string; payload: { currentMinor: number; comparativeMinor: number } });
     const lines: FluxLineView[] = [];
     for (const a of pl) {
       const c = cur.get(a.id);
@@ -81,6 +113,7 @@ export class FluxService {
       const variancePct = comparativeMinor !== 0 ? varianceMinor / Math.abs(comparativeMinor) : null;
       const abs = Math.abs(varianceMinor);
       const exceeds = (abs >= th.absMinor && (variancePct === null || Math.abs(variancePct) >= th.pct)) || abs >= th.performanceMinor;
+      const ex = stored.get(a.id);
       lines.push({
         accountId: a.id,
         code: a.code,
@@ -96,7 +129,8 @@ export class FluxService {
         materiality: abs >= th.performanceMinor ? 'material' : abs >= th.clearlyTrivialMinor ? 'below_pm' : 'trivial',
         drivers: drivers(a, c?.byKey ?? new Map(), p?.byKey ?? new Map(), varianceMinor),
         pending: pending.get(a.code) ?? [],
-        explanation: stored.get(a.id) ?? null,
+        explanation: ex ? { ...ex, stale: !covers(ex.covered, { currentMinor, comparativeMinor }) } : null,
+        draft: drafts.has(a.code) ? { proposalId: drafts.get(a.code)!.id, ref: drafts.get(a.code)!.ref, preparedBy: drafts.get(a.code)!.prepared_by, current: covers(drafts.get(a.code)!.payload, { currentMinor, comparativeMinor }) } : null,
       });
     }
     lines.sort((x, y) => Number(y.exceeds) - Number(x.exceeds) || Math.abs(y.varianceMinor) - Math.abs(x.varianceMinor));
@@ -110,8 +144,53 @@ export class FluxService {
       thresholds: th,
       lines,
       significant: lines.filter((l) => l.exceeds).length,
-      explained: lines.filter((l) => l.exceeds && l.explanation && (l.explanation.status === 'approved' || l.explanation.status === 'submitted')).length,
+      explained: lines.filter((l) => l.exceeds && isExplained(l)).length,
     };
+  }
+
+  /** The variance line an explanation is about, as the ledger stands now (null when the account has no activity). */
+  async line(entityId: string, periodKey: string, accountCode: string, comparison: 'pop' | 'yoy' = 'pop'): Promise<FluxLineView | null> {
+    return (await this.compute(entityId, periodKey, { comparison })).lines.find((l) => l.code === accountCode) ?? null;
+  }
+
+  /**
+   * After the ledger moved (an entry or coding was posted): drafts written for figures that no longer
+   * stand are retired, so nobody approves an explanation of a number that is gone. The Flux screen
+   * then shows the variance as needing an explanation again.
+   */
+  async retireOutdatedDrafts(entityId: string, periodKey: string, cause: string): Promise<number> {
+    const open = await this.c.tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'flux_explanation', status: { in: ['pending_approval', 'suggested'] } });
+    if (!open.length) return 0;
+    const computed = new Map<string, Map<string, FluxLineView>>();
+    const now = this.c.clock.now().toISOString();
+    let n = 0;
+    for (const p of open) {
+      const draft = p.payload as { accountCode: string; comparison?: 'pop' | 'yoy'; currentMinor: number; comparativeMinor: number };
+      const comparison = draft.comparison ?? 'pop';
+      if (!computed.has(comparison)) computed.set(comparison, new Map((await this.compute(entityId, periodKey, { comparison })).lines.map((l) => [l.code, l])));
+      const line = computed.get(comparison)!.get(draft.accountCode);
+      if (line && covers(draft, line)) continue;
+      await this.c.tx.update('proposals', p.id, { status: 'superseded', decided_by: null, decided_at: now, decision_reason: `The ledger moved after this draft was written (${cause}), so it no longer explains the variance as it stands. Draft it again.`.slice(0, 500), updated_at: now });
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * Retire explanation drafts for an account that are still waiting for a decision: a newer
+   * explanation (a person's text, the agent's re-draft, or the one just approved) replaces them.
+   */
+  async supersedeDrafts(entityId: string, periodKey: string, accountCode: string, opts: { except?: string; by?: string | null; reason: string }): Promise<number> {
+    const open = await this.c.tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'flux_explanation', status: { in: ['pending_approval', 'suggested'] } });
+    const now = this.c.clock.now().toISOString();
+    let n = 0;
+    for (const p of open) {
+      if (p.id === opts.except || (p.payload as { accountCode?: string }).accountCode !== accountCode) continue;
+      // decided_by stays empty when the agent that drafted it is the one replacing it (maker ≠ checker)
+      await this.c.tx.update('proposals', p.id, { status: 'superseded', decided_by: opts.by && opts.by !== p.prepared_by ? opts.by : null, decided_at: now, decision_reason: opts.reason, updated_at: now });
+      n++;
+    }
+    return n;
   }
 
   /** Activity by account and by driver key for one period (year-end closing entries are not activity). */
@@ -148,13 +227,20 @@ export class FluxService {
     return out;
   }
 
-  /** Proposed (not yet posted) journal entries touching P&L accounts in the period. */
+  /** Proposed (not yet posted) journal entries and codings touching P&L accounts in the period. */
   private async pendingDrivers(entityId: string, periodKey: string): Promise<Map<string, PendingDriver[]>> {
     const chart = await this.c.chart();
-    const props = await this.c.tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'journal_entry', status: { in: ['pending_approval', 'suggested', 'approved', 'auto_approved'] } });
+    const props = await this.c.tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: { in: ['journal_entry', 'coding'] }, status: { in: ['pending_approval', 'suggested', 'approved', 'auto_approved'] } });
     const out = new Map<string, PendingDriver[]>();
     for (const p of props) {
-      const lines = (p.payload.lines ?? []) as { account: string; debit?: number; credit?: number }[];
+      let lines = (p.payload.lines ?? []) as { account: string; debit?: number; credit?: number }[];
+      if (p.kind === 'coding') {
+        // a coding posts the card charge to its account: the amount is the charge's own
+        const c = p.payload as { accountCode?: string; target?: { id?: string } };
+        const t = c.target?.id ? await this.c.tx.get('card_transactions', c.target.id) : undefined;
+        if (!t || !c.accountCode) continue;
+        lines = [{ account: c.accountCode, ...(t.amount_minor > 0 ? { debit: t.amount_minor } : { credit: -t.amount_minor }) }];
+      }
       const byAcct = new Map<string, number>();
       for (const l of lines) {
         const a = chart.tryAccount(l.account);
@@ -173,8 +259,10 @@ export class FluxService {
     const fa = await this.c.tx.findOne('flux_analyses', { entity_id: entityId, period_id: period.id, comparison });
     if (!fa) return out;
     for (const fl of await this.c.tx.find('flux_lines', { flux_analysis_id: fa.id })) {
-      const ex = await this.c.tx.find('flux_explanations', { flux_line_id: fl.id }, { orderBy: [['version', 'desc']], limit: 1 });
-      if (ex[0]) out.set(fl.account_id, { id: ex[0].id, text: ex[0].text, status: ex[0].status, author_type: ex[0].author_type, author_id: ex[0].author_id, approved_by: ex[0].approved_by, version: ex[0].version, proposalId: ex[0].proposal_id });
+      const ex = (await this.c.tx.find('flux_explanations', { flux_line_id: fl.id }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
+      if (!ex) continue;
+      const covered = ex.covered_current_minor === null || ex.covered_comparative_minor === null ? null : { currentMinor: ex.covered_current_minor, comparativeMinor: ex.covered_comparative_minor, varianceMinor: ex.covered_current_minor - ex.covered_comparative_minor };
+      out.set(fl.account_id, { id: ex.id, text: ex.text, status: ex.status, author_type: ex.author_type, author_id: ex.author_id, approved_by: ex.approved_by, version: ex.version, proposalId: ex.proposal_id, covered, stale: false });
     }
     return out;
   }

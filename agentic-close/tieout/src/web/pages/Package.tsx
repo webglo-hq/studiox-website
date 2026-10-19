@@ -111,9 +111,18 @@ export function Package() {
                 <strong>
                   {m.entityCode} {m.accountCode} {m.accountName}
                 </strong>{' '}
-                (<Money minor={m.varianceMinor} currency={ccyOf(m.entityCode)} signed />
+                (<Money minor={m.varianceMinor} currency={m.currency ?? ccyOf(m.entityCode)} signed />
                 {m.variancePct === null ? '' : `, ${pct(m.variancePct)}`}): {m.text}
-                {m.approvedBy ? <span className="muted"> Approved by {m.approvedBy}.</span> : <span className="muted"> Not yet approved.</span>}
+                {m.status === 'out_of_date' ? (
+                  <>
+                    {' '}
+                    <Badge tone="warn">Out of date</Badge>
+                  </>
+                ) : m.approvedBy ? (
+                  <span className="muted"> Approved by {m.approvedBy}.</span>
+                ) : (
+                  <span className="muted"> Not yet approved.</span>
+                )}
               </li>
             ))}
           </ul>

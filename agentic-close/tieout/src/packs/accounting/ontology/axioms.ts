@@ -358,12 +358,12 @@ export const AXIOMS = [
     },
   }),
   // ---------------------------------------------------------------- flux
-  A<{ lines?: readonly { exceeds_threshold: boolean; status: string; account: string }[] }>({
+  A<{ lines?: readonly { exceeds_threshold: boolean; status: string; account: string; stale?: boolean }[] }>({
     id: 'AX-FLX-01', title: 'Significant variances are explained', appliesTo: ['tie:VarianceAnalysis'], severity: 'error', enforcedBy: ['runtime', 'ui'],
-    formal: '∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ explains(x, v)',
-    plainEnglish: 'Every variance over both thresholds needs an approved explanation before the period can be locked.',
+    formal: '∀v ∈ lines(analysis): |Δ(v)| ≥ θ_abs ∧ |Δ%(v)| ≥ θ_pct ⇒ ∃x ∈ VarianceExplanation: approved(x) ∧ covers(x) = (current(v), comparative(v))',
+    plainEnglish: 'Every variance over both thresholds needs an approved explanation of the variance as it stands before the period can be locked. A later posting that moves the figures puts the explanation out of date.',
     citations: ['pcaob-as2105'],
-    check: (f) => (f.lines ?? []).filter((l) => l.exceeds_threshold && l.status !== 'approved').map((l) => `variance on ${l.account} has no approved explanation`),
+    check: (f) => (f.lines ?? []).filter((l) => l.exceeds_threshold && (l.status !== 'approved' || l.stale)).map((l) => (l.status === 'approved' ? `the explanation of ${l.account} is out of date: the ledger has moved the variance since it was approved` : `variance on ${l.account} has no approved explanation`)),
   }),
   A<{ varianceMinor?: number; driverMinors?: readonly number[] }>({
     id: 'AX-FLX-02', title: 'Drivers reconcile to the variance', appliesTo: ['tie:VarianceExplanation'], severity: 'warning', enforcedBy: ['ontology', 'runtime'],
@@ -392,10 +392,10 @@ export const AXIOMS = [
     citations: ['apqc-close'],
     check: (f) => (f.status === 'done' && (f.dependencyStatuses ?? []).some((s) => !['done', 'skipped'].includes(s)) ? ['finish the prerequisite tasks first'] : []),
   }),
-  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean; untiedStatements?: number }>({
+  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean; untiedStatements?: number; stalePackage?: boolean }>({
     id: 'AX-CL-02', title: 'Lock only a finished close', appliesTo: ['tie:LockedPeriod', 'tie:FinancialClose'], severity: 'error', enforcedBy: ['runtime', 'ui'],
-    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p)',
-    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and a close package exists.',
+    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p) matching the ledger and the current explanations',
+    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and an approved close package still matches the books.',
     citations: ['sox404', 'coso2013'],
     check: (f) => {
       const out: string[] = [];
@@ -405,6 +405,7 @@ export const AXIOMS = [
       if ((f.untiedStatements ?? 0) > 0) out.push(`${f.untiedStatements} income statement${f.untiedStatements === 1 ? ' does' : 's do'} not tie to the ledger (AX-FS-01)`);
       if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close tasks are not done`);
       if (f.finalPackage === false) out.push('generate the close package first');
+      else if (f.stalePackage) out.push('the approved close package no longer matches the books; generate a new version and approve it');
       return out;
     },
   }),

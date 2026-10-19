@@ -8,12 +8,12 @@ import { periodEnd, periodLabel } from '../../../core/util/time';
 import type { CloseTaskRow, ProposalRow } from '../../../schema';
 import { formatWorkday, workdayOffset } from '../close/workdays';
 import { balancesAsOf, trialBalanceRows } from '../ledger/balances';
-import { consolidatedStatements, incomeStatementTies } from '../ledger/statements';
+import { consolidatedStatements, incomeStatementTies, type IncomeStatementTie } from '../ledger/statements';
 import type { ClosePackageContent } from '../model/types';
 import { closeOntology } from '../ontology';
 import { BankService } from './bank';
 import type { AcctContext } from './context';
-import { FluxService } from './flux';
+import { FluxService, isExplained, staleExplanationMessage } from './flux';
 import { SubledgerService } from './subledgers';
 
 export interface TaskView extends CloseTaskRow {
@@ -31,6 +31,8 @@ export interface Readiness {
   unexplainedFlux: number;
   openTasks: number;
   finalPackage: boolean;
+  /** the approved package was signed for figures or explanations the books have since left behind */
+  stalePackage: boolean;
   /** income statements (each entity's and the consolidated one) whose net income differs from the ledger (AX-FS-01) */
   untiedStatements: number;
   ready: boolean;
@@ -90,15 +92,50 @@ export class CloseService {
     const flux = new FluxService(this.c);
     for (const e of legal) {
       const f = await flux.compute(e.id, periodKey);
-      unexplainedFlux += f.lines.filter((l) => l.exceeds && l.explanation?.status !== 'approved').length;
+      // an explanation approved for a variance the ledger has since moved does not count (AX-FLX-01)
+      unexplainedFlux += f.lines.filter((l) => l.exceeds && !isExplained(l)).length;
     }
     const cp = await this.closePeriod(periodKey);
     const tasks = cp ? await this.c.tx.find('close_tasks', { close_period_id: cp.id }) : [];
     const openTasks = tasks.filter((t) => t.key !== 'lock' && t.status !== 'done' && t.status !== 'skipped').length;
-    const finalPackage = !!(await this.c.tx.findOne('close_packages', { period_key: periodKey, status: 'final' }));
-    const untied = (await incomeStatementTies(this.c.tx, await this.c.chart(), periodKey)).filter((t) => !t.ties);
-    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage, untiedStatements: untied.length });
-    return { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage, untiedStatements: untied.length, ready: out.passed, messages: [...out.messages, ...untied.map((t) => t.message ?? `${t.statement} does not tie to the ledger`)] };
+    const final = (await this.c.tx.find('close_packages', { period_key: periodKey, status: 'final' }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
+    const ties = await incomeStatementTies(this.c.tx, await this.c.chart(), periodKey);
+    const untied = ties.filter((t) => !t.ties);
+    // a package signed before the books moved (a later posting, a variance explained again) no longer describes them
+    const staleBecause = final ? [...(await this.commentaryProblems(periodKey, final.content)), ...netIncomeProblems(final.content, ties)] : [];
+    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage: !!final, untiedStatements: untied.length, stalePackage: staleBecause.length > 0 });
+    return { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage: !!final, stalePackage: staleBecause.length > 0, untiedStatements: untied.length, ready: out.passed, messages: [...out.messages, ...untied.map((t) => t.message ?? `${t.statement} does not tie to the ledger`), ...staleBecause.map((m) => `Package v${final!.version}: ${m}`)] };
+  }
+
+  /**
+   * AX-FLX-01 against a package: every significant variance has an approved explanation of the
+   * variance as it stands, and the package carries exactly that explanation for exactly that variance.
+   */
+  async commentaryProblems(periodKey: string, content: ClosePackageContent): Promise<string[]> {
+    const problems: string[] = [];
+    const flux = new FluxService(this.c);
+    for (const e of await this.c.legalEntities()) {
+      const lines = (await flux.compute(e.id, periodKey)).lines;
+      for (const l of lines.filter((x) => x.exceeds)) {
+        const label = `${e.code} ${l.code} ${l.name}`;
+        const c = content.commentary.find((x) => x.entityCode === e.code && x.accountCode === l.code);
+        if (!isExplained(l)) problems.push(`${label}: ${l.explanation?.stale ? 'the ledger moved after its explanation was approved' : 'no approved explanation'}`);
+        else if (!c || (c.status ?? (c.approvedBy ? 'approved' : 'pending')) !== 'approved') problems.push(`${label}: ${c?.status === 'out_of_date' ? 'the package carries an out-of-date explanation' : 'the package has no approved explanation'}`);
+        else if (c.varianceMinor !== l.varianceMinor || c.text !== l.explanation!.text) problems.push(`${label}: the package explains a different change than the ledger now shows`);
+      }
+      // commentary for a variance the ledger has since moved below the threshold is out of date too
+      for (const c of content.commentary.filter((x) => x.entityCode === e.code)) {
+        const l = lines.find((x) => x.code === c.accountCode);
+        if (!l?.exceeds && (l?.varianceMinor ?? 0) !== c.varianceMinor) problems.push(`${e.code} ${c.accountCode} ${c.accountName}: the package explains a different change than the ledger now shows`);
+      }
+    }
+    return problems;
+  }
+
+  /** AX-FLX-01 at sign-off: nobody approves a package whose commentary no longer explains the books. */
+  async assertVariancesExplained(periodKey: string, content: ClosePackageContent) {
+    const problems = await this.commentaryProblems(periodKey, content);
+    if (problems.length) throw invariant('AX-FLX-01', `${problems.length} significant variance${problems.length === 1 ? ' has' : 's have'} no current approved explanation in this package (${problems.join('; ')}). Explain ${problems.length === 1 ? 'it' : 'them'}, then draft a new version of the package.`, { problems });
   }
 
   /** AX-FS-01 before anything is signed: every entity's income statement and the consolidated one tie to the ledger. */
@@ -126,7 +163,13 @@ export class CloseService {
     const commentary: ClosePackageContent['commentary'] = [];
     for (const e of legal) {
       const f = await flux.compute(e.id, periodKey);
-      for (const l of f.lines.filter((x) => x.exceeds)) commentary.push({ accountCode: l.code, accountName: l.name, entityCode: e.code, varianceMinor: l.varianceMinor, variancePct: l.variancePct, text: l.explanation?.text ?? 'Explanation pending.', approvedBy: l.explanation?.approved_by ? (users.get(l.explanation.approved_by) ?? l.explanation.approved_by) : null });
+      for (const l of f.lines.filter((x) => x.exceeds)) {
+        // only an approved explanation of the variance as it stands goes into the package
+        const current = isExplained(l);
+        const status = current ? 'approved' : l.explanation?.stale ? 'out_of_date' : 'pending';
+        const text = current ? l.explanation!.text : status === 'out_of_date' ? staleExplanationMessage(l.explanation!.covered, l, e.functional_currency) : 'Explanation pending.';
+        commentary.push({ accountCode: l.code, accountName: l.name, entityCode: e.code, currency: e.functional_currency, varianceMinor: l.varianceMinor, variancePct: l.variancePct, text, status, approvedBy: current && l.explanation!.approved_by ? (users.get(l.explanation!.approved_by) ?? l.explanation!.approved_by) : null });
+      }
     }
     const reconciliations: ClosePackageContent['reconciliations'] = [];
     const bank = new BankService(this.c);
@@ -179,4 +222,13 @@ export class CloseService {
       statementChecks: ties.map((t) => ({ statement: t.statement, currency: t.currency, netIncomeMinor: t.netIncomeMinor!, ledgerNetIncomeMinor: t.ledgerNetIncomeMinor! })),
     };
   }
+}
+
+/** The consolidated net income a package was signed for, against the ledger as it stands. */
+function netIncomeProblems(content: ClosePackageContent, ties: IncomeStatementTie[]): string[] {
+  const now = ties.find((t) => t.statement === 'Consolidated income statement')?.netIncomeMinor;
+  const signed = content.kpis?.netIncomeMinor;
+  if (now === undefined || now === null || signed === undefined || signed === now) return [];
+  const usd = (m: number) => `${m < 0 ? '−' : ''}$${(Math.abs(m) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return [`it shows consolidated net income of ${usd(signed)}; the ledger now gives ${usd(now)}`];
 }

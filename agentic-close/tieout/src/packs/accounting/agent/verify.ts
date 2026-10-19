@@ -10,7 +10,8 @@ import { periodKeyOf } from '../../../core/util/time';
 import { evaluateEntry, type JournalDraftInput } from '../ledger/journal';
 import { closeOntology } from '../ontology';
 import type { AccountingServices } from '../services';
-import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, PAYLOAD_SCHEMAS, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
+import { covers } from '../services/flux';
+import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, money, PAYLOAD_SCHEMAS, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
 
 const ok = (check: string, message: string, axiomId?: string): VerificationResult => ({ check, axiomId, passed: true, severity: 'info', message });
 const fail = (check: string, message: string, axiomId?: string, severity: 'error' | 'warning' = 'error'): VerificationResult => ({ check, axiomId, passed: false, severity, message });
@@ -138,6 +139,10 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       const p = FluxPayloadSchema.parse(draft.payload);
       out.push(chart.tryAccount(p.accountCode) ? ok('Account exists', p.accountCode) : fail('Account exists', p.accountCode));
       out.push(p.currentMinor - p.comparativeMinor === p.varianceMinor ? ok('Variance arithmetic', 'current − comparative = variance') : fail('Variance arithmetic', 'variance does not equal current − comparative'));
+      // the explanation is about the variance as the ledger has it now, not figures the drafter supplied
+      const live = await svc.flux.line(p.entityId, p.periodKey, p.accountCode, p.comparison);
+      const ccy = chart.entity(p.entityId).functional_currency;
+      out.push(live && covers(p, live) ? ok('Figures match the ledger', `${p.accountCode} as it stands`, 'AX-FLX-01') : fail('Figures match the ledger', live ? `the ledger shows ${money(live.currentMinor, ccy)} this month against ${money(live.comparativeMinor, ccy)}, not the figures given; restate them from flux.compute` : 'the account has no activity to explain', 'AX-FLX-01'));
       out.push(fromOutcome(onto.check('AX-FLX-02', { varianceMinor: p.varianceMinor, driverMinors: p.drivers.map((d) => d.amountMinor) })));
       out.push(p.text.trim().length >= 20 ? ok('Explanation is substantive', `${p.text.length} characters`, 'AX-FLX-01') : fail('Explanation is substantive', 'too short', 'AX-FLX-01'));
       break;

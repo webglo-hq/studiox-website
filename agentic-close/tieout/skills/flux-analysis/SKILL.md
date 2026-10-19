@@ -8,7 +8,7 @@ metadata:
     title: Flux analysis
     summary: Say what changed, why, and by how much — in words a CFO can forward to the board.
     category: flux
-    version: 1.2.0
+    version: 1.3.0
     inputs:
       - name: incomeStatement
         type: tie:IncomeStatement
@@ -49,11 +49,16 @@ metadata:
 1. `flux.compute` for the entity and period. Each line has current, prior-month and budget
    amounts, the variance, whether it exceeds the threshold (absolute AND percentage, or above
    performance materiality), drivers that sum to the variance, and pending proposals.
-2. For every line that exceeds the threshold and has no approved explanation,
-   `propose.flux_explanation` with the drivers exactly as computed (AX-FLX-02) and two to four
-   sentences: direction and size, the main drivers with amounts, what is still pending (by
-   proposal reference), and the budget comparison.
-3. Do not explain lines below the threshold.
+2. For every line that exceeds the threshold and has no approved explanation that still covers
+   it, `propose.flux_explanation` with the figures and drivers exactly as computed (AX-FLX-02)
+   and two to four sentences: direction and size, the main drivers with amounts, what is still
+   pending (by proposal reference), and the budget comparison.
+3. An explanation covers the figures it was written for. When a later posting moves them,
+   `explanation.stale` is true: the old explanation no longer counts toward the lock or the
+   package, so draft it again for the variance as it stands and say what changed.
+4. Skip a line whose `draft.current` is true: a draft for these figures (yours or a person's) is
+   already waiting for a decision. Drafts for figures the ledger has left behind are retired.
+5. Do not explain lines below the threshold.
 
 ## Writing rules
 - Lead with the number. "Events rose $102,141 (+1,204%) to $110,625" — not "Events increased".

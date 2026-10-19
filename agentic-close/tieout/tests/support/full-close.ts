@@ -92,8 +92,10 @@ export async function closeTheMonth(t: TestApp, opts: { runAgents: boolean }): P
   let writtenExplanationId: string | null = null;
   const me = (await sam.get<{ entities: { id: string; kind: string }[] }>('/api/auth/me')).body;
   for (const e of me.entities.filter((x) => x.kind === 'legal')) {
-    type Line = { code: string; exceeds: boolean; explanation: { status: string } | null; proposal: { status: string } | null };
-    const lines = (await sam.get<{ lines: Line[] }>(`/api/flux?entity=${e.id}&period=${P}`)).body.lines.filter((l) => l.exceeds && l.explanation?.status !== 'approved');
+    // an approved explanation counts only while it covers the variance as it stands (the decisions
+    // above moved some of them); a draft already waiting for the current figures needs no second one
+    type Line = { code: string; exceeds: boolean; explanation: { status: string; stale: boolean } | null; draft: { current: boolean } | null };
+    const lines = (await sam.get<{ lines: Line[] }>(`/api/flux?entity=${e.id}&period=${P}`)).body.lines.filter((l) => l.exceeds && !(l.explanation?.status === 'approved' && !l.explanation.stale) && !l.draft?.current);
     if (!lines.length) continue;
     const w = await sam.post<{ id: string }>('/api/flux/explanations', { entityId: e.id, periodKey: P, accountCode: lines[0]!.code, text: 'Thirteen unpaid September payroll days accrued at month-end; reverses on 1 October.' });
     expect(w.status, JSON.stringify(w.body)).toBe(200);

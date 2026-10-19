@@ -1114,6 +1114,8 @@ export interface FluxExplanationRow {
   approved_at: string | null;
   rejection_reason: string | null;
   created_at: string;
+  covered_current_minor: number | null;
+  covered_comparative_minor: number | null;
 }
 
 export interface ClosePackageRow {
@@ -1294,7 +1296,7 @@ export interface DbOptionalOnInsert {
   reconciling_items: 'id' | 'tenant_id' | 'status' | 'requires_adjustment' | 'related_item_type' | 'related_item_id' | 'proposal_id' | 'resolution' | 'created_at' | 'resolved_at';
   flux_analyses: 'id' | 'tenant_id' | 'agent_run_id' | 'generated_at' | 'approved_by' | 'approved_at';
   flux_lines: 'id' | 'tenant_id' | 'budget_minor' | 'variance_pct' | 'drivers';
-  flux_explanations: 'id' | 'tenant_id' | 'drivers' | 'proposal_id' | 'approved_by' | 'approved_at' | 'rejection_reason' | 'created_at';
+  flux_explanations: 'id' | 'tenant_id' | 'drivers' | 'proposal_id' | 'approved_by' | 'approved_at' | 'rejection_reason' | 'created_at' | 'covered_current_minor' | 'covered_comparative_minor';
   close_packages: 'id' | 'tenant_id' | 'generated_at' | 'agent_run_id';
   mfa_recovery_codes: 'id' | 'tenant_id' | 'created_at' | 'used_at';
 }
@@ -2711,6 +2713,8 @@ export const tableMeta = {
       {"name":"approved_at","type":"timestamptz","nullable":true},
       {"name":"rejection_reason","type":"text","nullable":true},
       {"name":"created_at","type":"timestamptz","nullable":false,"default":{"kind":"now"}},
+      {"name":"covered_current_minor","type":"bigint","nullable":true},
+      {"name":"covered_comparative_minor","type":"bigint","nullable":true},
     ],
   },
   close_packages: {

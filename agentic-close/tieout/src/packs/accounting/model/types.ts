@@ -67,7 +67,8 @@ export interface ClosePackageContent {
   balanceSheet: StatementLine[];
   incomeStatement: StatementLine[];
   consolidation: { eliminationsMinor: number; ctaMinor: number; closingRate: number | null; averageRate: number | null };
-  commentary: { accountCode: string; accountName: string; entityCode: string; varianceMinor: number; variancePct: number | null; text: string; approvedBy: string | null }[];
+  /** one entry per significant variance; only an approved explanation of the variance as it stands carries its text */
+  commentary: { accountCode: string; accountName: string; entityCode: string; currency?: string; varianceMinor: number; variancePct: number | null; text: string; status?: 'approved' | 'out_of_date' | 'pending'; approvedBy: string | null }[];
   reconciliations: { entityCode: string; account: string; recType: string; status: string; unreconciledMinor: number; preparer: string | null; reviewer: string | null }[];
   openItems: { kind: string; ref: string; title: string; amountMinor: number }[];
   agentActivity: { runs: number; proposals: number; autoApplied: number; approved: number; rejected: number; costMicros: number; mode: string };

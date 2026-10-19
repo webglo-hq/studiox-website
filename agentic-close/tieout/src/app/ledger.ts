@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { audit } from '../core/audit/audit';
 import { forbidden, notFound, sodViolation, validation } from '../core/util/errors';
+import { periodKeyOf } from '../core/util/time';
 import type { JournalEntryRow } from '../schema';
 import { usdEquivalent } from '../packs/accounting/agent/assess';
 import { JeLineSchema } from '../packs/accounting/agent/payloads';
@@ -48,7 +49,10 @@ export async function approveJournal(ctx: AppContext, u: RequestUser, jeId: stri
     const usd = await usdEquivalent(svc, je.total_minor, je.currency, je.posting_date.slice(0, 7));
     const lim = closeOntology().check('AX-SOD-04', { amountMinor: usd, limitMinor: u.actor.approvalLimitMinor });
     if (!lim.passed) throw forbidden(`AX-SOD-04: ${lim.messages.join('; ')}`);
-    return approveAndPost(await svc.ctx.ledger(), je.id, { route: 'human', approverId: u.actor.id, reason });
+    const posted = await approveAndPost(await svc.ctx.ledger(), je.id, { route: 'human', approverId: u.actor.id, reason });
+    // explanation drafts written for the figures before this entry no longer explain the variance
+    await svc.flux.retireOutdatedDrafts(posted.entity_id, periodKeyOf(posted.posting_date), `${posted.je_number} posted`);
+    return posted;
   });
 }
 
