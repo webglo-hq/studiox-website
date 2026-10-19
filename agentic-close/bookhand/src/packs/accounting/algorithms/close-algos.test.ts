@@ -39,6 +39,26 @@ describe('accrual detection', () => {
     expect(c[0]!.evidence.length).toBe(3);
   });
 
+  it('ACC-1: a bill entered twice counts once in the run rate (and the why says so)', () => {
+    const copper: VendorHistory = {
+      vendorId: 'copper',
+      vendorName: 'Copperline Legal LLP',
+      bills: ['04', '05', '06', '07', '08'].map((m) => ({ billId: `c${m}`, billNumber: `INV-${m}`, billDate: `2026-${m}-28`, receivedDate: `2026-${m}-28`, serviceStart: `2026-${m}-01`, serviceEnd: `2026-${m}-30`, amount: 1_500_000, accountNumber: '6510', departmentCode: 'GA' })),
+    };
+    // August's invoice keyed in a second time by the AP inbox (INV-08 as INV08), received later.
+    copper.bills.push({ ...copper.bills[4]!, billId: 'dup', billNumber: 'INV08', receivedDate: '2026-09-15' });
+    const [c] = detectRecurringGaps([copper], 2026, 9);
+    expect(c!.amount).toBe(1_500_000);
+    expect(c!.why).toMatch(/Left out INV08 \(\$15,000\.00\), a duplicate of INV-08/);
+    expect(c!.evidence.map((e) => e.id)).not.toContain('dup');
+  });
+
+  it('B-8: accrual amounts are quoted in the entity currency', () => {
+    const [c] = detectRecurringGaps(history, 2026, 9, { currency: 'GBP' });
+    expect(c!.why).toMatch(/£/);
+    expect(c!.why).not.toMatch(/\$/);
+  });
+
   it('does not accrue when the bill exists for the month', () => {
     const withSep = [{ ...history[0]!, bills: [...history[0]!.bills, { ...history[0]!.bills[0]!, billId: 'b09', serviceStart: '2026-09-01', billDate: '2026-09-28' }] }];
     expect(detectRecurringGaps(withSep, 2026, 9)).toEqual([]);

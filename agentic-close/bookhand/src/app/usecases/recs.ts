@@ -1,8 +1,9 @@
 import { appendAudit } from '../../audit/audit';
 import type { Row } from '../../persistence/schema';
-import { certificationProblems, ensureReconciliation, recTypeFor, refreshReconciliation, reopenReconciliation, signReconciliation } from '../../packs/accounting/services/recon';
+import { certificationBeforeNote, ensureReconciliation, recTypeFor, refreshReconciliation, reopenReconciliation, signReconciliation } from '../../packs/accounting/services/recon';
 import { canOn, canSeeEntity, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
+import { formatMoney } from '../../shared/money';
 import type { App, RequestMeta } from '../app';
 import { currentClose } from './close';
 
@@ -98,9 +99,11 @@ export async function recDetail(app: App, p: Principal, recId: string) {
     const openLedger = periodLines.filter((l) => periodEntries.get(l.journal_entry_id)?.status === 'posted' && !claimedLines.has(l.id));
     const pending = await tx.find('proposals', { tenant_id: p.tenantId, status: 'pending', entity_id: rec.entity_id, period_id: rec.period_id, kind: { in: ['rec_match', 'reconciling_item'] } });
     const signoffs = await tx.find('signoffs', { object_type: 'reconciliation', object_id: rec.id }, { orderBy: [['signed_at', 'asc']] });
-    const problems = await certificationProblems(tx, rec);
+    // The note an unexplained amount needs is written when certifying (needsNote), so it is not listed as a problem.
+    const check = await certificationBeforeNote(tx, rec);
+    const problems = check.problems;
     return {
-      rec: { id: rec.id, type: rec.rec_type, status: rec.status, risk: rec.risk, currency: rec.currency, gl: rec.gl_balance_minor, external: rec.external_balance_minor, reconcilingTotal: rec.reconciling_total_minor, difference: rec.difference_minor, notes: rec.notes, preparedBy: rec.prepared_by ? users.get(rec.prepared_by) ?? null : null, preparedAt: rec.prepared_at, reviewedBy: rec.reviewed_by ? users.get(rec.reviewed_by) ?? null : null, reviewedAt: rec.reviewed_at },
+      rec: { id: rec.id, type: rec.rec_type, status: rec.status, risk: rec.risk, currency: rec.currency, gl: rec.gl_balance_minor, external: rec.external_balance_minor, reconcilingTotal: rec.reconciling_total_minor, difference: rec.difference_minor, unexplained: check.unexplained, notes: rec.notes, preparedBy: rec.prepared_by ? users.get(rec.prepared_by) ?? null : null, preparedAt: rec.prepared_at, reviewedBy: rec.reviewed_by ? users.get(rec.reviewed_by) ?? null : null, reviewedAt: rec.reviewed_at },
       entity: lookups.entitiesById.get(rec.entity_id)!.code,
       period: { id: period.id, name: period.name, start: period.start_date, end: period.end_date, status: period.status },
       account: { number: account.number, name: account.name, subtype: account.subtype },
@@ -130,7 +133,7 @@ export async function recDetail(app: App, p: Principal, recId: string) {
       openLedger: openLedger.map((l) => ({ id: l.id, date: l.entry_date, amount: l.debit_minor - l.credit_minor, entryNumber: periodEntries.get(l.journal_entry_id)?.entry_number, entryId: l.journal_entry_id, description: periodEntries.get(l.journal_entry_id)?.description, memo: l.memo })),
       pendingProposals: pending.map((x) => ({ id: x.id, kind: x.kind, title: x.title, confidence: x.confidence })),
       signoffs: signoffs.map((s) => ({ role: s.role, action: s.action, user: users.get(s.user_id) ?? s.user_id, at: s.signed_at, comment: s.comment })),
-      certification: { problems, canPrepare: canOn(p, 'rec.prepare', rec.entity_id) && problems.length === 0 && rec.status !== 'reviewed' && rec.status !== 'prepared', canReview: canOn(p, 'rec.review', rec.entity_id) && rec.status === 'prepared' && rec.prepared_by !== p.user.id, canReopen: canOn(p, 'rec.review', rec.entity_id) && (rec.status === 'reviewed' || rec.status === 'prepared') },
+      certification: { problems, needsNote: check.needsNote, canPrepare: canOn(p, 'rec.prepare', rec.entity_id) && problems.length === 0 && rec.status !== 'reviewed' && rec.status !== 'prepared', canReview: canOn(p, 'rec.review', rec.entity_id) && rec.status === 'prepared' && rec.prepared_by !== p.user.id, canReopen: canOn(p, 'rec.review', rec.entity_id) && (rec.status === 'reviewed' || rec.status === 'prepared') },
     };
   });
 }
@@ -166,7 +169,7 @@ export async function manualMatch(app: App, p: Principal, recId: string, bankIds
       if (!l || l.account_id !== rec.account_id) throw new DomainError('CONFLICT', 'A ledger line is not on this cash account.');
       ledgerTotal += l.debit_minor - l.credit_minor;
     }
-    if (bankTotal !== ledgerTotal) throw new DomainError('VALIDATION', `Bank lines total ${bankTotal / 100} but ledger lines total ${ledgerTotal / 100}; amounts must agree (book the difference separately).`);
+    if (bankTotal !== ledgerTotal) throw new DomainError('VALIDATION', `Bank lines total ${formatMoney(bankTotal, { currency: rec.currency })} but ledger lines total ${formatMoney(ledgerTotal, { currency: rec.currency })}; amounts must agree (book the difference separately).`);
     const now = app.clock.now();
     const match = await tx.insert('rec_matches', { tenant_id: p.tenantId, reconciliation_id: rec.id, match_type: 'manual', status: 'accepted', confidence: 1, rule: 'manual match', explanation: note.trim(), accepted_by: p.user.id, accepted_at: now });
     for (const b of bank) {

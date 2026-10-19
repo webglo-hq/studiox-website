@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { addMonths, monthEnd } from '../../../shared/dates';
+import { formatMoney } from '../../../shared/money';
 import { detectCutoffBills, detectGrni, detectRecurringGaps, mergeCandidates, type LateBill, type PoLineStatus, type VendorHistory } from '../algorithms/accruals';
 import { findMissedLines, monthsCovered } from '../algorithms/schedules';
 import { closeOntology } from '../ontology';
@@ -53,7 +54,8 @@ export const periodEndTools: Tool[] = [
           poLines.push({ poId: po.id, poNumber: po.po_number, poLineId: l.id, vendorId: po.vendor_id, vendorName: vendors.get(po.vendor_id)?.name ?? 'vendor', description: l.description, accountNumber: lookups.accountsById.get(l.account_id)?.number ?? '', departmentCode: l.department_id ? (lookups.departments.get(l.department_id)?.code ?? null) : null, receipts: receipts.map((r) => ({ id: r.id, date: r.receipt_date, amount: r.amount_minor })), billedAmount: l.billed_amount_minor });
         }
       }
-      const candidates = mergeCandidates([...detectRecurringGaps([...histories.values()], period.fiscal_year, period.period_number), ...detectGrni(poLines, period.end_date), ...detectCutoffBills(late, period.fiscal_year, period.period_number)]);
+      const currency = entity.functional_currency;
+      const candidates = mergeCandidates([...detectRecurringGaps([...histories.values()], period.fiscal_year, period.period_number, { currency }), ...detectGrni(poLines, period.end_date, currency), ...detectCutoffBills(late, period.fiscal_year, period.period_number, currency)]);
       const accrued = await x.tx.find('journal_entries', { entity_id: entity.id, period_id: period.id, entry_type: 'accrual', status: 'posted' });
       return {
         entity: entity.code,
@@ -166,7 +168,7 @@ export const periodEndTools: Tool[] = [
         });
       return { entity: entity.code, currency: entity.functional_currency, period: input.period, periodEnd: period.end_date, lines: out, total: out.reduce((s, l) => s + l.amount, 0) };
     },
-    summarize: (o: { lines: unknown[]; total: number }) => `${o.lines.length} asset line(s), ${(o.total / 100).toFixed(2)}`,
+    summarize: (o: { lines: unknown[]; total: number; currency: string }) => `${o.lines.length} asset line(s), ${formatMoney(o.total, { currency: o.currency })}`,
   },
   {
     name: 'subledger_tieout',
@@ -208,6 +210,6 @@ export const periodEndTools: Tool[] = [
         periodEnd: monthEnd(period.fiscal_year, period.period_number),
       };
     },
-    summarize: (o: { controlAccount: string; difference: number }) => `${o.controlAccount}: difference ${(o.difference / 100).toFixed(2)}`,
+    summarize: (o: { controlAccount: string; difference: number; currency: string }) => `${o.controlAccount}: difference ${formatMoney(o.difference, { currency: o.currency })}`,
   },
 ];

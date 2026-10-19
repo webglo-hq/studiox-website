@@ -5,6 +5,7 @@ import { can, canOn, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import type { LedgerLookups } from '../domain/lookups';
+import { checkTrialBalance, entityTrialBalance } from '../domain/reporting';
 import { fluxProblems } from './flux';
 import { recTypeFor } from './recon';
 
@@ -15,7 +16,7 @@ import { recTypeFor } from './recon';
  */
 
 export interface Blocker {
-  kind: 'task' | 'reconciliation' | 'proposal' | 'flux' | 'package' | 'period';
+  kind: 'task' | 'reconciliation' | 'proposal' | 'flux' | 'package' | 'period' | 'trial_balance';
   message: string;
   href?: string;
 }
@@ -42,6 +43,13 @@ export async function closeBlockers(tx: Tx, lookups: LedgerLookups, closeId: str
       if (!rec.length) blockers.push({ kind: 'reconciliation', message: `${entity.code} ${a.number} ${a.name}: reconciliation not started`, href: '#/recs' });
       for (const r of rec) if (r.status !== 'reviewed') blockers.push({ kind: 'reconciliation', message: `${entity.code} ${a.number} ${a.name}: ${r.status.replace('_', ' ')}`, href: `#/recs/${r.id}` });
     }
+  }
+  // The trial-balance axioms (AX-TB-01 balances, AX-TB-02 accounting equation) run on every entity's books: a
+  // period whose trial balance fails them never locks.
+  for (const p of periods) {
+    const entity = lookups.entitiesById.get(p.entity_id)!;
+    const tb = await entityTrialBalance(tx, lookups, p.entity_id, p.id, 'balance');
+    for (const v of checkTrialBalance(tb).filter((x) => x.severity === 'error')) blockers.push({ kind: 'trial_balance', message: `${v.message} (${v.axiom})`, href: `#/reports?view=tb&entity=${encodeURIComponent(entity.code)}` });
   }
   const pending = (await tx.find('proposals', { tenant_id: close.tenant_id, status: { in: ['pending', 'blocked'] } })).filter((p) => (!p.period_id || periods.some((x) => x.id === p.period_id)) && !opts.ignoreProposalKinds?.includes(p.kind));
   if (pending.length) blockers.push({ kind: 'proposal', message: `${pending.length} proposal(s) still await a decision`, href: '#/inbox' });

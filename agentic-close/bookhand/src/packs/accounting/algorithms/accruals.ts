@@ -1,4 +1,6 @@
 import { addMonths, monthEnd, monthStart } from '../../../shared/dates';
+import { formatMoney } from '../../../shared/money';
+import { normalizeDocNumber } from './text';
 
 /**
  * Unrecorded-liability detection: three independent signals that a cost belongs in the period but has no
@@ -39,14 +41,38 @@ export interface AccrualCandidate {
   memo: string;
 }
 
-const fmt = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Amounts in the entity's functional currency (a UK vendor's bills are in pounds). */
+const money = (currency: string) => (m: number) => formatMoney(m, { currency });
 
 function serviceMonth(b: HistoricalBill): string {
   return (b.serviceStart ?? b.billDate).slice(0, 7);
 }
 
+/**
+ * One invoice entered twice for the same service month (the same number once normalized, e.g. INV-20931 and
+ * INV20931, or the same amount for the same service period) is one cost: the later entry is left out of the history,
+ * so a duplicate never inflates the run rate an accrual is based on. Duplicate detection itself (and the refund) is
+ * the JE review's job.
+ */
+export function withoutDuplicateBills(bills: HistoricalBill[]): { kept: HistoricalBill[]; duplicates: Array<{ bill: HistoricalBill; of: HistoricalBill }> } {
+  const kept: HistoricalBill[] = [];
+  const duplicates: Array<{ bill: HistoricalBill; of: HistoricalBill }> = [];
+  const ordered = [...bills].sort((a, b) => a.receivedDate.localeCompare(b.receivedDate) || a.billDate.localeCompare(b.billDate) || a.billId.localeCompare(b.billId));
+  for (const b of ordered) {
+    const of = kept.find(
+      (k) =>
+        serviceMonth(k) === serviceMonth(b) &&
+        (normalizeDocNumber(k.billNumber) === normalizeDocNumber(b.billNumber) || (k.amount === b.amount && !!k.serviceStart && k.serviceStart === b.serviceStart && (k.serviceEnd ?? '') === (b.serviceEnd ?? ''))),
+    );
+    if (of) duplicates.push({ bill: b, of });
+    else kept.push(b);
+  }
+  return { kept, duplicates };
+}
+
 /** Vendors billed in >= minMonths of the previous 6 months, with no bill for the target month. */
-export function detectRecurringGaps(histories: VendorHistory[], year: number, month: number, opts: { minMonths?: number; lookback?: number } = {}): AccrualCandidate[] {
+export function detectRecurringGaps(histories: VendorHistory[], year: number, month: number, opts: { minMonths?: number; lookback?: number; currency?: string } = {}): AccrualCandidate[] {
+  const fmt = money(opts.currency ?? 'USD');
   const minMonths = opts.minMonths ?? 4;
   const lookback = opts.lookback ?? 6;
   const target = `${year}-${String(month).padStart(2, '0')}`;
@@ -56,8 +82,9 @@ export function detectRecurringGaps(histories: VendorHistory[], year: number, mo
   });
   const out: AccrualCandidate[] = [];
   for (const h of histories) {
+    const { kept, duplicates } = withoutDuplicateBills(h.bills);
     const byMonth = new Map<string, HistoricalBill[]>();
-    for (const b of h.bills) {
+    for (const b of kept) {
       const k = serviceMonth(b);
       const list = byMonth.get(k) ?? [];
       list.push(b);
@@ -83,7 +110,7 @@ export function detectRecurringGaps(histories: VendorHistory[], year: number, mo
       accountNumber: last.accountNumber,
       departmentCode: last.departmentCode,
       confidence,
-      why: `${h.vendorName} billed in ${present.length} of the last ${lookback} months (${recent.map((m, i) => `${m}: ${fmt(recentAmounts[i]!)}`).join(', ')}) but there is no bill for ${target}. Accrue the ${recent.length}-month average of ${fmt(avg)}.`,
+      why: `${h.vendorName} billed in ${present.length} of the last ${lookback} months (${recent.map((m, i) => `${m}: ${fmt(recentAmounts[i]!)}`).join(', ')}) but there is no bill for ${target}. Accrue the ${recent.length}-month average of ${fmt(avg)}.${duplicates.length ? ` Left out ${duplicates.map((d) => `${d.bill.billNumber} (${fmt(d.bill.amount)}), a duplicate of ${d.of.billNumber}`).join('; ')}.` : ''}`,
       evidence: recent.flatMap((m) => byMonth.get(m)!.map((b) => ({ type: 'bill', id: b.billId, label: `${b.billNumber} (${m}) ${fmt(b.amount)}` }))),
       memo: `Accrual: ${h.vendorName} ${target} (recurring, not yet billed)`,
     });
@@ -105,7 +132,8 @@ export interface PoLineStatus {
 }
 
 /** Goods/services received on or before period end but not yet billed. */
-export function detectGrni(lines: PoLineStatus[], periodEnd: string): AccrualCandidate[] {
+export function detectGrni(lines: PoLineStatus[], periodEnd: string, currency = 'USD'): AccrualCandidate[] {
+  const fmt = money(currency);
   const out: AccrualCandidate[] = [];
   for (const l of lines) {
     const received = l.receipts.filter((r) => r.date <= periodEnd).reduce((s, r) => s + r.amount, 0);
@@ -135,7 +163,8 @@ export interface LateBill extends HistoricalBill {
 }
 
 /** Bills dated/received after period end whose service period falls (partly) in the period. */
-export function detectCutoffBills(bills: LateBill[], year: number, month: number): AccrualCandidate[] {
+export function detectCutoffBills(bills: LateBill[], year: number, month: number, currency = 'USD'): AccrualCandidate[] {
+  const fmt = money(currency);
   const start = monthStart(year, month);
   const end = monthEnd(year, month);
   const out: AccrualCandidate[] = [];

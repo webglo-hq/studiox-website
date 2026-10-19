@@ -5,7 +5,7 @@ import { canonicalJson } from '../../../shared/canonical-json';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import { sha256Hex } from '../../../shared/hash';
-import { balanceSheet, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../domain/reporting';
+import { balanceSheet, checkTrialBalance, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../domain/reporting';
 import type { LedgerLookups } from '../domain/lookups';
 import { closeBlockers } from './periods';
 
@@ -23,9 +23,10 @@ export interface ClosePackageContent {
   statements: {
     balanceSheet: ReturnType<typeof balanceSheet>;
     incomeStatement: ReturnType<typeof incomeStatement>;
-    consolidatedTb: { totalDebit: number; totalCredit: number; columns: Array<{ code: string; currency: string; cta: number }> };
+    consolidatedTb: { totalDebit: number; totalCredit: number; columns: Array<{ code: string; currency: string; cta: number }>; checks: string[] };
   };
-  entities: Array<{ code: string; currency: string; totalDebit: number; totalCredit: number; balanced: boolean; netIncome: number }>;
+  /** checks: trial-balance axioms that failed (AX-TB-01, AX-TB-02; empty when the books are sound). */
+  entities: Array<{ code: string; currency: string; totalDebit: number; totalCredit: number; balanced: boolean; netIncome: number; checks: string[] }>;
   flux: Array<{ account: string; current: number; comparison: number; variance: number; variancePct: number | null; explanation: string | null; status: string }>;
   reconciliations: Array<{ entity: string; account: string; type: string; status: string; difference: number; openItems: number; preparedBy: string | null; reviewedBy: string | null }>;
   exceptions: Array<{ title: string; status: string; amount: number; kind: string }>;
@@ -44,7 +45,8 @@ export async function assemblePackage(tx: Tx, ctx: DomainContext, lookups: Ledge
     const p = lookups.period(e.id, close.fiscal_year, close.period_number);
     if (!p) continue;
     const tb = await entityTrialBalance(tx, lookups, e.id, p.id, 'balance');
-    entities.push({ code: e.code, currency: e.functional_currency, totalDebit: tb.totalDebit, totalCredit: tb.totalCredit, balanced: tb.totalDebit === tb.totalCredit, netIncome: incomeStatement(await entityTrialBalance(tx, lookups, e.id, p.id, 'activity')).netIncome });
+    const failed = checkTrialBalance(tb).filter((v) => v.severity === 'error');
+    entities.push({ code: e.code, currency: e.functional_currency, totalDebit: tb.totalDebit, totalCredit: tb.totalCredit, balanced: !failed.some((v) => v.axiom === 'AX-TB-01'), checks: failed.map((v) => `${v.axiom}: ${v.message}`), netIncome: incomeStatement(await entityTrialBalance(tx, lookups, e.id, p.id, 'activity')).netIncome });
   }
   const analyses = await tx.find('flux_analyses', { close_id: closeId });
   const flux: ClosePackageContent['flux'] = [];
@@ -80,7 +82,7 @@ export async function assemblePackage(tx: Tx, ctx: DomainContext, lookups: Ledge
     statements: {
       balanceSheet: balanceSheet(consolidated),
       incomeStatement: incomeStatement(await consolidatedTrialBalance(tx, lookups, close.fiscal_year, close.period_number, tenant.reporting_currency, 'activity')),
-      consolidatedTb: { totalDebit: consolidated.totalDebit, totalCredit: consolidated.totalCredit, columns: consolidated.columns.map((c) => ({ code: c.code, currency: c.currency, cta: c.cta })) },
+      consolidatedTb: { totalDebit: consolidated.totalDebit, totalCredit: consolidated.totalCredit, columns: consolidated.columns.map((c) => ({ code: c.code, currency: c.currency, cta: c.cta })), checks: checkTrialBalance(consolidated).filter((v) => v.severity === 'error').map((v) => `${v.axiom}: ${v.message}`) },
     },
     entities,
     flux,

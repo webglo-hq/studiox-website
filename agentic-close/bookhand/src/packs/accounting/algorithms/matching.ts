@@ -1,4 +1,5 @@
 import { diffDays } from '../../../shared/dates';
+import { formatMoney } from '../../../shared/money';
 import { references, similarity } from './text';
 
 /**
@@ -57,6 +58,8 @@ export interface BankOnlyItem {
 }
 
 export interface MatchOptions {
+  /** Currency of the bank account (explanations quote amounts in it). */
+  currency: string;
   dateWindowDays: number;
   fuzzyToleranceMinor: number;
   fuzzyTolerancePct: number;
@@ -66,6 +69,7 @@ export interface MatchOptions {
 }
 
 export const DEFAULT_MATCH_OPTIONS: Omit<MatchOptions, 'periodEnd'> = {
+  currency: 'USD',
   dateWindowDays: 5,
   fuzzyToleranceMinor: 5_000,
   fuzzyTolerancePct: 0.01,
@@ -81,7 +85,6 @@ export interface MatchResult {
   stats: { bankItems: number; ledgerItems: number; matchedBank: number; matchedLedger: number; autoMatchRate: number };
 }
 
-const fmt = (m: number) => `$${(Math.abs(m) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function sortItems(items: MatchItem[]): MatchItem[] {
   return [...items].sort((a, b) => a.date.localeCompare(b.date) || a.amount - b.amount || a.id.localeCompare(b.id));
@@ -102,6 +105,7 @@ export function matchBankToLedger(
   nextPeriodBank: MatchItem[] = [],
 ): MatchResult {
   const opt: MatchOptions = { ...DEFAULT_MATCH_OPTIONS, ...options };
+  const fmt = (m: number) => formatMoney(Math.abs(m), { currency: opt.currency });
   const bank = sortItems(bankInput);
   const ledger = sortItems(ledgerInput);
   const usedBank = new Set<string>();

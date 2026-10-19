@@ -8,8 +8,8 @@
 <https://bookhand.example/ontology/close> a owl:Ontology ;
   dcterms:title "Bookhand Financial Close Ontology"@en ;
   dcterms:description "A formal, versioned ontology of the month-end financial close: REA backbone, double-entry axioms, general ledger, subledgers, reconciliation, accruals and deferrals, flux, intercompany, FX, controls (COSO / SOX 404), audit assertions, materiality, the close calendar and the agent layer. Grounded in McCarthy (1982), XBRL GL, the US-GAAP taxonomy, FIBO, COSO 2013 and PCAOB/ISA standards."@en ;
-  owl:versionInfo "1.5.0" ;
-  owl:versionIRI <https://bookhand.example/ontology/close/1.5.0> .
+  owl:versionInfo "1.6.0" ;
+  owl:versionIRI <https://bookhand.example/ontology/close/1.6.0> .
 
 bh:whyItMatters a owl:AnnotationProperty ; rdfs:label "why it matters"@en .
 bh:formalStatement a owl:AnnotationProperty ; rdfs:label "formal statement"@en .
@@ -3013,8 +3013,8 @@ bh:AX_NB_01 a owl:NamedIndividual, bh:Axiom ;
 bh:AX_REC_01 a owl:NamedIndividual, bh:Axiom ;
   rdfs:label "Reconciliation equation"@en ;
   bh:appliesTo bh:Reconciliation ;
-  bh:formalStatement "unexplained = gl - external - sum(reconciling_items); certify -> |unexplained| <= clearly_trivial"@en ;
-  skos:definition "GL balance minus the external balance minus reconciling items is the unexplained difference; it must be within the clearly-trivial threshold to certify."@en ;
+  bh:formalStatement "unexplained = gl - external - sum(explained reconciling items); certify -> |unexplained| <= clearly_trivial and note(r) != null"@en ;
+  skos:definition "GL balance minus the external balance minus the explained reconciling items is the unexplained difference (an item listed as \"unexplained\" explains nothing). To certify, it must be within the clearly-trivial threshold and the preparer must explain it in a note."@en ;
   bh:severity "error" .
 
 bh:AX_REC_02 a owl:NamedIndividual, bh:Axiom ;
@@ -3051,6 +3051,20 @@ bh:AX_FLX_03 a owl:NamedIndividual, bh:Axiom ;
   bh:formalStatement "approver(f) != preparer(f)"@en ;
   skos:definition "The person approving the flux review did not prepare it."@en ;
   bh:severity "error" .
+
+bh:AX_FLX_04 a owl:NamedIndividual, bh:Axiom ;
+  rdfs:label "Drivers add up to the variance"@en ;
+  bh:appliesTo bh:FluxExplanation ;
+  bh:formalStatement "sum(amount(d) for d in drivers(x)) = variance(line(x))"@en ;
+  skos:definition "The drivers an explanation names add up exactly to the variance it explains, so nothing is double-counted or left out."@en ;
+  bh:severity "warning" .
+
+bh:AX_FLX_05 a owl:NamedIndividual, bh:Axiom ;
+  rdfs:label "Drivers explain most of the variance"@en ;
+  bh:appliesTo bh:FluxExplanation ;
+  bh:formalStatement "coverage(x) >= 0.8"@en ;
+  skos:definition "The named drivers account for at least 80% of the variance; otherwise the explanation is not specific enough to accept as is."@en ;
+  bh:severity "warning" .
 
 bh:AX_MAT_01 a owl:NamedIndividual, bh:Axiom ;
   rdfs:label "Materiality ordering"@en ;

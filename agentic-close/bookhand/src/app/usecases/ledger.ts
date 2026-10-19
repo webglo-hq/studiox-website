@@ -3,7 +3,7 @@ import type { Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import { reviewTask, signOffProblems } from '../../packs/accounting/domain/close';
 import { createEntry, type EntryDraft, errorsOf, postEntry, reverseEntry, verifyDraft } from '../../packs/accounting/domain/ledger';
-import { balanceSheet, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../../packs/accounting/domain/reporting';
+import { balanceSheet, checkTrialBalance, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../../packs/accounting/domain/reporting';
 import { approveFlux, explainLine } from '../../packs/accounting/services/flux';
 import { closeOntology } from '../../packs/accounting/ontology';
 import { can, canOn, canSeeEntity, entityScope, requireAllEntities, requirePermission, requirePermissionOn, withinLimit, type Principal } from '../../security/principal';
@@ -205,6 +205,12 @@ export async function reverse(app: App, p: Principal, id: string, reason: string
 
 // ------------------------------------------------------------------ reports
 
+/** The trial-balance axioms (AX-TB-01, AX-TB-02, AX-NB-01) evaluated on a balance-mode trial balance. */
+function tbChecks(tb: Parameters<typeof checkTrialBalance>[0]) {
+  if (tb.mode !== 'balance') return null;
+  return checkTrialBalance(tb).map((v) => ({ axiom: v.axiom, severity: v.severity, message: v.message }));
+}
+
 async function periodFor(app: App, p: Principal, periodKey?: string) {
   if (periodKey) {
     const [y, m] = periodKey.split('-').map(Number);
@@ -224,13 +230,14 @@ export async function trialBalance(app: App, p: Principal, q: { entity?: string;
     if (!q.entity || q.entity === 'consolidated') {
       requireAllEntities(p, 'The consolidated trial balance');
       const tb = await consolidatedTrialBalance(tx, lookups, year, month, tenant.reporting_currency, q.mode ?? 'balance');
-      return { ...tb, byColumn: tb.byColumn, period: `${year}-${String(month).padStart(2, '0')}` };
+      return { ...tb, byColumn: tb.byColumn, period: `${year}-${String(month).padStart(2, '0')}`, checks: tbChecks(tb) };
     }
     const e = lookups.entity(q.entity);
     if (!e || !canSeeEntity(p, e.id)) app.notFound('Entity');
     const per = lookups.period(e.id, year, month);
     if (!per) app.notFound('Period');
-    return { ...(await entityTrialBalance(tx, lookups, e.id, per.id, q.mode ?? 'balance')), period: `${year}-${String(month).padStart(2, '0')}` };
+    const tb = await entityTrialBalance(tx, lookups, e.id, per.id, q.mode ?? 'balance');
+    return { ...tb, period: `${year}-${String(month).padStart(2, '0')}`, checks: tbChecks(tb) };
   });
 }
 

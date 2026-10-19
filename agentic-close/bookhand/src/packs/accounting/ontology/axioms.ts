@@ -1,6 +1,8 @@
 import type { Axiom, AxiomViolation } from '../../../ontology/kernel';
 import { diffDays } from '../../../shared/dates';
+import { formatMoney } from '../../../shared/money';
 import type {
+  FluxExplanationSubject,
   FluxSubject,
   IntercompanySubject,
   JournalEntryContext,
@@ -21,7 +23,8 @@ import type {
 
 const v = (axiom: string, severity: 'error' | 'warning', message: string, extra: Partial<AxiomViolation> = {}): AxiomViolation => ({ axiom, severity, message, ...extra });
 
-const fmt = (minor: number) => `$${(minor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Amounts in the subject's currency (a UK entity's entries and reconciliations are in pounds). */
+const fmt = (minor: number, currency = 'USD') => formatMoney(minor, { currency });
 
 type JeAxiom = Axiom<ResolvedJournalEntry, JournalEntryContext>;
 
@@ -40,7 +43,7 @@ export const journalEntryAxioms: JeAxiom[] = [
     check(e) {
       const debit = e.lines.reduce((s, l) => s + l.debit, 0);
       const credit = e.lines.reduce((s, l) => s + l.credit, 0);
-      if (debit !== credit) return v('AX-DE-01', 'error', `Debits ${fmt(debit)} do not equal credits ${fmt(credit)} (difference ${fmt(debit - credit)}).`);
+      if (debit !== credit) return v('AX-DE-01', 'error', `Debits ${fmt(debit, e.functionalCurrency)} do not equal credits ${fmt(credit, e.functionalCurrency)} (difference ${fmt(debit - credit, e.functionalCurrency)}).`);
       if (debit === 0) return v('AX-DE-01', 'error', 'The entry has no amounts.');
       return null;
     },
@@ -195,7 +198,7 @@ export const journalEntryAxioms: JeAxiom[] = [
         if (e.entryType === 'revaluation' && l.txnAmount === 0) return [];
         const expected = Math.round(l.txnAmount * e.fxRate);
         return Math.abs(expected - functional) > 1
-          ? [v('AX-FX-01', 'error', `Line ${i + 1}: ${l.txnCurrency} ${(l.txnAmount / 100).toFixed(2)} at ${e.fxRate} should be ${fmt(expected)} in ${e.functionalCurrency}, not ${fmt(functional)}.`)]
+          ? [v('AX-FX-01', 'error', `Line ${i + 1}: ${l.txnCurrency} ${(l.txnAmount / 100).toFixed(2)} at ${e.fxRate} should be ${fmt(expected, e.functionalCurrency)}, not ${fmt(functional, e.functionalCurrency)}.`)]
           : [];
       });
     },
@@ -224,7 +227,7 @@ export const journalEntryAxioms: JeAxiom[] = [
         if (!l.account || l.account.accountClass !== 'expense' || l.debit < ctx.capitalizationThresholdMinor) return [];
         const matches = ctx.capitalizableMatches(`${l.memo ?? ''} ${e.description}`);
         return matches.length
-          ? [v('AX-CAP-01', 'warning', `Line ${i + 1}: ${fmt(l.debit)} to ${l.account.number} ${l.account.name} looks capitalizable (${matches.join(', ')}).`, { assertion: 'classification' })]
+          ? [v('AX-CAP-01', 'warning', `Line ${i + 1}: ${fmt(l.debit, e.functionalCurrency)} to ${l.account.number} ${l.account.name} looks capitalizable (${matches.join(', ')}).`, { assertion: 'classification' })]
           : [];
       });
     },
@@ -258,7 +261,7 @@ export const trialBalanceAxioms: Axiom<TrialBalanceSubject, unknown>[] = [
     check(tb) {
       const d = tb.rows.reduce((s, r) => s + r.debit, 0);
       const c = tb.rows.reduce((s, r) => s + r.credit, 0);
-      return d !== c ? v('AX-TB-01', 'error', `${tb.entityLabel}: trial balance is out by ${fmt(d - c)}.`) : null;
+      return d !== c ? v('AX-TB-01', 'error', `${tb.entityLabel}: trial balance is out by ${fmt(d - c, tb.currency)}.`) : null;
     },
   },
   {
@@ -273,7 +276,7 @@ export const trialBalanceAxioms: Axiom<TrialBalanceSubject, unknown>[] = [
       const net = (cls: string) => tb.rows.filter((r) => r.accountClass === cls).reduce((s, r) => s + r.debit - r.credit, 0);
       const assets = net('asset');
       const rhs = -(net('liability') + net('equity') + net('revenue') + net('expense'));
-      return assets !== rhs ? v('AX-TB-02', 'error', `${tb.entityLabel}: assets ${fmt(assets)} vs liabilities + equity + earnings ${fmt(rhs)}.`) : null;
+      return assets !== rhs ? v('AX-TB-02', 'error', `${tb.entityLabel}: assets ${fmt(assets, tb.currency)} vs liabilities + equity + earnings ${fmt(rhs, tb.currency)}.`) : null;
     },
   },
   {
@@ -289,7 +292,7 @@ export const trialBalanceAxioms: Axiom<TrialBalanceSubject, unknown>[] = [
         const net = r.debit - r.credit;
         const abnormal = r.normalBalance === 'debit' ? net < -100 : net > 100;
         if (!abnormal || r.subtype === 'bh:ForeignExchangeGainLoss') return [];
-        return [v('AX-NB-01', 'warning', `${r.accountNumber} ${r.accountName} has a ${net < 0 ? 'credit' : 'debit'} balance of ${fmt(Math.abs(net))} (normally ${r.normalBalance}).`)];
+        return [v('AX-NB-01', 'warning', `${r.accountNumber} ${r.accountName} has a ${net < 0 ? 'credit' : 'debit'} balance of ${fmt(Math.abs(net), tb.currency)} (normally ${r.normalBalance}).`)];
       });
     },
   },
@@ -300,8 +303,8 @@ export const reconciliationAxioms: Axiom<ReconciliationSubject, ReconciliationCo
     id: 'AX-REC-01',
     label: 'Reconciliation equation',
     appliesTo: 'bh:Reconciliation',
-    formal: 'unexplained = gl - external - sum(reconciling_items); certify -> |unexplained| <= clearly_trivial',
-    plainEnglish: 'GL balance minus the external balance minus reconciling items is the unexplained difference; it must be within the clearly-trivial threshold to certify.',
+    formal: 'unexplained = gl - external - sum(explained reconciling items); certify -> |unexplained| <= clearly_trivial and note(r) != null',
+    plainEnglish: 'GL balance minus the external balance minus the explained reconciling items is the unexplained difference (an item listed as "unexplained" explains nothing). To certify, it must be within the clearly-trivial threshold and the preparer must explain it in a note.',
     severity: 'error',
     assertions: ['existence_occurrence', 'completeness', 'accuracy_valuation'],
     citations: ['coso2013', 'isa320'],
@@ -309,10 +312,10 @@ export const reconciliationAxioms: Axiom<ReconciliationSubject, ReconciliationCo
       const unexplained = r.glBalance - r.externalBalance - r.reconcilingTotal;
       if (unexplained === 0) return null;
       if (ctx.certifying && Math.abs(unexplained) > ctx.clearlyTrivialMinor) {
-        return v('AX-REC-01', 'error', `Unexplained difference of ${fmt(unexplained)} exceeds the clearly-trivial threshold of ${fmt(ctx.clearlyTrivialMinor)}.`);
+        return v('AX-REC-01', 'error', `Unexplained difference of ${fmt(unexplained, r.currency)} exceeds the clearly-trivial threshold of ${fmt(ctx.clearlyTrivialMinor, r.currency)}.`);
       }
-      if (ctx.certifying && !r.notes) return v('AX-REC-01', 'error', `Unexplained difference of ${fmt(unexplained)} needs a note before certification.`);
-      return ctx.certifying ? null : v('AX-REC-01', 'warning', `Unexplained difference of ${fmt(unexplained)}.`);
+      if (ctx.certifying && !r.notes) return v('AX-REC-01', 'error', `Unexplained difference of ${fmt(unexplained, r.currency)} needs a note explaining it before certification.`);
+      return ctx.certifying ? null : v('AX-REC-01', 'warning', `Unexplained difference of ${fmt(unexplained, r.currency)}.`);
     },
   },
   {
@@ -326,7 +329,7 @@ export const reconciliationAxioms: Axiom<ReconciliationSubject, ReconciliationCo
     check(r, ctx) {
       return r.items
         .filter((i) => i.status === 'open' && diffDays(r.asOfDate, i.itemDate) > ctx.staleAfterDays)
-        .map((i) => v('AX-REC-02', 'warning', `"${i.description}" (${fmt(i.amount)}) has been open ${diffDays(r.asOfDate, i.itemDate)} days.`));
+        .map((i) => v('AX-REC-02', 'warning', `"${i.description}" (${fmt(i.amount, r.currency)}) has been open ${diffDays(r.asOfDate, i.itemDate)} days.`));
     },
   },
   {
@@ -354,7 +357,7 @@ export const fluxAxioms: Axiom<FluxSubject, unknown>[] = [
     check(f) {
       return f.lines
         .filter((l) => l.isMaterial && l.explanationStatus !== 'accepted')
-        .map((l) => v('AX-FLX-01', 'error', `Account ${l.accountNumber}: material variance of ${fmt(l.variance)} has no accepted explanation.`));
+        .map((l) => v('AX-FLX-01', 'error', `Account ${l.accountNumber}: material variance of ${fmt(l.variance, f.currency)} has no accepted explanation.`));
     },
   },
   {
@@ -377,6 +380,31 @@ export const fluxAxioms: Axiom<FluxSubject, unknown>[] = [
     severity: 'error',
     citations: ['coso2013'],
     check: (f) => (f.approvedBy && f.approvedBy === f.preparedBy ? v('AX-FLX-03', 'error', 'Flux approver equals preparer.') : null),
+  },
+];
+
+export const fluxExplanationAxioms: Axiom<FluxExplanationSubject, unknown>[] = [
+  {
+    id: 'AX-FLX-04',
+    label: 'Drivers add up to the variance',
+    appliesTo: 'bh:FluxExplanation',
+    formal: 'sum(amount(d) for d in drivers(x)) = variance(line(x))',
+    plainEnglish: 'The drivers an explanation names add up exactly to the variance it explains, so nothing is double-counted or left out.',
+    severity: 'warning',
+    assertions: ['accuracy_valuation'],
+    citations: ['pcaob2305'],
+    check: (x) => (x.driverTotal !== x.variance ? v('AX-FLX-04', 'warning', `Drivers total ${fmt(x.driverTotal, x.currency)} but the variance is ${fmt(x.variance, x.currency)}.`) : null),
+  },
+  {
+    id: 'AX-FLX-05',
+    label: 'Drivers explain most of the variance',
+    appliesTo: 'bh:FluxExplanation',
+    formal: 'coverage(x) >= 0.8',
+    plainEnglish: 'The named drivers account for at least 80% of the variance; otherwise the explanation is not specific enough to accept as is.',
+    severity: 'warning',
+    assertions: ['completeness'],
+    citations: ['pcaob2305'],
+    check: (x) => (x.coverage < 0.8 ? v('AX-FLX-05', 'warning', `The drivers explain ${Math.floor(x.coverage * 100)}% of the variance (at least 80% expected).`) : null),
   },
 ];
 
@@ -404,7 +432,7 @@ export const otherAxioms: Axiom<never, never>[] = [
     check: ((s: ScheduleSubject) => {
       const sum = s.lines.reduce((a, b) => a + b, 0);
       const basis = s.total - s.salvage;
-      return sum !== basis ? v('AX-SCH-01', 'error', `${s.label}: schedule releases ${fmt(sum)} but the basis is ${fmt(basis)}.`) : null;
+      return sum !== basis ? v('AX-SCH-01', 'error', `${s.label}: schedule releases ${fmt(sum, s.currency)} but the basis is ${fmt(basis, s.currency)}.`) : null;
     }) as never,
   },
   {
@@ -429,7 +457,7 @@ export const otherAxioms: Axiom<never, never>[] = [
     citations: ['asc810'],
     check: ((s: IntercompanySubject) => {
       const diff = s.receivableReporting - s.payableReporting;
-      return Math.abs(diff) > s.toleranceMinor ? v('AX-IC-02', 'error', `${s.pairLabel}: receivable and payable differ by ${fmt(diff)}.`) : null;
+      return Math.abs(diff) > s.toleranceMinor ? v('AX-IC-02', 'error', `${s.pairLabel}: receivable and payable differ by ${fmt(diff, s.currency)}.`) : null;
     }) as never,
   },
   {
@@ -476,5 +504,6 @@ export const allAxioms = [
   ...(trialBalanceAxioms as unknown as Axiom<never, never>[]),
   ...(reconciliationAxioms as unknown as Axiom<never, never>[]),
   ...(fluxAxioms as unknown as Axiom<never, never>[]),
+  ...(fluxExplanationAxioms as unknown as Axiom<never, never>[]),
   ...otherAxioms,
 ];

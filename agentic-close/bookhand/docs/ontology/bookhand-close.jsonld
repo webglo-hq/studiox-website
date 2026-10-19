@@ -14,8 +14,8 @@
   },
   "@id": "https://bookhand.example/ontology/close",
   "@type": "owl:Ontology",
-  "owl:versionInfo": "1.5.0",
-  "contentHash": "e0eda8ac4ba9cb51dc52e5e9b7f3f44eefb49ae11666be875b6a172c087c2e70",
+  "owl:versionInfo": "1.6.0",
+  "contentHash": "6d1c6ca08031d0aa62323c5d1fcda6200aafd791ed0ec0694f357f28492aa43b",
   "@graph": [
     {
       "@id": "bh:Thing",
@@ -4922,8 +4922,8 @@
       "@type": "bh:Axiom",
       "label": "Reconciliation equation",
       "appliesTo": "bh:Reconciliation",
-      "formal": "unexplained = gl - external - sum(reconciling_items); certify -> |unexplained| <= clearly_trivial",
-      "definition": "GL balance minus the external balance minus reconciling items is the unexplained difference; it must be within the clearly-trivial threshold to certify.",
+      "formal": "unexplained = gl - external - sum(explained reconciling items); certify -> |unexplained| <= clearly_trivial and note(r) != null",
+      "definition": "GL balance minus the external balance minus the explained reconciling items is the unexplained difference (an item listed as \"unexplained\" explains nothing). To certify, it must be within the clearly-trivial threshold and the preparer must explain it in a note.",
       "severity": "error",
       "assertions": [
         "existence_occurrence",
@@ -4979,6 +4979,30 @@
       "formal": "approver(f) != preparer(f)",
       "definition": "The person approving the flux review did not prepare it.",
       "severity": "error"
+    },
+    {
+      "@id": "bh:AX-FLX-04",
+      "@type": "bh:Axiom",
+      "label": "Drivers add up to the variance",
+      "appliesTo": "bh:FluxExplanation",
+      "formal": "sum(amount(d) for d in drivers(x)) = variance(line(x))",
+      "definition": "The drivers an explanation names add up exactly to the variance it explains, so nothing is double-counted or left out.",
+      "severity": "warning",
+      "assertions": [
+        "accuracy_valuation"
+      ]
+    },
+    {
+      "@id": "bh:AX-FLX-05",
+      "@type": "bh:Axiom",
+      "label": "Drivers explain most of the variance",
+      "appliesTo": "bh:FluxExplanation",
+      "formal": "coverage(x) >= 0.8",
+      "definition": "The named drivers account for at least 80% of the variance; otherwise the explanation is not specific enough to accept as is.",
+      "severity": "warning",
+      "assertions": [
+        "completeness"
+      ]
     },
     {
       "@id": "bh:AX-MAT-01",

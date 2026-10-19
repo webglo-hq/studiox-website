@@ -1,4 +1,5 @@
 import { appendAudit } from '../../../audit/audit';
+import { formatMoney } from '../../../shared/money';
 import { importDocument, type ImportResult } from '../../../integrations/importer';
 import type { Db, Tx } from '../../../persistence/db';
 import type { Insert, TableName } from '../../../persistence/schema';
@@ -282,7 +283,7 @@ export async function seedScenario(db: Db, opts: SeedOptions = {}): Promise<Seed
     const eng = lookups2.departments.get('ENG')!;
     const je = await postCardTransaction(tx, mayaCtx, lookups2, laptop, { accountId: office.id, departmentId: eng.id }, { preparedBy: U.maya!, basis: { basis: 'system' } });
     await tx.update('card_transactions', laptop.id, { status: 'posted', coded_account_id: office.id, coded_department_id: eng.id, coding_source: 'human', journal_entry_id: je.id });
-    await appendAudit(tx, tenantId, mayaCtx.actor, { action: 'card.code', objectType: 'card_transaction', objectId: laptop.id, summary: `Coded ${laptop.merchant_name} $${(laptop.amount_minor / 100).toFixed(2)} to ${office.number} ${office.name} and posted ${je.entry_number}` }, mayaCtx.clock.now());
+    await appendAudit(tx, tenantId, mayaCtx.actor, { action: 'card.code', objectType: 'card_transaction', objectId: laptop.id, summary: `Coded ${laptop.merchant_name} ${formatMoney(laptop.amount_minor, { currency: laptop.currency })} to ${office.number} ${office.name} and posted ${je.entry_number}` }, mayaCtx.clock.now());
 
     // WD1 tasks already done: bank import (Maya, after the prior-day file) and AP cutoff (Diego).
     const tasks = await tx.find('close_tasks', { close_id: close.id });

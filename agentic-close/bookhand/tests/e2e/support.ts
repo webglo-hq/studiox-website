@@ -147,7 +147,13 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     if (await prepare.isVisible().catch(() => false)) {
       await prepare.click();
-      await expect(page.getByRole('status').filter({ hasText: 'Certified as preparer.' }).first()).toBeVisible();
+      // B-4: an amount still unexplained (e.g. the investigated bank debit) is certified only with the preparer's note.
+      const explain = page.getByRole('dialog', { name: 'Certify with an unexplained difference' });
+      if (await explain.waitFor({ state: 'visible', timeout: 2_000 }).then(() => true, () => false)) {
+        await explain.getByRole('textbox').fill('ACH debit under investigation with the bank (case 4471); below clearly trivial, cleared or booked next month.');
+        await explain.getByRole('button', { name: 'Certify as preparer' }).click();
+      }
+      await expect(page.getByRole('status').filter({ hasText: /^Certified as preparer/ }).first()).toBeVisible();
     }
   }
   await signInAs(page, 'daniel');

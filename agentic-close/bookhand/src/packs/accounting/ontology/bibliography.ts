@@ -21,6 +21,7 @@ export const bibliography: Citation[] = [
   { key: 'pcaob2201', text: 'PCAOB AS 2201: An Audit of Internal Control Over Financial Reporting That Is Integrated with An Audit of Financial Statements.' },
   { key: 'pcaob1105', text: 'PCAOB AS 1105: Audit Evidence (financial statement assertions).' },
   { key: 'pcaob2105', text: 'PCAOB AS 2105: Consideration of Materiality in Planning and Performing an Audit.' },
+  { key: 'pcaob2305', text: 'PCAOB AS 2305: Substantive Analytical Procedures (expectations, thresholds and investigating significant differences).' },
   { key: 'pcaob2401', text: 'PCAOB AS 2401: Consideration of Fraud in a Financial Statement Audit (journal entry testing).' },
   { key: 'isa315', text: 'IAASB ISA 315 (Revised 2019): Identifying and Assessing the Risks of Material Misstatement (assertions).' },
   { key: 'isa320', text: 'IAASB ISA 320: Materiality in Planning and Performing an Audit (overall, performance, clearly trivial).' },

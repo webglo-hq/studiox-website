@@ -41,6 +41,7 @@ export const closeOntologySpec: OntologySpec = {
     { version: '1.3.0', date: '2026-10-19', notes: 'Bank account, corporate card, flux line, agent step and run budget classes; every database table now maps to an ontology class.' },
     { version: '1.4.0', date: '2026-10-19', notes: 'Current-year earnings is an equity statement line, so a balance sheet foots as printed.' },
     { version: '1.5.0', date: '2026-10-19', notes: 'Access request, credential link and outbox message classes: approval authority and control changes need a second person, and people enrol with single-use links instead of passwords handed to an administrator.' },
+    { version: '1.6.0', date: '2026-10-19', notes: 'AX-FLX-04 and AX-FLX-05 check a flux explanation\'s drivers (they no longer reuse AX-FLX-02/03); AX-REC-01 counts items listed as unexplained and needs a note to certify; the trial-balance axioms gate the close; amounts in axiom messages use the subject\'s currency.' },
   ],
   classes: [...coreClasses, ...accountClasses, ...closeClasses],
   relations,

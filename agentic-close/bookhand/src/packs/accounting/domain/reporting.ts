@@ -118,6 +118,7 @@ export async function entityTrialBalance(tx: Tx, lookups: LedgerLookups, entityI
 export function tbSubject(tb: TrialBalance): TrialBalanceSubject {
   return {
     entityLabel: tb.label,
+    currency: tb.currency,
     rows: tb.rows.map((r) => ({ accountNumber: r.number, accountName: r.name, accountClass: r.accountClass, normalBalance: r.normalBalance, subtype: r.subtype, debit: r.debit, credit: r.credit })),
   };
 }

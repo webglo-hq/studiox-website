@@ -3,7 +3,7 @@ import type { AgentRuntime } from '../../agents/framework/runtime';
 import type { Tx } from '../../persistence/db';
 import { closeProgress, signOffProblems, taskStates } from '../../packs/accounting/domain/close';
 import { closeBlockers } from '../../packs/accounting/services/periods';
-import { certificationProblems } from '../../packs/accounting/services/recon';
+import { certificationBeforeNote } from '../../packs/accounting/services/recon';
 import { can, canOn, canSeeEntity, entityScope, type Principal } from '../../security/principal';
 import { dateToWorkday, formatWorkday, usBusinessCalendar } from '../../shared/dates';
 import type { App } from '../app';
@@ -102,7 +102,7 @@ export async function home(app: App, p: Principal) {
         let toPrepare = 0;
         let toReview = 0;
         for (const r of recs) {
-          if (['in_progress', 'reopened', 'not_started'].includes(r.status) && canOn(p, 'rec.prepare', r.entity_id) && (await certificationProblems(tx, r)).length === 0) toPrepare++;
+          if (['in_progress', 'reopened', 'not_started'].includes(r.status) && canOn(p, 'rec.prepare', r.entity_id) && (await certificationBeforeNote(tx, r)).problems.length === 0) toPrepare++;
           if (r.status === 'prepared' && canOn(p, 'rec.review', r.entity_id) && r.prepared_by !== p.user.id) toReview++;
         }
         if (toPrepare) next.push({ id: 'recs-prepare', title: `Certify ${toPrepare} reconciliation${toPrepare === 1 ? '' : 's'} as preparer`, detail: 'Every difference is matched or listed; sign as preparer.', href: '#/recs', count: toPrepare, tone: 'attention' });
