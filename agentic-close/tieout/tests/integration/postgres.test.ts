@@ -60,8 +60,8 @@ describe.skipIf(!env)('PostgreSQL 16 (real database)', () => {
   });
 
   it('runs the application as an ordinary role (not a superuser), so row-level security applies', async () => {
-    const r = await app.query("SELECT current_user AS u, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su, (SELECT count(*) FROM pg_policies WHERE policyname = 'tenant_isolation') AS policies");
-    expect(r.rows[0]).toMatchObject({ u: 'tieout_app', su: false });
+    const r = await app.query("SELECT current_user AS u, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS su, (SELECT count(*) FROM pg_policies WHERE policyname = 'tenant_isolation') AS policies, current_setting('TimeZone') AS tz");
+    expect(r.rows[0]).toMatchObject({ u: 'tieout_app', su: false, tz: 'UTC' });
     expect(Number(r.rows[0]!.policies)).toBeGreaterThan(50);
   });
 

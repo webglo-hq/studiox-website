@@ -194,3 +194,95 @@ describe('HTTP API: integrations, tokens and audit', () => {
     for (const a of ['auth.login', 'auth.login.failed', 'agent.run.create', 'proposal.approve', 'proposal.reject', 'skill.policy.update', 'import.complete', 'import.duplicate', 'auth.token.create', 'auth.token.revoke']) expect(actions, a).toContain(a);
   });
 });
+
+describe('HTTP API: entity scope', () => {
+  interface AdminView {
+    users: { id: string; name: string; scope: string[] | null }[];
+    entities: { id: string; code: string; kind: string }[];
+  }
+
+  it('limits a person to the entities an administrator grants, for reads and writes', async () => {
+    const avery = t.client();
+    await avery.login('avery');
+    const admin = (await avery.get<AdminView>('/api/admin')).body;
+    const sam = admin.users.find((u) => u.name === 'Sam Rivera')!;
+    const uk = admin.entities.find((e) => e.code === 'BWL-UK')!;
+    const us = admin.entities.find((e) => e.code === 'BWL-US')!;
+    const elim = admin.entities.find((e) => e.kind === 'elimination')!;
+    expect(sam.scope).toBeNull();
+    // only legal entities can be granted; a missing role list is refused rather than wiping roles
+    expect((await avery.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [elim.id] })).status).toBe(400);
+    expect((await avery.post(`/api/admin/users/${sam.id}/roles`, { entityIds: [uk.id] })).status).toBe(400);
+    const set = await avery.post<{ entityScope: string[] }>(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] });
+    expect(set.status).toBe(200);
+    expect(set.body.entityScope).toEqual(['BWL-UK']);
+    expect((await avery.get<AdminView>('/api/admin')).body.users.find((u) => u.id === sam.id)!.scope).toEqual(['BWL-UK']);
+
+    const s = t.client();
+    await s.login('sam');
+    const me = (await s.get<{ entities: { code: string }[]; entityScope: string[] | null }>('/api/auth/me')).body;
+    expect(me.entities.map((e) => e.code)).toEqual(['BWL-UK']);
+    expect(me.entityScope).toEqual(['BWL-UK']);
+
+    // reads: another entity's data is filtered out or refused
+    const props = (await s.get<{ items: { entityId: string | null }[] }>(`/api/proposals?status=all&period=${P}`)).body.items;
+    expect(props.length).toBeGreaterThan(0);
+    expect(props.some((p) => p.entityId === uk.id)).toBe(true);
+    expect(props.some((p) => p.entityId === us.id)).toBe(false);
+    const journal = (await s.get<{ items: { entityCode: string }[] }>(`/api/journal?period=${P}`)).body.items;
+    expect(journal.length).toBeGreaterThan(0);
+    expect(journal.every((j) => j.entityCode === 'BWL-UK')).toBe(true);
+    const runs = (await s.get<{ items: { entityId: string | null }[] }>(`/api/runs?period=${P}`)).body.items;
+    expect(runs.some((r) => r.entityId === us.id)).toBe(false);
+    expect((await s.get(`/api/flux?entity=${uk.id}&period=${P}`)).status).toBe(200);
+    expect((await s.get(`/api/flux?entity=${us.id}&period=${P}`)).status).toBe(403);
+    expect((await s.get(`/api/reports/tb?entity=${us.id}&period=${P}`)).status).toBe(403);
+    expect((await s.get(`/api/reports/statements?entity=consolidated&period=${P}`)).status).toBe(403);
+    const usRun = (await casey.get<{ items: { id: string; entityId: string | null }[] }>(`/api/runs?period=${P}`)).body.items.find((r) => r.entityId === us.id)!;
+    expect((await s.get(`/api/runs/${usRun.id}`)).status).toBe(403);
+
+    // writes: refused outside the scope, group-wide work needs access to every entity
+    const usItem = (await casey.get<{ items: (Item & { entityId: string | null })[] }>(`/api/proposals?status=open&period=${P}`)).body.items.find((i) => i.entityId === us.id && i.kind === 'coding')!;
+    expect((await s.post(`/api/proposals/${usItem.id}/approve`, {})).status).toBe(403);
+    expect((await s.post(`/api/proposals/${usItem.id}/reject`, { reason: 'Not my entity to decide' })).status).toBe(403);
+    expect((await s.post('/api/runs', { skillKey: 'bank-reconciliation', entityId: us.id, periodKey: P })).status).toBe(403);
+    expect((await s.post('/api/runs', { skillKey: 'intercompany-matching', entityId: null, periodKey: P })).status).toBe(403);
+    expect((await s.post('/api/imports', { connectorKey: 'first-harbor-bai2', filename: 'us.bai', content: adapter('bank:bai2').sample() })).status).toBe(403);
+    // ... and allowed inside it
+    const ukRun = await s.post<{ status: string; entity_id: string }>('/api/runs', { skillKey: 'bank-reconciliation', entityId: uk.id, periodKey: P });
+    expect(ukRun.status).toBe(200);
+    expect(ukRun.body.entity_id).toBe(uk.id);
+
+    // restoring group access takes effect on the next request
+    expect((await avery.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'] })).status).toBe(200);
+    expect((await s.get(`/api/flux?entity=${us.id}&period=${P}`)).status).toBe(200);
+  });
+
+  it('lets an administrator limited to one entity grant access only within it', async () => {
+    const avery = t.client();
+    await avery.login('avery');
+    const admin = (await avery.get<AdminView>('/api/admin')).body;
+    const uk = admin.entities.find((e) => e.code === 'BWL-UK')!;
+    const us = admin.entities.find((e) => e.code === 'BWL-US')!;
+    const sam = admin.users.find((u) => u.name === 'Sam Rivera')!;
+    const invited = await avery.post<{ userId: string; tempPassword: string }>('/api/admin/users', { email: 'morgan.ellis@bramblewood.example', name: 'Morgan Ellis', title: 'IT Administrator, UK', role: 'admin' });
+    expect(invited.status).toBe(200);
+    expect((await avery.post(`/api/admin/users/${invited.body.userId}/roles`, { roles: ['admin'], entityIds: [uk.id] })).status).toBe(200);
+
+    const morgan = t.client();
+    // a different client address than the rest of the suite (the Node server sets this header from the socket)
+    const login = await morgan.post<{ csrfToken: string }>('/api/auth/login', { email: 'morgan.ellis@bramblewood.example', password: invited.body.tempPassword }, { 'x-tieout-client-ip': '203.0.113.7' });
+    expect(login.status).toBe(200);
+    morgan.csrf = login.body.csrfToken;
+    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'] })).status).toBe(403);
+    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [us.id] })).status).toBe(403);
+    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(200);
+    // people they invite get the same limit, never wider
+    const hire = await morgan.post<{ userId: string }>('/api/admin/users', { email: 'robin.hale@bramblewood.example', name: 'Robin Hale', role: 'staff_accountant' });
+    expect(hire.status).toBe(200);
+    const users = (await avery.get<AdminView>('/api/admin')).body.users;
+    expect(users.find((u) => u.id === hire.body.userId)!.scope).toEqual(['BWL-UK']);
+    expect(users.find((u) => u.id === sam.id)!.scope).toEqual(['BWL-UK']);
+    expect((await avery.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'] })).status).toBe(200);
+  });
+});

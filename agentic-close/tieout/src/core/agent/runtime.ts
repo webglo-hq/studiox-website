@@ -144,6 +144,7 @@ export class AgentRuntime<Svc> {
       const requester = await this.deps.resolveActor(tx, req.requestedBy);
       if (!requester.permissions.has('agent.run')) throw forbidden('You do not have permission to run agents.');
       if (req.entityId && requester.entityScope && !requester.entityScope.includes(req.entityId)) throw forbidden('That entity is outside your access scope.');
+      if (!req.entityId && requester.entityScope) throw forbidden('A group-wide run covers every entity, and your access is limited to some of them.');
       const skillRow = await tx.findOne('skills', { key: req.skillKey });
       if (!skillRow || !skillRow.enabled) throw precondition(`Skill ${req.skillKey} is not installed or is disabled.`);
       const policy = await currentPolicyRow(tx, skillRow.id, req.entityId);

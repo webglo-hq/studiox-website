@@ -10,7 +10,9 @@ export function Reports() {
   const { period } = useApp();
   const route = useRoute();
   const view = (route.query.get('view') as 'tb' | 'fs' | null) ?? 'fs';
-  const scope = route.query.get('scope') ?? 'consolidated';
+  // people limited to some entities have no consolidated view (it covers every entity)
+  const group = !me.entityScope;
+  const scope = route.query.get('scope') ?? (group ? 'consolidated' : me.entities.find((e) => e.kind === 'legal')!.id);
   const tbEntity = route.query.get('entity') ?? me.entities[0]!.id;
   return (
     <div>
@@ -31,7 +33,7 @@ export function Reports() {
               Scope
             </label>
             <select id="fs-scope" value={scope} onChange={(e) => setQuery('scope', e.target.value)}>
-              <option value="consolidated">Consolidated (USD)</option>
+              {group ? <option value="consolidated">Consolidated (USD)</option> : null}
               {me.entities
                 .filter((e) => e.kind === 'legal')
                 .map((e) => (

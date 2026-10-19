@@ -8,7 +8,7 @@ import { periodEnd } from '../core/util/time';
 import type { ReconciliationRow } from '../schema';
 import { AccountingServices } from '../packs/accounting/services';
 import type { AppContext, RequestUser } from './context';
-import { requirePermission } from './context';
+import { assertInScope, requirePermission } from './context';
 
 export async function certifyBankRec(ctx: AppContext, u: RequestUser, bankAccountId: string, periodKey: string, note?: string): Promise<ReconciliationRow> {
   requirePermission(u, 'recon.prepare');
@@ -54,6 +54,7 @@ export async function reviewRec(ctx: AppContext, u: RequestUser, recId: string, 
   return ctx.db.tx(u.tenantId, async (tx) => {
     const rec = await tx.get('reconciliations', recId);
     if (!rec) throw notFound('Reconciliation', recId);
+    assertInScope(u, rec.entity_id);
     if (rec.status !== 'prepared') throw conflict('Only a prepared reconciliation can be reviewed.');
     if (rec.preparer_id === u.actor.id) throw sodViolation('You prepared this reconciliation, so someone else has to review it (AX-SOD-03).');
     if (rec.agent_run_id) {

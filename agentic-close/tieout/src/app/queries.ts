@@ -21,7 +21,7 @@ import { RULE_EXAMPLES } from '../packs/accounting/agent/rules';
 import { ACCOUNTING_TOOLS } from '../packs/accounting/agent/tools';
 import type { AccountingServices } from '../packs/accounting/services';
 import { csrfFor } from './auth';
-import { asUser, requirePermission, type AppContext, type RequestUser } from './context';
+import { assertInScope, asUser, inScope, requireGroupAccess, requirePermission, type AppContext, type RequestUser } from './context';
 import { DECISION_PERMISSION, eligibility } from './proposals';
 
 const OPEN: ProposalRow['status'][] = ['pending_approval', 'suggested'];
@@ -52,9 +52,10 @@ export async function me(ctx: AppContext, u: RequestUser, sessionToken: string |
   return asUser(ctx, u, async (svc, tx) => {
     const user = (await tx.get('users', u.actor.id))!;
     const tenant = (await tx.get('tenants', u.tenantId))!;
-    const entities = (await tx.find('entities', {}, { orderBy: [['sort_order', 'asc']] })).filter((e) => !u.actor.entityScope || u.actor.entityScope.includes(e.id) || e.kind === 'elimination');
+    const entities = (await tx.find('entities', {}, { orderBy: [['sort_order', 'asc']] })).filter((e) => inScope(u, e.id));
     return {
       user: { id: user.id, name: user.display_name, email: user.email, title: user.title, roles: u.actor.roles, permissions: [...u.actor.permissions].sort(), approvalLimitMinor: u.actor.approvalLimitMinor, mfaEnabled: user.mfa_enabled, preferences: user.preferences },
+      entityScope: u.actor.entityScope ? entities.map((e) => e.code) : null,
       tenant: { name: tenant.name, displayName: tenant.settings.displayName ?? tenant.name, demo: tenant.is_demo, businessDate: await svc.ctx.businessDate(), activeCloseKey: tenant.settings.activeCloseKey ?? null, workday: workdayLabel(tenant.settings.activeCloseKey ?? null, await svc.ctx.businessDate()), mfaRequiredRoles: tenant.settings.mfaRequiredRoles ?? [] },
       entities: entities.map((e) => ({ id: e.id, code: e.code, name: e.name, currency: e.functional_currency, kind: e.kind })),
       csrfToken: sessionToken ? csrfFor(sessionToken) : null,
@@ -69,11 +70,11 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
   return asUser(ctx, u, async (svc, tx) => {
     const users = await names(tx);
     const t = await svc.close.tasks(periodKey);
-    const props = await tx.find('proposals', { period_key: periodKey });
+    const props = (await tx.find('proposals', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
     const open = props.filter((p) => OPEN.includes(p.status));
     let mine = 0;
     for (const p of open) if ((await eligibility(ctx, tx, u, p)).canDecide) mine++;
-    const runs = await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'desc']], limit: 8 });
+    const runs = (await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'desc']], limit: 40 })).filter((r) => inScope(u, r.entity_id)).slice(0, 8);
     const readiness = await svc.close.readiness(periodKey);
     const done = t.tasks.filter((x) => x.status === 'done' || x.status === 'skipped').length;
     return {
@@ -116,7 +117,7 @@ export async function listProposals(ctx: AppContext, u: RequestUser, q: { status
     else if (q.status === 'auto') where.route = { in: ['auto_post', 'auto_post_sampled'] };
     else if (q.status && q.status !== 'all') where.status = q.status;
     let rows = await tx.find('proposals', where as never, { orderBy: [['created_at', 'desc'], ['ref', 'desc']], limit: Math.min(q.limit ?? 500, 1000) });
-    rows = rows.filter((p) => !p.entity_id || !u.actor.entityScope || u.actor.entityScope.includes(p.entity_id));
+    rows = rows.filter((p) => inScope(u, p.entity_id));
     if (q.text) {
       const t = q.text.toLowerCase();
       rows = rows.filter((p) => p.title.toLowerCase().includes(t) || p.ref.toLowerCase().includes(t) || p.why.toLowerCase().includes(t));
@@ -186,10 +187,10 @@ export async function closeView(ctx: AppContext, u: RequestUser, periodKey: stri
   return asUser(ctx, u, async (svc, tx) => {
     const t = await svc.close.tasks(periodKey);
     const readiness = await svc.close.readiness(periodKey);
-    const runs = await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'asc']] });
-    const props = await tx.find('proposals', { period_key: periodKey });
-    const packages = await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']] });
-    const periods = await tx.find('periods', { period_key: periodKey });
+    const runs = (await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'asc']] })).filter((r) => inScope(u, r.entity_id));
+    const props = (await tx.find('proposals', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
+    const packages = u.actor.entityScope ? [] : await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']] });
+    const periods = (await tx.find('periods', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
     return {
       ...t,
       readiness,
@@ -207,6 +208,7 @@ export async function closeView(ctx: AppContext, u: RequestUser, periodKey: stri
 
 export async function closePackage(ctx: AppContext, u: RequestUser, id: string) {
   requirePermission(u, 'report.view');
+  requireGroupAccess(u, 'The close package');
   return asUser(ctx, u, async (_svc, tx) => {
     const pkg = await tx.get('close_packages', id);
     if (!pkg) throw notFound('Close package', id);
@@ -348,6 +350,7 @@ export async function statements(ctx: AppContext, u: RequestUser, entityId: stri
   return asUser(ctx, u, async (svc, tx) => {
     const chart = await svc.ctx.chart();
     if (entityId === 'consolidated') {
+      requireGroupAccess(u, 'The consolidated view');
       const c = await consolidatedStatements(tx, chart, periodKey, 'USD');
       return { scope: 'consolidated', currency: c.currency, balanceSheet: c.balanceSheet, incomeStatement: c.incomeStatement, netIncomeMinor: c.netIncomeMinor, checks: c.checks, consolidation: { ctaMinor: c.ctaMinor, eliminationsMinor: c.eliminationsMinor, closingRate: c.closingRate, averageRate: c.averageRate } };
     }
@@ -364,7 +367,7 @@ export async function runsList(ctx: AppContext, u: RequestUser, q: { period?: st
     const where: Record<string, unknown> = {};
     if (q.period) where.period_key = q.period;
     if (q.skill) where.skill_key = q.skill;
-    const rows = await tx.find('agent_runs', where as never, { orderBy: [['created_at', 'desc']], limit: Math.min(q.limit ?? 100, 500) });
+    const rows = (await tx.find('agent_runs', where as never, { orderBy: [['created_at', 'desc']], limit: Math.min(q.limit ?? 100, 500) })).filter((r) => inScope(u, r.entity_id));
     return { items: rows.map((r) => ({ id: r.id, ref: r.ref, skillKey: r.skill_key, skillVersion: r.skill_version, entityId: r.entity_id, periodKey: r.period_key, status: r.status, mode: r.mode, model: r.model, autonomy: r.autonomy_level, requestedBy: who(r.requested_by, users), createdAt: r.created_at, finishedAt: r.finished_at, steps: r.steps_used, costMicros: r.cost_micros, headline: r.summary.headline ?? null, proposals: r.summary.proposals ?? 0, orchestrationId: r.orchestration_id, attempts: r.attempts })) };
   });
 }
@@ -374,6 +377,7 @@ export async function runDetail(ctx: AppContext, u: RequestUser, id: string) {
   return asUser(ctx, u, async (_svc, tx) => {
     const r = await tx.get('agent_runs', id);
     if (!r) throw notFound('Run', id);
+    assertInScope(u, r.entity_id);
     const users = await names(tx);
     const steps = await tx.find('agent_steps', { run_id: id }, { orderBy: [['seq', 'asc']] });
     const calls = await tx.find('agent_tool_calls', { run_id: id }, { orderBy: [['seq', 'asc']] });
@@ -480,6 +484,7 @@ export async function auditList(ctx: AppContext, u: RequestUser, q: { limit?: nu
     if (q.subject) where.subject_id = q.subject;
     let rows = await tx.find('audit_log', where as never, { orderBy: [['seq', 'desc']], limit: Math.min(q.limit ?? 100, 500) });
     if (q.action) rows = rows.filter((r) => r.action.startsWith(q.action!));
+    rows = rows.filter((r) => inScope(u, r.entity_id));
     const total = await tx.count('audit_log', {});
     const users = await names(tx);
     return { total, items: rows.map((r) => ({ seq: r.seq, at: r.at, actorType: r.actor_type, actor: r.actor_label, onBehalfOf: who(r.on_behalf_of, users), action: r.action, subjectType: r.subject_type, subjectId: r.subject_id, entityId: r.entity_id, summary: r.summary, hash: r.hash, prevHash: r.prev_hash })) };
@@ -495,6 +500,12 @@ export async function auditVerify(ctx: AppContext, u: RequestUser) {
   });
 }
 
+/** A user's entity scope as entity codes (null = every entity), from their role grants. */
+function scopeOf(grants: { scope_entity_id: string | null }[], entities: { id: string; code: string }[]): string[] | null {
+  if (!grants.length || grants.some((g) => g.scope_entity_id === null)) return null;
+  return [...new Set(grants.map((g) => entities.find((e) => e.id === g.scope_entity_id)?.code ?? '?'))].sort();
+}
+
 export async function adminView(ctx: AppContext, u: RequestUser) {
   const canUsers = u.actor.permissions.has('admin.users');
   return asUser(ctx, u, async (_svc, tx) => {
@@ -507,7 +518,7 @@ export async function adminView(ctx: AppContext, u: RequestUser) {
     const tokens = await tx.find('api_tokens', { user_id: u.actor.id });
     return {
       canManage: { users: canUsers, sod: u.actor.permissions.has('admin.sod'), settings: u.actor.permissions.has('admin.settings'), tokens: u.actor.permissions.has('mcp.token') },
-      users: users.map((x) => ({ id: x.id, name: x.display_name, email: canUsers ? x.email : x.email.replace(/^(.).*(@.*)$/, '$1…$2'), title: x.title, status: x.status, mfa: x.mfa_enabled, lastLoginAt: x.last_login_at, roles: grants.filter((g) => g.user_id === x.id).map((g) => roles.find((r) => r.id === g.role_id)?.key ?? '?') })),
+      users: users.map((x) => ({ id: x.id, name: x.display_name, email: canUsers ? x.email : x.email.replace(/^(.).*(@.*)$/, '$1…$2'), title: x.title, status: x.status, mfa: x.mfa_enabled, lastLoginAt: x.last_login_at, roles: [...new Set(grants.filter((g) => g.user_id === x.id).map((g) => roles.find((r) => r.id === g.role_id)?.key ?? '?'))], scope: scopeOf(grants.filter((g) => g.user_id === x.id), entities) })),
       roles: ROLES.map((r) => ({ key: r.key, name: r.name, description: r.description, approvalLimitMinor: r.approvalLimitMinor, permissions: rp.filter((x) => x.role_id === roles.find((y) => y.key === r.key)?.id).map((x) => x.permission_id).sort() })),
       sod: await tx.find('sod_rules', {}, { orderBy: [['code', 'asc']] }),
       settings: tenant.settings,
@@ -521,8 +532,8 @@ export async function importsView(ctx: AppContext, u: RequestUser) {
   requirePermission(u, 'import.view');
   return asUser(ctx, u, async (_svc, tx) => {
     const users = await names(tx);
-    const connectors = await tx.find('connectors', {});
-    const batches = await tx.find('import_batches', {}, { orderBy: [['started_at', 'desc']], limit: 30 });
+    const connectors = (await tx.find('connectors', {})).filter((c) => inScope(u, c.entity_id));
+    const batches = (await tx.find('import_batches', {}, { orderBy: [['started_at', 'desc']], limit: 60 })).filter((b) => connectors.some((c) => c.id === b.connector_id)).slice(0, 30);
     const docs = new Map((await tx.find('source_documents', { id: { in: batches.map((b) => b.source_document_id) } })).map((d) => [d.id, d]));
     return {
       connectors: connectors.map((c) => {
@@ -539,6 +550,7 @@ export async function sourceDocument(ctx: AppContext, u: RequestUser, id: string
   return ctx.db.tx(u.tenantId, async (tx) => {
     const d = await tx.get('source_documents', id);
     if (!d) throw notFound('Source document', id);
+    if (d.connector_id) assertInScope(u, (await tx.get('connectors', d.connector_id))?.entity_id);
     return { id: d.id, filename: d.filename, mime: d.mime, kind: d.kind, size: d.size_bytes, contentHash: d.content_hash, receivedAt: d.received_at, content: d.content.slice(0, 200_000) };
   });
 }

@@ -10,7 +10,7 @@ import { approveAndPost, createJournalEntry, rejectJournalEntry, reverseJournalE
 import { closeOntology } from '../packs/accounting/ontology';
 import { AccountingServices } from '../packs/accounting/services';
 import type { AppContext, RequestUser } from './context';
-import { requirePermission } from './context';
+import { assertInScope, requirePermission } from './context';
 
 export const ManualJeInput = z
   .object({
@@ -54,7 +54,10 @@ export async function approveJournal(ctx: AppContext, u: RequestUser, jeId: stri
 
 export async function rejectJournal(ctx: AppContext, u: RequestUser, jeId: string, reason: string) {
   requirePermission(u, 'je.approve');
-  return ctx.db.tx(u.tenantId, async (tx) => rejectJournalEntry(await new AccountingServices(tx, u.actor, ctx.clock).ctx.ledger(), jeId, reason));
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    assertInScope(u, (await tx.get('journal_entries', jeId))?.entity_id);
+    return rejectJournalEntry(await new AccountingServices(tx, u.actor, ctx.clock).ctx.ledger(), jeId, reason);
+  });
 }
 
 /** Request a reversal of a posted entry; the reversal itself needs a second person to approve. */
@@ -62,6 +65,7 @@ export async function requestReversal(ctx: AppContext, u: RequestUser, jeId: str
   requirePermission(u, 'je.reverse');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(postingDate)) throw validation('Choose a posting date for the reversal.');
   return ctx.db.tx(u.tenantId, async (tx) => {
+    assertInScope(u, (await tx.get('journal_entries', jeId))?.entity_id);
     const svc = new AccountingServices(tx, u.actor, ctx.clock);
     const out = await reverseJournalEntry(await svc.ctx.ledger(), jeId, { postingDate, reason, preparedBy: u.actor.id, post: 'approval' });
     await audit(tx, u.actor, ctx.clock, { action: 'je.reverse.request', subjectType: 'journal_entry', subjectId: jeId, entityId: out.entity_id, summary: `Reversal ${out.je_number} requested: ${reason}`, data: { reversalId: out.id } }, u.ip);

@@ -15,10 +15,8 @@ function installParsers() {
 
 export function createNodePgDriver(connectionString: string, max = 10): SqlDriver {
   installParsers();
-  const pool = new pg.Pool({ connectionString, max });
-  pool.on('connect', (client) => {
-    void client.query("SET TIME ZONE 'UTC'");
-  });
+  // UTC as a startup parameter: no extra query racing the caller's first query on a new connection
+  const pool = new pg.Pool({ connectionString, max, options: '-c TimeZone=UTC' });
   const wrap = (c: pg.Pool | pg.PoolClient): SqlQueryable => ({
     query: async (text, params) => {
       const r = await c.query<SqlRow>(text, params ? [...params] : undefined);

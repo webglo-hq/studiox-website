@@ -24,6 +24,8 @@ import * as skills from '../app/skills';
 export const SESSION_COOKIE = 'tieout_session';
 const OIDC_COOKIE = 'tieout_oidc';
 const OIDC_PATH = '/api/auth/oidc';
+/** The web app root, relative to `${OIDC_PATH}/callback` (so it also works under a path prefix). */
+const APP_ROOT_FROM_CALLBACK = '../../../';
 
 type Env = { Variables: { auth: Authenticated | null; user: RequestUser; token: string | null } };
 
@@ -140,11 +142,11 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
       const r = await oidcCallback(ctx, { code: c.req.query('code') ?? null, state: c.req.query('state') ?? null, error: c.req.query('error') ?? null }, sealed, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
       issueSession(c, r.sessionToken);
       // continue with a same-site navigation so the SameSite=Strict session cookie is sent
-      return c.html(page('Signing in', '<p>Signing you in…</p><p><a href="/">Continue</a></p>', '/'));
+      return c.html(page('Signing in', `<p>Signing you in…</p><p><a href="${APP_ROOT_FROM_CALLBACK}">Continue</a></p>`, APP_ROOT_FROM_CALLBACK));
     } catch (e) {
       const msg = e instanceof DomainError ? e.message : 'Single sign-on failed.';
       if (!(e instanceof DomainError)) ctx.log('error', { path: c.req.path, message: (e as Error).message });
-      return c.html(page('Sign-in failed', `<h1 style="font-weight:600">Sign-in failed</h1><p>${esc(msg)}</p><p><a href="/">Back to sign in</a></p>`), e instanceof DomainError && e.code === 'forbidden' ? 403 : 401);
+      return c.html(page('Sign-in failed', `<h1 style="font-weight:600">Sign-in failed</h1><p>${esc(msg)}</p><p><a href="${APP_ROOT_FROM_CALLBACK}">Back to sign in</a></p>`), e instanceof DomainError && e.code === 'forbidden' ? 403 : 401);
     }
   });
 
@@ -292,7 +294,12 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.post('/api/audit/verify', async (c) => c.json(await q.auditVerify(ctx, U(c))));
   app.get('/api/admin', async (c) => c.json(await q.adminView(ctx, U(c))));
   app.post('/api/admin/users', async (c) => c.json(await admin.inviteUser(ctx, U(c), await body(c, 5000))));
-  app.post('/api/admin/users/:id/roles', async (c) => c.json(await admin.assignRoles(ctx, U(c), c.req.param('id'), ((await body<{ roles: string[] }>(c, 5000)).roles ?? []).map(String))));
+  app.post('/api/admin/users/:id/roles', async (c) => {
+    const b = await body<{ roles?: unknown[]; entityIds?: unknown[] | null }>(c, 5000);
+    // a missing or malformed role list fails validation instead of silently removing every role
+    const roles = Array.isArray(b.roles) ? b.roles.map(String) : (null as unknown as string[]);
+    return c.json(await admin.assignRoles(ctx, U(c), c.req.param('id'), roles, Array.isArray(b.entityIds) ? b.entityIds.map(String) : null));
+  });
   app.post('/api/admin/users/:id/status', async (c) => c.json(await admin.setUserStatus(ctx, U(c), c.req.param('id'), (await body<{ status: string }>(c, 1000)).status === 'active' ? 'active' : 'disabled')));
   app.post('/api/admin/sod/:code', async (c) => {
     const b = await body<{ enabled: boolean; reason: string }>(c, 5000);

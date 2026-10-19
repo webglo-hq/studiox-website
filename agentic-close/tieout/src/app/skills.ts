@@ -12,7 +12,7 @@ import type { AgentRunRow, SkillEvalRunRow } from '../schema';
 import { compileRule, type CompiledRule } from '../packs/accounting/agent/rules';
 import { DIMENSIONS } from '../packs/accounting/seed/company';
 import type { AppContext, RequestUser } from './context';
-import { requirePermission } from './context';
+import { assertCanActOn, requirePermission } from './context';
 
 async function skillRow(ctx: AppContext, u: RequestUser, key: string) {
   const row = await ctx.db.tx(u.tenantId, (tx) => tx.findOne('skills', { key }));
@@ -21,6 +21,7 @@ async function skillRow(ctx: AppContext, u: RequestUser, key: string) {
 }
 
 export async function setPolicy(ctx: AppContext, u: RequestUser, key: string, change: { autonomy?: AutonomyLevel; thresholds?: Record<string, number>; enabled?: boolean; note: string; scopeEntityId?: string | null }) {
+  assertCanActOn(u, change.scopeEntityId ?? null, 'The group-wide policy');
   const row = await skillRow(ctx, u, key);
   const manifest = ctx.skills.get(key).manifest;
   if (change.enabled !== undefined && !u.actor.permissions.has('skill.policy.edit')) throw forbidden('You cannot switch skills on or off.');
@@ -43,6 +44,7 @@ export async function previewRule(ctx: AppContext, u: RequestUser, text: string)
 
 export async function addRule(ctx: AppContext, u: RequestUser, key: string, text: string, scopeEntityId: string | null = null) {
   requirePermission(u, 'skill.policy.edit');
+  assertCanActOn(u, scopeEntityId, 'The group-wide policy');
   const row = await skillRow(ctx, u, key);
   const compiled = compileRule(String(text ?? ''), await ruleContext(ctx, u));
   if (compiled.status !== 'active') throw validation(compiled.interpretation, { compiled });
@@ -58,6 +60,7 @@ export async function addRule(ctx: AppContext, u: RequestUser, key: string, text
 
 export async function removeRule(ctx: AppContext, u: RequestUser, key: string, ruleId: string, scopeEntityId: string | null = null) {
   requirePermission(u, 'skill.policy.edit');
+  assertCanActOn(u, scopeEntityId, 'The group-wide policy');
   const row = await skillRow(ctx, u, key);
   const manifest = ctx.skills.get(key).manifest;
   return ctx.db.tx(u.tenantId, async (tx) => {
@@ -79,6 +82,9 @@ export async function startRun(ctx: AppContext, u: RequestUser, req: { skillKey:
 
 export async function resumeRun(ctx: AppContext, u: RequestUser, runId: string): Promise<AgentRunRow> {
   requirePermission(u, 'agent.run');
+  const run = await ctx.db.tx(u.tenantId, (tx) => tx.get('agent_runs', runId));
+  if (!run) throw notFound('Run', runId);
+  assertCanActOn(u, run.entity_id, 'A group-wide run');
   return ctx.runtime.resume(u.tenantId, runId);
 }
 

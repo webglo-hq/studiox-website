@@ -11,7 +11,7 @@ import type { ImportBatchRow } from '../schema';
 import { adapter } from '../integrations/adapters';
 import type { ImportError } from '../integrations/types';
 import type { AppContext, RequestUser } from './context';
-import { requirePermission } from './context';
+import { assertCanActOn, requirePermission } from './context';
 
 const MAX_BYTES = 2_000_000;
 
@@ -32,6 +32,7 @@ export async function importFile(ctx: AppContext, u: RequestUser, connectorKey: 
   return ctx.db.tx(u.tenantId, async (tx) => {
     const connector = await tx.findOne('connectors', { key: connectorKey });
     if (!connector) throw notFound('Connector', connectorKey);
+    assertCanActOn(u, connector.entity_id, 'This connector');
     const ad = adapter(String(connector.config.adapter ?? `${connector.kind === 'bank_feed' ? 'bank' : connector.kind}:${connector.format}`));
     const now = ctx.clock.now().toISOString();
     const hash = sha256Hex(content);

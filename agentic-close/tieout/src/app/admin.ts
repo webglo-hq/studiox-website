@@ -10,22 +10,33 @@ import { closeOntology } from '../packs/accounting/ontology';
 import type { AppContext, RequestUser } from './context';
 import { requirePermission } from './context';
 
-export async function assignRoles(ctx: AppContext, u: RequestUser, userId: string, roleKeys: string[]) {
+/**
+ * Set a person's roles and, optionally, the legal entities those roles apply to (entity scope).
+ * No entities (or an empty list) means every entity. An administrator who is limited to some
+ * entities can only grant access within them.
+ */
+export async function assignRoles(ctx: AppContext, u: RequestUser, userId: string, roleKeys: string[], entityIds: string[] | null = null) {
   requirePermission(u, 'admin.users');
   if (!Array.isArray(roleKeys) || roleKeys.some((k) => !ROLES.some((r) => r.key === k))) throw validation('Unknown role.');
+  if (entityIds !== null && (!Array.isArray(entityIds) || entityIds.length > 50 || entityIds.some((e) => typeof e !== 'string'))) throw validation('Choose the entities this person may work on.');
   if (userId === u.actor.id) throw forbidden('You cannot change your own roles.');
+  const scope = entityIds?.length ? [...new Set(entityIds)] : null;
+  if (u.actor.entityScope && (!scope || scope.some((e) => !u.actor.entityScope!.includes(e)))) throw forbidden('You can only grant access to entities you have access to yourself.');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const user = await tx.get('users', userId);
     if (!user) throw notFound('User', userId);
+    const ents = scope ? await tx.find('entities', { id: { in: scope } }) : [];
+    if (scope && (ents.length !== scope.length || ents.some((e) => e.kind !== 'legal'))) throw validation('Access can only be limited to legal entities.');
     const roles = await tx.find('roles', { key: { in: roleKeys } });
     const perms = new Set(roles.length ? (await tx.find('role_permissions', { role_id: { in: roles.map((r) => r.id) } })).map((p) => p.permission_id) : []);
     const conflicts = evaluateAssignment(await tx.find('sod_rules', { enabled: true }), roleKeys, perms);
     if (conflicts.length) throw sodViolation(conflicts.map((c) => `${c.code} ${c.name}: ${c.message}`).join(' '), { conflicts });
     for (const g of await tx.find('user_roles', { user_id: userId })) await tx.delete('user_roles', g.id);
     const now = ctx.clock.now().toISOString();
-    for (const r of roles) await tx.insert('user_roles', { user_id: userId, role_id: r.id, scope_entity_id: null, granted_by: u.actor.id, granted_at: now });
-    await audit(tx, u.actor, ctx.clock, { action: 'admin.roles.assign', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: roles set to ${roleKeys.join(', ') || 'none'}`, data: { roles: roleKeys } }, u.ip);
-    return { userId, roles: roleKeys };
+    for (const r of roles) for (const sid of scope ?? [null]) await tx.insert('user_roles', { user_id: userId, role_id: r.id, scope_entity_id: sid, granted_by: u.actor.id, granted_at: now });
+    const codes = scope ? ents.map((e) => e.code).sort() : null;
+    await audit(tx, u.actor, ctx.clock, { action: 'admin.roles.assign', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: roles set to ${roleKeys.join(', ') || 'none'} for ${codes ? codes.join(', ') : 'all entities'}`, data: { roles: roleKeys, entities: codes } }, u.ip);
+    return { userId, roles: roleKeys, entityScope: codes };
   });
 }
 
@@ -51,13 +62,16 @@ export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email
   if (!input.name || input.name.length > 120) throw validation('Enter a name.');
   const tempPassword = `${secureToken(12)}-Tmp`;
   const hash = await ctx.hasher.hash(tempPassword);
+  // emails are unique across tenants (sign-in looks them up globally; the column is UNIQUE too).
+  // Checked before the tenant transaction: a store that serialises transactions cannot nest them.
+  if ((await ctx.db.system((sys) => sys.findGlobal('users', { email }))).length) throw conflict('A user with that email already exists.');
   return ctx.db.tx(u.tenantId, async (tx) => {
-    if ((await ctx.db.system((sys) => sys.findGlobal('users', { email }))).length) throw conflict('A user with that email already exists.');
     const role = await tx.findOne('roles', { key: input.role });
     if (!role) throw validation('Unknown role.');
     const now = ctx.clock.now().toISOString();
     const user = await tx.insert('users', { email, display_name: input.name.trim(), title: input.title ?? null, password_hash: hash, status: 'active', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: now });
-    await tx.insert('user_roles', { user_id: user.id, role_id: role.id, scope_entity_id: null, granted_by: u.actor.id, granted_at: now });
+    // an administrator limited to some entities invites people with the same limit (never wider)
+    for (const sid of u.actor.entityScope ?? [null]) await tx.insert('user_roles', { user_id: user.id, role_id: role.id, scope_entity_id: sid, granted_by: u.actor.id, granted_at: now });
     await audit(tx, u.actor, ctx.clock, { action: 'admin.user.invite', subjectType: 'user', subjectId: user.id, summary: `Invited ${input.name} as ${role.name}`, data: { role: role.key } }, u.ip);
     return { userId: user.id, tempPassword };
   });

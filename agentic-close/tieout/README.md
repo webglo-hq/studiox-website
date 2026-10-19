@@ -37,7 +37,7 @@ Node 22.6+ is required. Every port is configurable and defaults to a random free
 | Priya Natarajan | AP Specialist | Vendor-side work |
 | Devon Park | FP&A Analyst | Read flux, draft explanations |
 | Alex Quinn | External Auditor | Read-only: ledger, runs, audit chain |
-| Avery Stone | IT Administrator | People, roles, SoD controls, security settings |
+| Avery Stone | IT Administrator | People, roles and entity scope (e.g. limit Sam to the UK subsidiary), SoD controls, security settings |
 
 ## Demo script (≈5 minutes)
 

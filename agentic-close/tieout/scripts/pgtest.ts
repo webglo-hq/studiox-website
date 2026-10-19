@@ -61,6 +61,12 @@ if (cmd === 'start') {
   }
   chmodSync(dir, 0o755);
   if (!existsSync(resolve(data, 'PG_VERSION'))) asPg(`${bin}/initdb`, ['-D', data, '-U', 'tieout', '--auth=trust', '--encoding=UTF8', '--no-locale', '--no-sync']);
+  // already running (pg_ctl status exits 0): keep it and its port
+  const status = isRoot ? spawnSync('runuser', ['-u', osUser, '--', `${bin}/pg_ctl`, 'status', '-D', data]) : spawnSync(`${bin}/pg_ctl`, ['status', '-D', data]);
+  if (status.status === 0 && existsSync(envFile)) {
+    console.log(`PostgreSQL test cluster already running; env in .pgtest/env\n${readFileSync(envFile, 'utf8').trim()}`);
+    process.exit(0);
+  }
   const port = await freePort();
   asPg(`${bin}/pg_ctl`, ['-D', data, '-l', resolve(dir, 'server.log'), '-w', '-o', `-p ${port} -k '' -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off -c full_page_writes=off`, 'start']);
   const psql = (db: string, sql: string) => asPg(`${bin}/psql`, ['-h', '127.0.0.1', '-p', String(port), '-U', 'tieout', '-d', db, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql]);

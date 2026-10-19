@@ -38,6 +38,8 @@ export async function runCloseAgents(
     const byId = new Map(rows.map((r) => [r.id, r]));
     const ts = rows
       .filter((r) => r.skill_key && r.status !== 'done' && r.status !== 'skipped')
+      // group-wide skills need group access; a requester scoped to some entities runs the rest
+      .filter((r) => !req.requester.entityScope || !GROUP_SKILLS.has(r.skill_key!))
       .filter((r) => (req.only?.length ? req.only.includes(r.key) || req.only.includes(r.skill_key!) : req.includeOnDemand || !ON_DEMAND_SKILLS.has(r.skill_key!)))
       .map((r) => ({ id: r.id, key: r.key, skillKey: r.skill_key!, deps: links.filter((l) => l.task_id === r.id).map((l) => byId.get(l.depends_on_task_id)!.key) }));
     await audit(tx, req.requester, clock, { action: 'close.orchestration.start', subjectType: 'close_period', subjectId: cp.id, summary: `Close agents started for ${req.periodKey}: ${ts.map((t) => t.key).join(', ')}`, data: { orchestrationId } });

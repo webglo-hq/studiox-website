@@ -69,6 +69,30 @@ export function requirePermission(u: RequestUser, permission: string) {
   if (!u.actor.permissions.has(permission)) throw forbidden(`This needs the “${permission}” permission.`);
 }
 
+/**
+ * Entity scope (role grants limited to some legal entities; `null` scope = the whole group).
+ * Reads: rows of an entity outside the scope are hidden; group-level rows (no entity) stay
+ * visible. Writes: entity rows need the entity in scope, group-level actions need group access.
+ */
+export function inScope(u: RequestUser, entityId: string | null | undefined): boolean {
+  return !u.actor.entityScope || !entityId || u.actor.entityScope.includes(entityId);
+}
+
+export function assertInScope(u: RequestUser, entityId: string | null | undefined) {
+  if (!inScope(u, entityId)) throw forbidden('That entity is outside your access scope.');
+}
+
+/** Group-level work (consolidation, the close package, locking every entity) needs unscoped access. */
+export function requireGroupAccess(u: RequestUser, what: string) {
+  if (u.actor.entityScope) throw forbidden(`${what} covers every entity, and your access is limited to some of them.`);
+}
+
+/** Acting on an item: its entity must be in scope; a group-level item needs group access. */
+export function assertCanActOn(u: RequestUser, entityId: string | null | undefined, what: string) {
+  if (entityId) assertInScope(u, entityId);
+  else requireGroupAccess(u, what);
+}
+
 /** Run a unit of work as the user, with services bound to their actor. */
 export async function asUser<R>(ctx: AppContext, u: RequestUser, fn: (svc: AccountingServices, tx: DbTx) => Promise<R>): Promise<R> {
   return ctx.db.tx(u.tenantId, async (tx) => fn(new AccountingServices(tx, u.actor, ctx.clock), tx));

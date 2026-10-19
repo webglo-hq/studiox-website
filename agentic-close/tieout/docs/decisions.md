@@ -124,6 +124,13 @@ transaction sets `tieout.tenant_id`; the few identity lookups that must cross te
 `tieout.bypass` for their transaction only. The application must connect as an ordinary role
 (superusers bypass RLS); tests prove isolation as such a role.
 
+**Entity scope (within a tenant).** Role grants can be limited to legal entities (Admin → People →
+Roles). Reads hide rows of entities outside the scope and keep group-level rows (the checklist);
+writes refuse them with 403. Work that covers every entity — consolidated statements, the close
+package, locking the period, group-wide runs such as intercompany matching, the group-wide policy —
+needs unscoped access; "Run close agents" by a scoped person runs only the per-entity skills for
+their entities. Changes apply on the next request because the actor is resolved per request.
+
 ## ADR-013 · Prompt-injection hygiene for third-party text
 
 **Decision.** Bank memos, merchant names and documents are data. Untrusted fields are scanned for

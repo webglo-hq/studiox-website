@@ -13,7 +13,7 @@ import { CodingPayloadSchema } from '../packs/accounting/agent/payloads';
 import { evaluateApproval } from '../packs/accounting/controls/sod';
 import { closeOntology } from '../packs/accounting/ontology';
 import { AccountingServices } from '../packs/accounting/services';
-import type { AppContext, RequestUser } from './context';
+import { assertCanActOn, type AppContext, type RequestUser } from './context';
 
 export const DECISION_PERMISSION: Record<ProposalRow['kind'], string> = {
   journal_entry: 'je.approve',
@@ -39,6 +39,7 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
   const perm = DECISION_PERMISSION[p.kind];
   if (!u.actor.permissions.has(perm)) reasons.push(`Needs the ${perm} permission.`);
   if (p.entity_id && u.actor.entityScope && !u.actor.entityScope.includes(p.entity_id)) reasons.push('This entity is outside your access scope.');
+  if (!p.entity_id && u.actor.entityScope) reasons.push('This item covers the whole group, and your access is limited to some entities.');
   if (!['pending_approval', 'suggested'].includes(p.status)) reasons.push(`It is already ${p.status.replace('_', ' ')}.`);
   const rules = await tx.find('sod_rules', { enabled: true });
   const skill = ctx.skills.has(p.skill_key) ? ctx.skills.get(p.skill_key) : null;
@@ -69,6 +70,7 @@ async function load(tx: DbTx, id: string): Promise<ProposalRow> {
 export async function approveProposal(ctx: AppContext, u: RequestUser, id: string, note?: string): Promise<ProposalRow> {
   const out = await ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
+    assertCanActOn(u, p.entity_id, 'This item');
     const el = await eligibility(ctx, tx, u, p);
     if (!el.canDecide) {
       if (el.sod.length && el.reasons.some((r) => r.startsWith('SOD-'))) throw sodViolation(el.reasons.join(' '), { reasons: el.reasons });
@@ -91,6 +93,7 @@ export async function rejectProposal(ctx: AppContext, u: RequestUser, id: string
   if (!reason || reason.trim().length < 5) throw validation('Say briefly why you are rejecting it (at least 5 characters); the agent and auditors will see it.');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
+    assertCanActOn(u, p.entity_id, 'This item');
     if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(`Needs the ${DECISION_PERMISSION[p.kind]} permission.`);
     if (!['pending_approval', 'suggested'].includes(p.status)) throw conflict(`It is already ${p.status.replace('_', ' ')}.`);
     const now = ctx.clock.now().toISOString();
@@ -120,6 +123,7 @@ export async function bulkApprove(ctx: AppContext, u: RequestUser, ids: string[]
 export async function reviewProposal(ctx: AppContext, u: RequestUser, id: string, note?: string): Promise<ProposalRow> {
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
+    assertCanActOn(u, p.entity_id, 'This item');
     if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(`Needs the ${DECISION_PERMISSION[p.kind]} permission.`);
     if (p.review_status !== 'pending') throw conflict('This item is not waiting for review.');
     if (p.requested_by === u.actor.id && !ctx.skills.get(p.skill_key).manifest.controls.requesterMayApprove) throw sodViolation('You ran the agent that produced this, so someone else has to review it.');
@@ -136,6 +140,7 @@ export async function editCoding(ctx: AppContext, u: RequestUser, id: string, ch
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
     if (p.kind !== 'coding') throw validation('Only coding suggestions can be edited.');
+    assertCanActOn(u, p.entity_id, 'This item');
     if (!u.actor.permissions.has('coding.approve')) throw forbidden('Needs the coding.approve permission.');
     if (!['pending_approval', 'suggested'].includes(p.status)) throw conflict(`It is already ${p.status.replace('_', ' ')}.`);
     const svc = new AccountingServices(tx, u.actor, ctx.clock);

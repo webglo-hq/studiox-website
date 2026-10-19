@@ -56,6 +56,9 @@ function People({ data }: { data: AdminData }) {
   const me = useMe();
   const [editing, setEditing] = useState<AdminData['users'][number] | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
+  /** entity ids the roles are limited to; null = every entity */
+  const [scope, setScope] = useState<string[] | null>(null);
+  const legal = data.entities.filter((e) => e.kind === 'legal');
   const [inviting, setInviting] = useState(false);
   const [invite, setInvite] = useState({ email: '', name: '', title: '', role: 'staff_accountant' });
   const [temp, setTemp] = useState<string | null>(null);
@@ -64,7 +67,7 @@ function People({ data }: { data: AdminData }) {
   async function saveRoles() {
     if (!editing) return;
     try {
-      await api(`/admin/users/${editing.id}/roles`, { body: { roles } });
+      await api(`/admin/users/${editing.id}/roles`, { body: { roles, entityIds: scope } });
       toast(`Roles updated for ${editing.name}.`);
       setEditing(null);
       bump();
@@ -143,6 +146,11 @@ function People({ data }: { data: AdminData }) {
                           {ROLE_LABEL[r] ?? r}
                         </Badge>
                       ))}
+                      {u.scope ? (
+                        <Badge tone="info" icon={false} title="Entity scope: this person sees and acts on these entities only">
+                          Only {u.scope.join(', ')}
+                        </Badge>
+                      ) : null}
                     </div>
                   </td>
                   <td>{u.mfa ? <Badge tone="good">On</Badge> : <Badge tone="warn">Off</Badge>}</td>
@@ -155,6 +163,7 @@ function People({ data }: { data: AdminData }) {
                         onClick={() => {
                           setEditing(u);
                           setRoles(u.roles);
+                          setScope(u.scope ? legal.filter((e) => u.scope!.includes(e.code)).map((e) => e.id) : null);
                         }}
                       >
                         Roles
@@ -233,7 +242,7 @@ function People({ data }: { data: AdminData }) {
             <button className="btn" onClick={() => setEditing(null)}>
               Cancel
             </button>
-            <button className="btn primary" disabled={!roles.length} onClick={() => void saveRoles()}>
+            <button className="btn primary" disabled={!roles.length || (scope !== null && !scope.length)} onClick={() => void saveRoles()}>
               Save roles
             </button>
           </>
@@ -250,6 +259,30 @@ function People({ data }: { data: AdminData }) {
               {r.name}
             </label>
           ))}
+        </fieldset>
+        <fieldset style={{ border: 0, padding: 0, margin: '14px 0 0' }}>
+          <legend style={{ fontWeight: 600, padding: 0 }}>Entities</legend>
+          <p className="muted" style={{ margin: '2px 0 6px', fontSize: 13 }}>
+            Limit these roles to some entities: the person then sees and acts on those entities only, and group-wide work (consolidation, the close package, locking the period) is left to people with access to every entity.
+          </p>
+          <label className="row" style={{ gap: 8, padding: '4px 0' }}>
+            <input type="radio" name="entity-scope" checked={scope === null} onChange={() => setScope(null)} />
+            Every entity
+          </label>
+          <label className="row" style={{ gap: 8, padding: '4px 0' }}>
+            <input type="radio" name="entity-scope" checked={scope !== null} onChange={() => setScope(legal.slice(0, 1).map((e) => e.id))} />
+            Only these entities
+          </label>
+          {scope !== null ? (
+            <div style={{ paddingLeft: 26 }}>
+              {legal.map((e) => (
+                <label key={e.id} className="row" style={{ gap: 8, padding: '4px 0' }}>
+                  <input type="checkbox" checked={scope.includes(e.id)} onChange={(ev) => setScope((x) => (ev.target.checked ? [...(x ?? []), e.id] : (x ?? []).filter((y) => y !== e.id)))} />
+                  {e.code} · {e.name}
+                </label>
+              ))}
+            </div>
+          ) : null}
         </fieldset>
       </Dialog>
 

@@ -9,7 +9,7 @@ import { canonicalJson } from '../core/util/json';
 import { runCloseAgents, type CloseRunResult } from '../packs/accounting/close/orchestrate';
 import { AccountingServices } from '../packs/accounting/services';
 import type { AppContext, RequestUser } from './context';
-import { requirePermission } from './context';
+import { assertCanActOn, assertInScope, requireGroupAccess, requirePermission } from './context';
 
 export async function startCloseAgents(ctx: AppContext, u: RequestUser, periodKey: string, opts: { only?: string[] } = {}): Promise<CloseRunResult> {
   requirePermission(u, 'agent.run');
@@ -23,6 +23,7 @@ export async function completeTask(ctx: AppContext, u: RequestUser, taskId: stri
   return ctx.db.tx(u.tenantId, async (tx) => {
     const t = await tx.get('close_tasks', taskId);
     if (!t) throw notFound('Task', taskId);
+    assertCanActOn(u, t.entity_id, 'This checklist task');
     if (t.status === 'done' || t.status === 'skipped') throw conflict('This task is already finished.');
     const now = ctx.clock.now().toISOString();
     const deps = await tx.find('close_task_dependencies', { task_id: t.id });
@@ -45,6 +46,7 @@ export async function signOffTask(ctx: AppContext, u: RequestUser, taskId: strin
   return ctx.db.tx(u.tenantId, async (tx) => {
     const t = await tx.get('close_tasks', taskId);
     if (!t) throw notFound('Task', taskId);
+    assertCanActOn(u, t.entity_id, 'This checklist task');
     if (t.status !== 'ready_for_review') throw conflict('The task is not ready for review yet.');
     if (t.completed_by === u.actor.id) throw sodViolation('You completed this task, so someone else has to sign it off (SOD-01).');
     if (t.agent_run_id) {
@@ -66,6 +68,7 @@ export async function signOffTask(ctx: AppContext, u: RequestUser, taskId: strin
 
 export async function finalizePackage(ctx: AppContext, u: RequestUser, packageId: string) {
   requirePermission(u, 'close.package');
+  requireGroupAccess(u, 'The close package');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const pkg = await tx.get('close_packages', packageId);
     if (!pkg) throw notFound('Close package', packageId);
@@ -83,6 +86,7 @@ export async function finalizePackage(ctx: AppContext, u: RequestUser, packageId
 /** Soft-close then lock every entity's period, only when AX-CL-02 holds. */
 export async function lockPeriod(ctx: AppContext, u: RequestUser, periodKey: string) {
   requirePermission(u, 'close.lock');
+  requireGroupAccess(u, 'Locking the period');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const svc = new AccountingServices(tx, u.actor, ctx.clock);
     const r = await svc.close.readiness(periodKey);
@@ -105,6 +109,7 @@ export async function lockPeriod(ctx: AppContext, u: RequestUser, periodKey: str
 export async function reopenPeriod(ctx: AppContext, u: RequestUser, periodKey: string, entityId: string, reason: string) {
   requirePermission(u, 'close.lock');
   if (!reason || reason.trim().length < 10) throw validation('Unlocking needs a documented reason (at least 10 characters).');
+  assertInScope(u, entityId);
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await tx.findOne('periods', { period_key: periodKey, entity_id: entityId });
     if (!p) throw notFound('Period', periodKey);

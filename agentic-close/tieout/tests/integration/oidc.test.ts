@@ -94,9 +94,12 @@ describe('single sign-on with OpenID Connect', () => {
 
   it('signs an invited user in and opens a normal session', async () => {
     idp.claims = defaultClaims;
-    const { res, session } = await signIn(casey);
+    const { res, html, session } = await signIn(casey);
     expect(res.status).toBe(200);
     expect(session).toBeTruthy();
+    // the page forwards to the app root through a relative URL (works under a path prefix too)
+    const target = /url=([^"]+)"/.exec(html)![1]!;
+    expect(new URL(target, `${TEST_ORIGIN}/api/auth/oidc/callback?code=x&state=y`).href).toBe(`${TEST_ORIGIN}/`);
     const me = await t.app.fetch(new Request(`${TEST_ORIGIN}/api/auth/me`, { headers: { cookie: session! } }));
     expect(me.status).toBe(200);
     expect(((await me.json()) as { user: { name: string } }).user.name).toBe('Casey Morgan');
