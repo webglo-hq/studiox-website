@@ -10,7 +10,7 @@ import { sha256Hex } from '../../../core/util/hash';
 import { canonicalJson } from '../../../core/util/json';
 import { periodKeyOf, periodRange, shiftPeriod } from '../../../core/util/time';
 import type { ProposalRow } from '../../../schema';
-import { approveAndPost, createJournalEntry } from '../ledger/journal';
+import { approveAndPost, createJournalEntry, runAutoReversals } from '../ledger/journal';
 import type { ClosePackageContent } from '../model/types';
 import type { AccountingServices } from '../services';
 import { CodingPayloadSchema, FindingPayloadSchema, FluxPayloadSchema, JePayloadSchema, RecMatchPayloadSchema, ReconcilingItemPayloadSchema, ReportPayloadSchema, type JePayload } from './payloads';
@@ -55,6 +55,9 @@ async function applyJournal(svc: AccountingServices, proposal: ProposalRow, p: J
   }
   const je = await createJournalEntry(await svc.ctx.ledger(), jeInput(p, proposal.prepared_by, { proposalId: proposal.id, agentRunId: proposal.run_id, idempotencyKey: `proposal:${proposal.id}` }), 'pending_approval');
   const posted = await post(svc, je.id, approver, `Proposal ${proposal.ref}`);
+  // Accruals reverse on day 1 of the next period. The close runs after month-end, so that period is
+  // usually already open: post the reversal now and next month starts clean (AX-ACR-01).
+  if (posted.auto_reverse_on && posted.auto_reverse_on <= (await svc.ctx.businessDate())) await runAutoReversals(await svc.ctx.ledger(), posted.entity_id, posted.auto_reverse_on);
   const now = svc.ctx.clock.now().toISOString();
   const e = p.effects;
   if (e?.depreciationLineIds?.length) await tx.updateWhere('depreciation_lines', { id: { in: e.depreciationLineIds } }, { status: 'posted', journal_entry_id: posted.id });

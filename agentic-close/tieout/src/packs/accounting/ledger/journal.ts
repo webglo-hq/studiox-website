@@ -289,7 +289,7 @@ export async function reverseJournalEntry(ctx: LedgerCtx, jeId: string, opts: { 
     ...entryInputFromRows(je, lines, chart),
     postingDate: opts.postingDate,
     entryType: 'reversing',
-    memo: `Reversal of ${je.je_number}: ${opts.reason}`,
+    memo: `Reversal of ${je.je_number} (${je.memo.slice(0, 90)}): ${opts.reason}`.slice(0, 500),
     source: opts.post === 'system' ? 'system' : 'manual',
     preparedBy: opts.preparedBy,
     reversesJeId: jeId,

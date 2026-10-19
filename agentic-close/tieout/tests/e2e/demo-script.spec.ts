@@ -77,11 +77,13 @@ test('5 · the Controller approves the accrual; it posts with why, evidence and 
   await drawer.getByRole('button', { name: /Approve & post/ }).click();
   await expect(toast(/approved and applied/)).toBeVisible();
 
-  await go('/journal?q=Cumulus');
-  await page.locator('table.data a.row-link').filter({ hasText: /^JE-/ }).first().click();
+  await go('/journal?q=Accrue Cumulus');
+  await page.locator('table.data a.row-link').filter({ hasText: /^JE-2026-09-US/ }).first().click();
   await expect(page.locator('main')).toContainText('Approved by');
   await expect(page.locator('main')).toContainText('Casey Morgan');
   await expect(page.locator('main')).toContainText(/Posted/);
+  // accruals reverse on day 1 of the next period, posted automatically once October is open
+  await expect(page.locator('main')).toContainText(/JE-2026-10-US-\d+ \(posted\)/);
 });
 
 test('6 · approval limits route the payroll accrual to the CFO', async () => {
