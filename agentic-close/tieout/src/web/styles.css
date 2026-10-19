@@ -314,6 +314,7 @@ code,
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   font-weight: 600;
   padding: 6px 12px;
   border: 1px solid var(--line);
@@ -1203,6 +1204,12 @@ textarea:focus-visible {
 .skeleton {
   opacity: 0.55;
 }
+.show-sm {
+  display: none;
+}
+.sidebar-close {
+  display: none;
+}
 .empty {
   text-align: center;
   padding: 36px 20px;
@@ -1269,6 +1276,12 @@ pre.doc {
   .sidebar.open {
     transform: none;
   }
+  .sidebar-close {
+    display: inline-flex;
+    position: absolute;
+    top: 14px;
+    right: 10px;
+  }
   .menu-button {
     display: inline-flex;
   }
@@ -1296,6 +1309,12 @@ pre.doc {
   }
   .hide-sm {
     display: none !important;
+  }
+  .show-sm {
+    display: inline;
+  }
+  .topbar {
+    gap: 6px;
   }
 }
 @media (max-width: 520px) {

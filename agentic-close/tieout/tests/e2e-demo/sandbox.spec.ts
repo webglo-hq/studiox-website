@@ -45,7 +45,10 @@ test('fits a phone screen without horizontal scrolling', async ({ browser, baseU
     const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, route).toBeLessThanOrEqual(1);
   }
-  await phone.getByRole('button', { name: 'Open menu' }).click();
+  await phone.getByRole('button', { name: 'Menu', exact: true }).click();
   await expect(phone.getByRole('navigation', { name: 'Sections' })).toBeVisible();
+  await phone.getByRole('button', { name: 'Close menu' }).click();
+  await phone.getByRole('button', { name: 'Sign out' }).click(); // top bar controls stay reachable on a phone
+  await expect(phone.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await phone.close();
 });

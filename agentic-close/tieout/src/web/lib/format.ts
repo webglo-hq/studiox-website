@@ -37,6 +37,12 @@ export function periodName(pk: string): string {
   return `${LONG[m - 1]} ${y}`;
 }
 
+/** "Sep 2026" for tight spaces (the phone top bar). */
+export function periodShort(pk: string): string {
+  const [y, m] = pk.split('-').map(Number) as [number, number];
+  return `${LONG[m - 1]!.slice(0, 3)} ${y}`;
+}
+
 export function titleCase(s: string): string {
   return s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }

@@ -17,6 +17,7 @@
     "build:web": "vite build --config vite.config.ts",
     "build:server": "tsx scripts/build-server.ts",
     "build:demo": "vite build --config vite.demo.config.ts && tsx scripts/verify-demo-build.ts",
+    "build:site": "npm run build:demo && tsx scripts/build-site.ts",
     "db:migrate": "tsx scripts/db.ts migrate",
     "db:seed": "tsx scripts/db.ts seed",
     "db:reset": "tsx scripts/db.ts reset",

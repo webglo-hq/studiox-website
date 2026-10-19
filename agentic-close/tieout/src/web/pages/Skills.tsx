@@ -402,8 +402,8 @@ function Rules({ data, rules }: { data: SkillDetail; rules: SkillDetail['policie
       {rules.length ? (
         <ul className="stack" style={{ listStyle: 'none', margin: 0, padding: 0, gap: 8 }}>
           {rules.map((r) => (
-            <li key={r.id} className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
-              <div>
+            <li key={r.id} className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'nowrap', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>“{r.text}”</strong>
                 <div className="muted" style={{ fontSize: 13 }}>
                   {r.interpretation}

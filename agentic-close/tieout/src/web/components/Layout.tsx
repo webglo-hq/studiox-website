@@ -3,7 +3,7 @@ import { Activity, BookOpen, CalendarCheck, FileChartColumn, House, Inbox, Keybo
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { can, useApp, useMe, type Theme } from '../lib/app-state';
-import { periodName, ROLE_LABEL } from '../lib/format';
+import { periodName, periodShort, ROLE_LABEL } from '../lib/format';
 import { navigate, useRoute } from '../lib/router';
 import { Avatar, Dialog } from './ui';
 
@@ -78,6 +78,12 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [period, version, current]);
 
   useEffect(() => setOpen(false), [current]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   // Route change: announce the new screen by moving focus to the main region (SPA a11y).
   const firstRender = useRef(true);
@@ -126,7 +132,10 @@ export function Layout({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <div className="shell">
-        <aside className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
+        <aside id="app-sidebar" className={`sidebar${open ? ' open' : ''}`} aria-label="Main navigation">
+          <button className="btn ghost small sidebar-close" aria-label="Close menu" onClick={() => setOpen(false)}>
+            <X className="icon" aria-hidden="true" />
+          </button>
           <a className="brand" href="#/home">
             <span className="brand-mark" aria-hidden="true">
               t
@@ -172,11 +181,12 @@ export function Layout({ children }: { children: ReactNode }) {
         {open ? <div className="backdrop" style={{ zIndex: 40 }} onClick={() => setOpen(false)} aria-hidden="true" /> : null}
         <div style={{ minWidth: 0 }}>
           <header className="topbar">
-            <button className="btn ghost small menu-button" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            <button className="btn ghost small menu-button" aria-label="Menu" aria-expanded={open} aria-controls="app-sidebar" onClick={() => setOpen((o) => !o)}>
               {open ? <X className="icon" aria-hidden="true" /> : <Menu className="icon" aria-hidden="true" />}
             </button>
             <span className="period-chip" title="The period being closed and today's close workday">
-              {periodName(period)} close
+              <span className="hide-sm">{periodName(period)} close</span>
+              <span className="show-sm">{periodShort(period)}</span>
               <span className="wd" title={`Business date ${me.tenant.businessDate}`}>
                 {me.tenant.workday ?? me.tenant.businessDate}
               </span>
