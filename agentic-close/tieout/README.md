@@ -48,9 +48,9 @@ demo.
 1. **Sign in as Jordan Lee.** *My close* shows the September 2026 close at **WD+2** with the agents not
    yet run.
 2. **Run close agents.** Nine checklist tasks run in three dependency waves (coding before accruals,
-   FX before eliminations) across both entities in about a second on the offline engine. Small,
-   certain items are applied within the Controller's policy and sampled for review; the rest lands in
-   the inbox.
+   FX before eliminations) across both entities on the offline engine: about a second in the static
+   demo, ten on the server's embedded Postgres. Small, certain items are applied within the
+   Controller's policy and sampled for review; the rest lands in the inbox.
 3. **Inbox → search "Riverside".** A $9,800 wire whose bank memo tries to instruct "AI agents" to
    auto-approve everything: the text is **[withheld]**, the item is flagged *Instruction-like text* and
    held for a person.
