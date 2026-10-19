@@ -1,7 +1,7 @@
 import { appendAudit } from '../../../audit/audit';
 import type { Tx } from '../../../persistence/db';
 import type { Row } from '../../../persistence/schema';
-import { can, type Principal } from '../../../security/principal';
+import { can, canOn, canSeeEntity, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import { formatMoney } from '../../../shared/money';
@@ -131,8 +131,10 @@ export async function certificationProblems(tx: Tx, rec: Row<'reconciliations'>)
 
 /** Preparer / reviewer certification with maker-checker. */
 export async function signReconciliation(tx: Tx, ctx: DomainContext, principal: Principal, recId: string, role: 'preparer' | 'reviewer', comment?: string): Promise<Row<'reconciliations'>> {
+  const found = await tx.get('reconciliations', recId);
+  if (!found || found.tenant_id !== ctx.tenantId || !canSeeEntity(principal, found.entity_id)) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!canOn(principal, role === 'preparer' ? 'rec.prepare' : 'rec.review', found.entity_id)) throw new DomainError('FORBIDDEN', `Your role cannot ${role === 'preparer' ? 'prepare' : 'review'} reconciliations for this entity.`);
   let rec = await refreshReconciliation(tx, recId);
-  if (rec.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'reconciliation not found');
   const period = await tx.get('periods', rec.period_id);
   if (period?.status === 'locked') throw new DomainError('PERIOD_LOCKED', 'The period is locked.');
   const account = await tx.get('accounts', rec.account_id);
@@ -157,7 +159,8 @@ export async function reopenReconciliation(tx: Tx, ctx: DomainContext, principal
   if (!can(principal, 'rec.review')) throw new DomainError('FORBIDDEN', 'Your role cannot reopen reconciliations.');
   if (!reason || reason.trim().length < 3) throw new DomainError('VALIDATION', 'Give a reason for reopening.');
   const rec = await tx.get('reconciliations', recId);
-  if (!rec || rec.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!rec || rec.tenant_id !== ctx.tenantId || !canSeeEntity(principal, rec.entity_id)) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!canOn(principal, 'rec.review', rec.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot reopen reconciliations for this entity.');
   const updated = await tx.update('reconciliations', recId, { status: 'reopened', notes: `Reopened: ${reason.trim()}` });
   await tx.insert('signoffs', { tenant_id: ctx.tenantId, object_type: 'reconciliation', object_id: recId, role: 'reviewer', action: 'revoke', user_id: principal.user.id, comment: reason.trim() });
   await appendAudit(tx, ctx.tenantId, ctx.actor, { action: 'reconciliation.reopen', objectType: 'reconciliation', objectId: recId, summary: `Reopened reconciliation: ${reason.trim()}` }, ctx.clock.now());

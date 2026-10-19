@@ -6,7 +6,7 @@ import type { Row } from '../../persistence/schema';
 import { closeOntology } from '../../packs/accounting/ontology';
 import { toGraph } from '../../ontology/export';
 import { authorityOf, PERMISSIONS, ROLES } from '../../security/permissions';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { can, requireAllEntities, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { revokeSession, revokeUserSessions } from '../../security/sessions';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
@@ -181,7 +181,8 @@ export async function adminRevokeSession(app: App, p: Principal, id: string, met
 // ------------------------------------------------------------------ audit
 
 export async function auditLog(app: App, p: Principal, f: { action?: string; objectType?: string; objectId?: string; actor?: string; limit?: number; beforeSeq?: number }) {
-  if (!can(p, 'audit.view')) requirePermission(p, 'audit.view');
+  // The log records every entity's events, so it is read by people whose audit access covers every entity.
+  requirePermissionOn(p, 'audit.view', null, 'read the audit log');
   return app.read(async (tx) => {
     const where: Where<'audit_log'> = { tenant_id: p.tenantId };
     if (f.objectType) where.object_type = f.objectType;
@@ -196,7 +197,7 @@ export async function auditLog(app: App, p: Principal, f: { action?: string; obj
 }
 
 export async function verifyAudit(app: App, p: Principal, meta: RequestMeta = {}) {
-  requirePermission(p, 'audit.verify', 'verify the audit chain');
+  requirePermissionOn(p, 'audit.verify', null, 'verify the audit chain');
   const result = await app.read((tx) => verifyAuditChain(tx, p.tenantId));
   await app.tx((tx) => appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'audit.verify', objectType: 'audit_log', summary: `Verified the audit chain: ${result.ok ? `intact (${result.checked} events)` : `BROKEN at seq ${result.firstBadSeq}: ${result.reason}`}`, details: result }, app.clock.now()));
   return result;
@@ -206,6 +207,7 @@ export async function verifyAudit(app: App, p: Principal, meta: RequestMeta = {}
 
 export async function listImports(app: App, p: Principal) {
   requirePermission(p, 'close.view');
+  requireAllEntities(p, 'Imports');
   return app.read(async (tx) => {
     const batches = await tx.find('import_batches', { tenant_id: p.tenantId }, { orderBy: [['started_at', 'desc']], limit: 60 });
     const docs = new Map((batches.length ? await tx.find('source_documents', { id: { in: batches.map((b) => b.source_document_id) } }) : []).map((d) => [d.id, d]));
@@ -221,7 +223,8 @@ export async function listImports(app: App, p: Principal) {
 }
 
 export async function importFile(app: App, p: Principal, input: { filename: string; content: string; adapterKey?: string }, meta: RequestMeta = {}) {
-  requirePermission(p, 'import.run', 'import files');
+  // A file can carry any entity's records (bank statements, ERP exports), so the right to import must cover every entity.
+  requirePermissionOn(p, 'import.run', null, 'import files');
   if (!input.filename || typeof input.content !== 'string') throw new DomainError('VALIDATION', 'Choose a file.');
   return app.tx(async (tx) => importDocument(tx, app.ctx(p, meta), await app.lookups(tx, p.tenantId), { filename: input.filename.slice(0, 200), content: input.content, adapterKey: input.adapterKey }));
 }

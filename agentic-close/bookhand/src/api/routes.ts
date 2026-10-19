@@ -10,6 +10,7 @@ import * as ledger from '../app/usecases/ledger';
 import * as recs from '../app/usecases/recs';
 import * as tokens from '../app/usecases/tokens';
 import { closeOntology } from '../packs/accounting/ontology';
+import { canSeeEntity } from '../security/principal';
 import { DomainError } from '../shared/errors';
 import type { RouteDef } from './kernel';
 
@@ -215,7 +216,7 @@ export const ROUTES: RouteDef[] = [
       return app.read(async (tx) => {
         const lookups = await app.lookups(tx, principal!.tenantId);
         return {
-          entities: [...lookups.entitiesById.values()].map((e) => ({ id: e.id, code: e.code, name: e.name, kind: e.kind, currency: e.functional_currency, period: close ? lookups.period(e.id, close.fiscal_year, close.period_number)?.id ?? null : null })),
+          entities: [...lookups.entitiesById.values()].filter((e) => canSeeEntity(principal!, e.id)).map((e) => ({ id: e.id, code: e.code, name: e.name, kind: e.kind, currency: e.functional_currency, period: close ? lookups.period(e.id, close.fiscal_year, close.period_number)?.id ?? null : null })),
           accounts: [...lookups.accountsById.values()].filter((a) => a.is_postable).sort((a, b) => a.number.localeCompare(b.number)).map((a) => ({ number: a.number, name: a.name, subtype: a.subtype, class: a.account_class, requiresDepartment: a.requires_department, normalBalance: a.normal_balance })),
           departments: [...new Map([...lookups.departments.values()].map((d) => [d.id, d])).values()].map((d) => ({ code: d.code, name: d.name })),
           period: close ? `${close.fiscal_year}-${String(close.period_number).padStart(2, '0')}` : null,

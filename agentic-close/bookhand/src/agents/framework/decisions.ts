@@ -2,7 +2,7 @@ import { appendAudit } from '../../audit/audit';
 import type { Tx } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import type { Permission } from '../../security/permissions';
-import { can, type Principal, withinLimit } from '../../security/principal';
+import { approvalLimitOn, can, canOn, canSeeEntity, type Principal, withinLimit } from '../../security/principal';
 import type { DomainContext } from '../../shared/context';
 import { DomainError } from '../../shared/errors';
 import { formatMoney } from '../../shared/money';
@@ -75,10 +75,13 @@ export async function approvalBlocks(tx: Tx, runtime: AgentRuntime<unknown>, pri
   if (principal.readOnly) blocks.push({ code: 'READ_ONLY', message: 'Read-only role: auditors can review but not decide.' });
   if (!can(principal, proposal.required_permission as Permission)) {
     blocks.push({ code: 'PERMISSION', message: `Needs permission "${proposal.required_permission}", which your role does not include.` });
+  } else if (!canOn(principal, proposal.required_permission as Permission, proposal.entity_id)) {
+    // Entity scope: a grant limited to one entity decides that entity's items only.
+    blocks.push({ code: 'ENTITY', message: proposal.entity_id ? 'Your approval rights cover other entities, not this one.' : 'This covers the whole organization; your approval rights cover only some entities.' });
   }
   const limitApplies = runtime.handler(proposal.kind).limitApplies !== false;
-  if (limitApplies && !withinLimit(principal, proposal.amount_minor)) {
-    blocks.push({ code: 'LIMIT', message: `${formatMoney(proposal.amount_minor, { currency: proposal.currency })} is above your approval limit of ${formatMoney(principal.approvalLimitMinor ?? 0, { currency: proposal.currency })}.` });
+  if (limitApplies && !withinLimit(principal, proposal.amount_minor, proposal.entity_id)) {
+    blocks.push({ code: 'LIMIT', message: `${formatMoney(proposal.amount_minor, { currency: proposal.currency })} is above your approval limit of ${formatMoney(approvalLimitOn(principal, proposal.entity_id) ?? 0, { currency: proposal.currency })}.` });
   }
   for (const f of await sodFindings(tx, runtime, principal, proposal)) if (f.severity === 'block') blocks.push({ code: f.code, message: f.message });
   return blocks;
@@ -90,7 +93,7 @@ async function scopeFor(tx: Tx, ctx: DomainContext, runtime: AgentRuntime<unknow
 
 export async function approveProposal(tx: Tx, ctx: DomainContext, runtime: AgentRuntime<unknown>, principal: Principal, proposalId: string, note?: string): Promise<Row<'proposals'>> {
   const proposal = await tx.get('proposals', proposalId, { forUpdate: true });
-  if (!proposal || proposal.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'Proposal not found');
+  if (!proposal || proposal.tenant_id !== ctx.tenantId || !canSeeEntity(principal, proposal.entity_id)) throw new DomainError('NOT_FOUND', 'Proposal not found');
   if (proposal.status !== 'pending') {
     throw new DomainError('CONFLICT', proposal.status === 'blocked' ? 'This proposal failed verification and cannot be approved; reject it or re-run the agent after fixing the cause.' : `This proposal is already ${proposal.status.replace('_', ' ')}.`);
   }
@@ -127,9 +130,9 @@ export async function approveProposal(tx: Tx, ctx: DomainContext, runtime: Agent
 export async function rejectProposal(tx: Tx, ctx: DomainContext, runtime: AgentRuntime<unknown>, principal: Principal, proposalId: string, reason: string): Promise<Row<'proposals'>> {
   if (!reason || reason.trim().length < 3) throw new DomainError('VALIDATION', 'Give a reason for rejecting (it trains the policy and documents the review).');
   const proposal = await tx.get('proposals', proposalId, { forUpdate: true });
-  if (!proposal || proposal.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'Proposal not found');
+  if (!proposal || proposal.tenant_id !== ctx.tenantId || !canSeeEntity(principal, proposal.entity_id)) throw new DomainError('NOT_FOUND', 'Proposal not found');
   if (!['pending', 'blocked', 'suggested'].includes(proposal.status)) throw new DomainError('CONFLICT', `This proposal is already ${proposal.status.replace('_', ' ')}.`);
-  if (principal.readOnly || !can(principal, proposal.required_permission as Permission)) throw new DomainError('FORBIDDEN', 'Your role cannot decide this proposal.');
+  if (principal.readOnly || !canOn(principal, proposal.required_permission as Permission, proposal.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot decide this proposal.');
   const handler = runtime.handler(proposal.kind);
   const scope = await scopeFor(tx, ctx, runtime);
   await handler.onReject?.(proposal, scope);
@@ -144,9 +147,10 @@ export async function rejectProposal(tx: Tx, ctx: DomainContext, runtime: AgentR
 /** Turn an L0 suggestion into a proposal awaiting someone else's approval (the adopter becomes the maker). */
 export async function adoptSuggestion(tx: Tx, ctx: DomainContext, principal: Principal, proposalId: string): Promise<Row<'proposals'>> {
   const proposal = await tx.get('proposals', proposalId);
-  if (!proposal || proposal.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'Proposal not found');
+  if (!proposal || proposal.tenant_id !== ctx.tenantId || !canSeeEntity(principal, proposal.entity_id)) throw new DomainError('NOT_FOUND', 'Proposal not found');
   if (proposal.status !== 'suggested') throw new DomainError('CONFLICT', 'Only suggestions can be adopted.');
   if (principal.readOnly) throw new DomainError('FORBIDDEN', 'Read-only role.');
+  if (!canOn(principal, 'proposal.decide', proposal.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot adopt suggestions for this entity.');
   const now = ctx.clock.now();
   const updated = await tx.update('proposals', proposal.id, { status: 'pending', disposition: 'needs_approval', maker_type: 'user', maker_user_id: principal.user.id, updated_at: now });
   await tx.insert('approvals', { tenant_id: ctx.tenantId, proposal_id: proposal.id, decision: 'adopt', user_id: principal.user.id, role_key: principal.roleKeys[0] ?? 'unknown' });
@@ -166,10 +170,10 @@ export async function reviewAutoApplied(
   reverse: (proposal: Row<'proposals'>) => Promise<Record<string, unknown>>,
 ): Promise<Row<'proposals'>> {
   const proposal = await tx.get('proposals', proposalId);
-  if (!proposal || proposal.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'Proposal not found');
+  if (!proposal || proposal.tenant_id !== ctx.tenantId || !canSeeEntity(principal, proposal.entity_id)) throw new DomainError('NOT_FOUND', 'Proposal not found');
   if (proposal.status !== 'auto_applied') throw new DomainError('CONFLICT', 'Only auto-applied work is reviewed after the fact.');
   if (proposal.post_hoc_status === 'confirmed' || proposal.post_hoc_status === 'reversed') throw new DomainError('CONFLICT', 'Already reviewed.');
-  if (!can(principal, 'proposal.review_posthoc')) throw new DomainError('FORBIDDEN', 'Your role cannot review auto-applied work.');
+  if (!canOn(principal, 'proposal.review_posthoc', proposal.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot review auto-applied work for this entity.');
   // Confirming is an independent review; the person who started the run may still reverse its work.
   if (decision === 'confirm' && proposal.requested_by && proposal.requested_by === principal.user.id) throw new DomainError('SOD_VIOLATION', 'You started the agent run that applied this, so someone independent must confirm it.');
   if (decision === 'reverse' && (!reason || reason.trim().length < 3)) throw new DomainError('VALIDATION', 'Say why you are reversing it.');

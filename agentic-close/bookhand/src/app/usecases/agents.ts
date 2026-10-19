@@ -3,7 +3,7 @@ import { changePolicy, currentPolicyRow, previewPolicy, resolvePolicy } from '..
 import { toolJsonSchema } from '../../agents/framework/runtime';
 import type { Where } from '../../persistence/db';
 import { closeOntology } from '../../packs/accounting/ontology';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { canOn, canSeeEntity, entityScope, requireAllEntities, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
 
@@ -12,7 +12,8 @@ import type { App, RequestMeta } from '../app';
 export async function listRuns(app: App, p: Principal, f: { skill?: string; status?: string; closeId?: string; parentRunId?: string; limit?: number }) {
   requirePermission(p, 'skill.view');
   return app.read(async (tx) => {
-    const where: Where<'agent_runs'> = { tenant_id: p.tenantId };
+    const scope = entityScope(p);
+    const where: Where<'agent_runs'> = { tenant_id: p.tenantId, ...(scope ? { entity_id: scope } : {}) };
     if (f.skill) where.skill_key = f.skill;
     if (f.status) where.status = f.status as never;
     if (f.closeId) where.close_id = f.closeId;
@@ -27,7 +28,7 @@ export async function runDetail(app: App, p: Principal, id: string) {
   requirePermission(p, 'skill.view');
   return app.read(async (tx) => {
     const r = await tx.get('agent_runs', id);
-    if (!r || r.tenant_id !== p.tenantId) app.notFound('Run');
+    if (!r || r.tenant_id !== p.tenantId || !canSeeEntity(p, r.entity_id)) app.notFound('Run');
     const steps = await tx.find('agent_steps', { run_id: id }, { orderBy: [['seq', 'asc']] });
     const calls = await tx.find('agent_tool_calls', { run_id: id }, { orderBy: [['created_at', 'asc']] });
     const proposals = await tx.find('proposals', { run_id: id }, { orderBy: [['created_at', 'asc']] });
@@ -52,6 +53,9 @@ export async function runDetail(app: App, p: Principal, id: string) {
 
 export async function cancelRun(app: App, p: Principal, id: string, reason: string, meta: RequestMeta = {}) {
   requirePermission(p, 'skill.run');
+  const run = await app.read((tx) => tx.get('agent_runs', id));
+  if (!run || run.tenant_id !== p.tenantId || !canSeeEntity(p, run.entity_id)) app.notFound('Run');
+  if (!canOn(p, 'skill.run', run.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot cancel runs for this entity.');
   return app.runtime.cancel(id, app.actorOf(p, meta), reason || 'cancelled by user');
 }
 
@@ -63,7 +67,8 @@ export async function listSkills(app: App, p: Principal) {
       const m = s.manifest;
       const row = await currentPolicyRow(tx, p.tenantId, m.key, null);
       const policy = resolvePolicy(m, row, app.runtime.deps.pack.compileRules);
-      const runs = await tx.find('agent_runs', { tenant_id: p.tenantId, skill_key: m.key }, { orderBy: [['created_at', 'desc']], limit: 20 });
+      const scope = entityScope(p);
+      const runs = await tx.find('agent_runs', { tenant_id: p.tenantId, skill_key: m.key, ...(scope ? { entity_id: scope } : {}) }, { orderBy: [['created_at', 'desc']], limit: 20 });
       const version = (await tx.findOne('skills', { key: m.key })) ? await tx.findOne('skill_versions', { skill_id: (await tx.findOne('skills', { key: m.key }))!.id, version: m.version }) : null;
       out.push({ key: m.key, name: m.name, version: m.version, category: m.category, summary: m.summary, autonomy: policy.autonomy, autonomyName: AUTONOMY_DESCRIPTIONS[policy.autonomy].name, maxAutonomy: m.autonomy.max, policyVersion: policy.version, controls: m.controls, tools: m.tools.length, lastRun: runs[0] ? { id: runs[0].id, status: runs[0].status, at: runs[0].finished_at ?? runs[0].created_at } : null, runs: runs.length, evalSummary: version?.eval_summary ?? null, execution: m.execution });
     }
@@ -81,7 +86,8 @@ export async function skillDetail(app: App, p: Principal, key: string) {
     const policy = resolvePolicy(m, row, app.runtime.deps.pack.compileRules);
     const history = await tx.find('skill_policies', { tenant_id: p.tenantId, skill_key: key }, { orderBy: [['version', 'desc']] });
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u.display_name]));
-    const runs = await tx.find('agent_runs', { tenant_id: p.tenantId, skill_key: key }, { orderBy: [['created_at', 'desc']], limit: 10 });
+    const scope = entityScope(p);
+    const runs = await tx.find('agent_runs', { tenant_id: p.tenantId, skill_key: key, ...(scope ? { entity_id: scope } : {}) }, { orderBy: [['created_at', 'desc']], limit: 10 });
     const skillRow = await tx.findOne('skills', { key });
     const versions = skillRow ? await tx.find('skill_versions', { skill_id: skillRow.id }, { orderBy: [['published_at', 'desc']] }) : [];
     const term = (id: string) => closeOntology.term(id);
@@ -101,8 +107,9 @@ export async function skillDetail(app: App, p: Principal, key: string) {
       history: history.map((h) => ({ id: h.id, version: h.version, autonomy: h.autonomy_level, thresholds: h.thresholds, rulesText: h.rules_text, reason: h.change_reason, author: h.created_by ? users.get(h.created_by) ?? null : 'package default', at: h.created_at })),
       runs: runs.map((r) => ({ id: r.id, status: r.status, summary: r.summary, at: r.finished_at ?? r.created_at, proposals: r.proposals_count, mode: r.mode })),
       versions: versions.map((v) => ({ version: v.version, contentHash: v.content_hash, publishedAt: v.published_at, evalSummary: v.eval_summary })),
-      canEdit: can(p, 'policy.edit'),
-      canSetAutonomy: can(p, 'autonomy.set'),
+      // Policies apply to every entity, so only someone with access to every entity changes them.
+      canEdit: canOn(p, 'policy.edit', null),
+      canSetAutonomy: canOn(p, 'autonomy.set', null),
     };
   });
 }
@@ -116,6 +123,7 @@ export interface PolicyChangeInput {
 
 export async function previewSkillPolicy(app: App, p: Principal, key: string, change: PolicyChangeInput) {
   requirePermission(p, 'skill.view');
+  requireAllEntities(p, 'A skill policy');
   const pkg = app.runtime.listSkills().find((s) => s.manifest.key === key);
   if (!pkg) app.notFound('Skill');
   return app.read(async (tx) => {
@@ -125,12 +133,13 @@ export async function previewSkillPolicy(app: App, p: Principal, key: string, ch
 }
 
 export async function updateSkillPolicy(app: App, p: Principal, key: string, change: PolicyChangeInput, meta: RequestMeta = {}) {
-  requirePermission(p, 'policy.edit', 'edit skill policies');
+  // A policy applies to every entity: the right to change it must cover every entity.
+  requirePermissionOn(p, 'policy.edit', null, 'edit skill policies');
   const pkg = app.runtime.listSkills().find((s) => s.manifest.key === key);
   if (!pkg) app.notFound('Skill');
   return app.tx(async (tx) => {
     const current = resolvePolicy(pkg.manifest, await currentPolicyRow(tx, p.tenantId, key, null), app.runtime.deps.pack.compileRules);
-    if (change.autonomy && change.autonomy !== current.autonomy && !can(p, 'autonomy.set')) throw new DomainError('FORBIDDEN', 'Your role cannot change autonomy levels.');
+    if (change.autonomy && change.autonomy !== current.autonomy && !canOn(p, 'autonomy.set', null)) throw new DomainError('FORBIDDEN', 'Your role cannot change autonomy levels.');
     return changePolicy(tx, app.ctx(p, meta), pkg.manifest, { autonomy: change.autonomy, thresholds: change.thresholds, rulesText: change.rulesText, reason: change.reason ?? '' }, app.runtime.deps.pack.compileRules);
   });
 }

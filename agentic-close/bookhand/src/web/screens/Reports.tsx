@@ -4,7 +4,7 @@ import { footBalanceSheet } from '../../packs/accounting/domain/footing';
 import { closeOntology } from '../../packs/accounting/ontology';
 import { qs } from '../lib/api';
 import { date, label, money } from '../lib/format';
-import { navigate, useApi } from '../lib/hooks';
+import { navigate, useApi, useMe } from '../lib/hooks';
 import { periodLabel, periodOptions, useReference } from '../lib/reference';
 import { BalanceSheetTable } from '../components/BalanceSheet';
 import { Badge, Drawer, Empty, ErrorBox, Skeleton, Tabs, Term } from '../components/ui';
@@ -67,8 +67,12 @@ type View = 'tb' | 'bs' | 'is';
 
 export function ReportsScreen({ query }: { query: URLSearchParams }) {
   const ref = useReference();
+  const me = useMe();
+  // Someone whose roles are limited to some entities sees those entities, never the consolidated view.
+  const everyEntity = me.roles.some((r) => r.entity === null);
+  const firstEntity = ref.data?.entities.find((e) => e.kind !== 'elimination')?.code ?? '';
   const view = (query.get('view') as View | null) ?? 'tb';
-  const entity = query.get('entity') ?? 'consolidated';
+  const entity = query.get('entity') ?? (everyEntity ? 'consolidated' : firstEntity);
   const period = query.get('period') ?? ref.data?.period ?? '';
   const mode = query.get('mode') === 'activity' ? 'activity' : 'balance';
   const [drill, setDrill] = useState<{ account: string; entity: string } | null>(null);
@@ -91,7 +95,7 @@ export function ReportsScreen({ query }: { query: URLSearchParams }) {
         <div className="field">
           <label htmlFor="rp-entity">Entity</label>
           <select id="rp-entity" className="select" value={entity} onChange={(e) => set('entity', e.target.value)}>
-            <option value="consolidated">Consolidated (USD)</option>
+            {everyEntity && <option value="consolidated">Consolidated (USD)</option>}
             {ref.data?.entities
               .filter((e) => e.kind !== 'elimination')
               .map((e) => (
@@ -133,8 +137,8 @@ export function ReportsScreen({ query }: { query: URLSearchParams }) {
         ]}
       />
       {ref.error && <ErrorBox error={ref.error} onRetry={ref.reload} />}
-      {period && view === 'tb' && <TbView entity={entity} period={period} mode={mode} onDrill={(account, ent) => setDrill({ account, entity: ent })} />}
-      {period && view !== 'tb' && <StatementsView view={view} entity={entity} period={period} onDrill={(account) => setDrill({ account, entity })} />}
+      {period && entity && view === 'tb' && <TbView entity={entity} period={period} mode={mode} onDrill={(account, ent) => setDrill({ account, entity: ent })} />}
+      {period && entity && view !== 'tb' && <StatementsView view={view} entity={entity} period={period} onDrill={(account) => setDrill({ account, entity })} />}
       {drill && <ActivityDrawer account={drill.account} entity={drill.entity} period={period} onClose={() => setDrill(null)} />}
     </div>
   );

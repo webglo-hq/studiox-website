@@ -3,7 +3,7 @@ import type { AgentRuntime } from '../../agents/framework/runtime';
 import type { Tx, Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import { reverseEntry } from '../../packs/accounting/domain/ledger';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { canOn, canSeeEntity, entityScope, requirePermission, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
 import { continueClose } from './close';
@@ -66,11 +66,11 @@ export async function proposalSummary(tx: Tx, app: App, p: Principal, x: Row<'pr
     canApprove: x.status === 'pending' && blocks.length === 0,
     blocks: blocks.map((b) => b.message),
     sodWarnings,
-    canReject: ['pending', 'blocked', 'suggested'].includes(x.status) && can(p, x.required_permission as never) && !p.readOnly,
-    canReviewPostHoc: x.status === 'auto_applied' && x.post_hoc_status === 'pending' && can(p, 'proposal.review_posthoc'),
+    canReject: ['pending', 'blocked', 'suggested'].includes(x.status) && canOn(p, x.required_permission as never, x.entity_id) && !p.readOnly,
+    canReviewPostHoc: x.status === 'auto_applied' && x.post_hoc_status === 'pending' && canOn(p, 'proposal.review_posthoc', x.entity_id),
     // Confirming is independent review: whoever started the run may reverse its work but not confirm it.
-    canConfirmPostHoc: x.status === 'auto_applied' && x.post_hoc_status === 'pending' && can(p, 'proposal.review_posthoc') && x.requested_by !== p.user.id,
-    canAdopt: x.status === 'suggested' && !p.readOnly && can(p, 'proposal.decide'),
+    canConfirmPostHoc: x.status === 'auto_applied' && x.post_hoc_status === 'pending' && canOn(p, 'proposal.review_posthoc', x.entity_id) && x.requested_by !== p.user.id,
+    canAdopt: x.status === 'suggested' && !p.readOnly && canOn(p, 'proposal.decide', x.entity_id),
     postedEntryId: x.posted_entry_id,
   };
 }
@@ -78,7 +78,9 @@ export async function proposalSummary(tx: Tx, app: App, p: Principal, x: Row<'pr
 export async function listProposals(app: App, p: Principal, filter: { view?: InboxView; kind?: string; skill?: string; entity?: string; closeTaskId?: string; runId?: string; limit?: number; offset?: number }) {
   requirePermission(p, 'proposal.view');
   return app.read(async (tx) => {
-    const where: Where<'proposals'> = { tenant_id: p.tenantId };
+    // Entity scope: someone limited to some entities sees their proposals only (never whole-organization ones).
+    const scope = entityScope(p);
+    const where: Where<'proposals'> = { tenant_id: p.tenantId, ...(scope ? { entity_id: scope } : {}) };
     const view = filter.view ?? 'pending';
     if (view === 'pending') where.status = 'pending';
     else if (view === 'blocked') where.status = 'blocked';
@@ -94,19 +96,20 @@ export async function listProposals(app: App, p: Principal, filter: { view?: Inb
     const entities = new Map((await tx.find('entities', { tenant_id: p.tenantId })).map((e) => [e.id, e]));
     if (filter.entity) {
       const e = [...entities.values()].find((x) => x.code === filter.entity || x.id === filter.entity);
-      if (e) where.entity_id = e.id;
+      if (e) where.entity_id = canSeeEntity(p, e.id) ? e.id : { in: [] };
     }
     const total = await tx.count('proposals', where);
     const rows = await tx.find('proposals', where, { orderBy: [[view === 'decided' ? 'updated_at' : 'created_at', 'desc']], limit: Math.min(filter.limit ?? 100, 500), offset: filter.offset ?? 0 });
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u]));
     const items = [];
     for (const r of rows) items.push(await proposalSummary(tx, app, p, r, { users, entities }));
+    const mine: Where<'proposals'> = { tenant_id: p.tenantId, ...(scope ? { entity_id: scope } : {}) };
     const counts = {
-      pending: await tx.count('proposals', { tenant_id: p.tenantId, status: 'pending' }),
-      review: await tx.count('proposals', { tenant_id: p.tenantId, status: 'auto_applied', post_hoc_status: 'pending' }),
-      blocked: await tx.count('proposals', { tenant_id: p.tenantId, status: 'blocked' }),
-      suggested: await tx.count('proposals', { tenant_id: p.tenantId, status: 'suggested' }),
-      autoApplied: await tx.count('proposals', { tenant_id: p.tenantId, status: 'auto_applied' }),
+      pending: await tx.count('proposals', { ...mine, status: 'pending' }),
+      review: await tx.count('proposals', { ...mine, status: 'auto_applied', post_hoc_status: 'pending' }),
+      blocked: await tx.count('proposals', { ...mine, status: 'blocked' }),
+      suggested: await tx.count('proposals', { ...mine, status: 'suggested' }),
+      autoApplied: await tx.count('proposals', { ...mine, status: 'auto_applied' }),
     };
     return { view, total, counts, items };
   });
@@ -193,7 +196,7 @@ export async function proposalDetail(app: App, p: Principal, id: string) {
   requirePermission(p, 'proposal.view');
   return app.read(async (tx) => {
     const x = await tx.get('proposals', id);
-    if (!x || x.tenant_id !== p.tenantId) app.notFound('Proposal');
+    if (!x || x.tenant_id !== p.tenantId || !canSeeEntity(p, x.entity_id)) app.notFound('Proposal');
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u]));
     const entities = new Map((await tx.find('entities', { tenant_id: p.tenantId })).map((e) => [e.id, e]));
     const summary = await proposalSummary(tx, app, p, x, { users, entities });
@@ -239,7 +242,7 @@ export async function decideBulk(app: App, p: Principal, ids: string[], decision
   if (ids.length > 200) throw new DomainError('VALIDATION', 'At most 200 items per bulk action.');
   if (decision === 'reject' && (!reason || reason.trim().length < 3)) throw new DomainError('VALIDATION', 'Give a reason for rejecting.');
   const unique = [...new Set(ids)];
-  const rows = new Map((await app.read((tx) => tx.find('proposals', { tenant_id: p.tenantId, id: { in: unique } }))).map((r) => [r.id, r]));
+  const rows = new Map((await app.read((tx) => tx.find('proposals', { tenant_id: p.tenantId, id: { in: unique } }))).filter((r) => canSeeEntity(p, r.entity_id)).map((r) => [r.id, r]));
   if (decision === 'approve') {
     if (!confirm) throw new DomainError('VALIDATION', 'Confirm the number of items and their total before approving in bulk.');
     const total = unique.reduce((s, id) => s + (rows.get(id)?.amount_minor ?? 0), 0);
@@ -248,7 +251,11 @@ export async function decideBulk(app: App, p: Principal, ids: string[], decision
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const id of unique) {
     const row = rows.get(id);
-    const individually = decision === 'approve' && row ? bulkApprovalBlock(row) : null;
+    if (!row) {
+      results.push({ id, ok: false, error: 'Proposal not found' });
+      continue;
+    }
+    const individually = decision === 'approve' ? bulkApprovalBlock(row) : null;
     if (individually) {
       results.push({ id, ok: false, error: individually });
       continue;

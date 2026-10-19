@@ -3,7 +3,7 @@ import type { Row } from '../../persistence/schema';
 import { closeProgress, completeTask, reviewTask, signOffProblems, startTask, taskStates } from '../../packs/accounting/domain/close';
 import { closeBlockers, lockClose, reopenPeriod } from '../../packs/accounting/services/periods';
 import { certificationProblems, recTypeFor } from '../../packs/accounting/services/recon';
-import { can, loadPrincipal, requirePermission, type Principal } from '../../security/principal';
+import { can, canOn, canSeeEntity, loadPrincipal, requireAllEntities, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { sha256Hex } from '../../shared/hash';
 import { dateToWorkday, formatWorkday, usBusinessCalendar, workdayToDate } from '../../shared/dates';
 import { DomainError } from '../../shared/errors';
@@ -43,7 +43,8 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
     const close = await tx.get('closes', closeId);
     if (!close || close.tenant_id !== p.tenantId) app.notFound('Close');
     const lookups = await app.lookups(tx, p.tenantId);
-    const states = await taskStates(tx, closeId);
+    // Entity scope: tasks of entities outside the person's access (and whole-organization tasks) are left out.
+    const states = (await taskStates(tx, closeId)).filter((s) => canSeeEntity(p, s.task.entity_id));
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u]));
     const byId = new Map(states.map((s) => [s.task.id, s.task]));
     const proposals = await tx.find('proposals', { tenant_id: p.tenantId, status: { in: ['pending', 'blocked'] } });
@@ -51,7 +52,7 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
     const runs = new Map((runIds.length ? await tx.find('agent_runs', { id: { in: runIds } }) : []).map((r) => [r.id, r]));
     const cal = usBusinessCalendar();
     const businessDate = app.clock.businessDate();
-    const blockers = await closeBlockers(tx, lookups, closeId);
+    const blockers = p.entityIds === null ? await closeBlockers(tx, lookups, closeId) : [];
     const skills = new Map(app.runtime.listSkills().map((s) => [s.manifest.key, s.manifest]));
     const signOffGates = new Map<string, string[]>();
     for (const s of states.filter((x) => x.task.status === 'ready_for_review')) signOffGates.set(s.task.id, await signOffProblems(tx, s.task));
@@ -62,7 +63,7 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
       workdays: [1, 2, 3, 4, 5].map((wd) => ({ workday: wd, label: formatWorkday(wd), date: workdayToDate(close.period_end, wd, cal) })),
       progress: closeProgress(states),
       blockers,
-      canRunAgents: can(p, 'skill.run') && close.status !== 'closed',
+      canRunAgents: canOn(p, 'skill.run', null) && close.status !== 'closed',
       liveModel: app.liveModel,
       tasks: states.map((s) => {
         const t = s.task;
@@ -94,10 +95,10 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
           completedByAgent: !!t.completed_by_run_id,
           reviewedAt: t.reviewed_at,
           reviewedBy: t.reviewed_by ? users.get(t.reviewed_by)?.display_name ?? null : null,
-          canComplete: can(p, 'close.task.work') && !['done', 'skipped', 'ready_for_review'].includes(t.status) && s.ready,
-          canReview: can(p, 'close.task.review') && t.status === 'ready_for_review' && t.completed_by !== p.user.id && !signOffGates.get(t.id)?.length,
+          canComplete: canOn(p, 'close.task.work', t.entity_id) && !['done', 'skipped', 'ready_for_review'].includes(t.status) && s.ready,
+          canReview: canOn(p, 'close.task.review', t.entity_id) && t.status === 'ready_for_review' && t.completed_by !== p.user.id && !signOffGates.get(t.id)?.length,
           signOffBlockedBy: signOffGates.get(t.id) ?? [],
-          canRun: !!t.skill_key && can(p, 'skill.run') && s.ready && !['done', 'skipped'].includes(t.status),
+          canRun: !!t.skill_key && canOn(p, 'skill.run', t.entity_id) && s.ready && !['done', 'skipped'].includes(t.status),
         };
       }),
     };
@@ -109,6 +110,8 @@ export async function runCloseAgents(app: App, p: Principal, closeId: string, op
   requirePermission(p, 'skill.run', 'run agents');
   const close = await app.read((tx) => tx.get('closes', closeId));
   if (!close || close.tenant_id !== p.tenantId) app.notFound('Close');
+  // The orchestrator works every entity's tasks: the right to run agents must cover every entity.
+  requirePermissionOn(p, 'skill.run', null, 'run the close agents');
   if (close.status === 'closed') throw new DomainError('CONFLICT', 'This close is locked.');
   const active = await app.read((tx) => tx.find('agent_runs', { close_id: closeId, skill_key: 'close-orchestrator', status: { in: ['queued', 'running'] } }));
   if (active.length) return { runId: active[0]!.id, alreadyRunning: true };
@@ -160,7 +163,8 @@ export async function runTask(app: App, p: Principal, taskId: string, opts: { mo
   requirePermission(p, 'skill.run', 'run agents');
   const { task, close, input } = await app.read(async (tx) => {
     const task = await tx.get('close_tasks', taskId);
-    if (!task || task.tenant_id !== p.tenantId) app.notFound('Task');
+    if (!task || task.tenant_id !== p.tenantId || !canSeeEntity(p, task.entity_id)) app.notFound('Task');
+    requirePermissionOn(p, 'skill.run', task.entity_id, 'run agents');
     if (!task.skill_key) throw new DomainError('VALIDATION', 'This task is done by people; it has no agent.');
     const close = (await tx.get('closes', task.close_id))!;
     const entity = task.entity_id ? await tx.get('entities', task.entity_id) : null;
@@ -204,7 +208,8 @@ async function bsRecsGate(app: App, task: Row<'close_tasks'>): Promise<string[]>
 export async function completeCloseTask(app: App, p: Principal, taskId: string, note: string | undefined, meta: RequestMeta = {}) {
   requirePermission(p, 'close.task.work', 'complete close tasks');
   const task = await app.read((tx) => tx.get('close_tasks', taskId));
-  if (!task || task.tenant_id !== p.tenantId) app.notFound('Task');
+  if (!task || task.tenant_id !== p.tenantId || !canSeeEntity(p, task.entity_id)) app.notFound('Task');
+  requirePermissionOn(p, 'close.task.work', task.entity_id, 'complete close tasks');
   if (task.key === 'lock') throw new DomainError('VALIDATION', 'Lock the period from the close page; locking completes this task.');
   const gate = await bsRecsGate(app, task);
   if (gate.length) throw new DomainError('CONFLICT', `Not every required reconciliation is certified: ${gate.slice(0, 4).join('; ')}`, { problems: gate });
@@ -223,7 +228,8 @@ export async function reviewCloseTask(app: App, p: Principal, taskId: string, de
   requirePermission(p, 'close.task.review', 'sign off close tasks');
   const reviewed = await app.tx(async (tx) => {
     const task = await tx.get('close_tasks', taskId);
-    if (!task || task.tenant_id !== p.tenantId) app.notFound('Task');
+    if (!task || task.tenant_id !== p.tenantId || !canSeeEntity(p, task.entity_id)) app.notFound('Task');
+    requirePermissionOn(p, 'close.task.review', task.entity_id, 'sign off close tasks');
     return reviewTask(tx, app.ctx(p, meta), taskId, decision, note);
   });
   await continueClose(app, p.tenantId, reviewed.close_id);
@@ -233,7 +239,7 @@ export async function reviewCloseTask(app: App, p: Principal, taskId: string, de
 /** Sign off every task waiting for this reviewer (bulk). */
 export async function reviewAllReady(app: App, p: Principal, closeId: string, meta: RequestMeta = {}) {
   requirePermission(p, 'close.task.review', 'sign off close tasks');
-  const tasks = await app.read((tx) => tx.find('close_tasks', { close_id: closeId, status: 'ready_for_review' }));
+  const tasks = (await app.read((tx) => tx.find('close_tasks', { tenant_id: p.tenantId, close_id: closeId, status: 'ready_for_review' }))).filter((t) => canOn(p, 'close.task.review', t.entity_id));
   const results: Array<{ id: string; title: string; ok: boolean; error?: string }> = [];
   for (const t of tasks) {
     try {
@@ -260,6 +266,7 @@ export async function closePackage(app: App, p: Principal, closeId: string) {
   return app.read(async (tx) => {
     const close = await tx.get('closes', closeId);
     if (!close || close.tenant_id !== p.tenantId) app.notFound('Close');
+    requireAllEntities(p, 'The close package');
     const packages = await tx.find('close_packages', { close_id: closeId }, { orderBy: [['version', 'desc']] });
     const proposal = (await tx.find('proposals', { tenant_id: p.tenantId, kind: 'task_update', status: { in: ['pending', 'approved'] } }, { orderBy: [['created_at', 'desc']] })).find((x) => (x.payload as { closeId?: string }).closeId === closeId);
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u.display_name]));
@@ -269,16 +276,16 @@ export async function closePackage(app: App, p: Principal, closeId: string) {
       latest: latest ? { id: latest.id, version: latest.version, status: latest.status, generatedAt: latest.generated_at, contentHash: latest.content_hash, approvedBy: latest.approved_by ? users.get(latest.approved_by) ?? null : null, approvedAt: latest.approved_at, content: latest.content } : null,
       versions: packages.map((x) => ({ id: x.id, version: x.version, status: x.status, generatedAt: x.generated_at, contentHash: x.content_hash })),
       pendingProposal: proposal && proposal.status === 'pending' ? { id: proposal.id, title: proposal.title, why: proposal.why } : null,
-      canGenerate: can(p, 'package.generate') && close.status !== 'closed',
-      canApprove: can(p, 'package.approve'),
+      canGenerate: canOn(p, 'package.generate', null) && close.status !== 'closed',
+      canApprove: canOn(p, 'package.approve', null),
     };
   });
 }
 
 /** Generate (or regenerate) the close package now: runs the close-package skill for its task. */
 export async function generatePackage(app: App, p: Principal, closeId: string) {
-  requirePermission(p, 'package.generate', 'generate the close package');
-  const task = (await app.read((tx) => tx.find('close_tasks', { close_id: closeId, key: 'close-package' })))[0];
+  requirePermissionOn(p, 'package.generate', null, 'generate the close package');
+  const task = (await app.read((tx) => tx.find('close_tasks', { tenant_id: p.tenantId, close_id: closeId, key: 'close-package' })))[0];
   if (!task) app.notFound('Close package task');
   const close = (await app.read((tx) => tx.get('closes', closeId)))!;
   const run = await app.runtime.start(p.tenantId, { skillKey: 'close-package', input: { closeId, closeTaskId: task.id, period: `${close.fiscal_year}-${String(close.period_number).padStart(2, '0')}` }, requestedBy: p.user.id, requestedByLabel: p.user.display_name, closeId, closeTaskId: task.id, mode: 'offline' });

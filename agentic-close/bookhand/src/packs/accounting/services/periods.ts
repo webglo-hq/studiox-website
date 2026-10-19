@@ -1,7 +1,7 @@
 import { appendAudit } from '../../../audit/audit';
 import type { Tx } from '../../../persistence/db';
 import type { Row } from '../../../persistence/schema';
-import { can, type Principal } from '../../../security/principal';
+import { can, canOn, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import type { LedgerLookups } from '../domain/lookups';
@@ -70,6 +70,7 @@ export async function softClose(tx: Tx, ctx: DomainContext, principal: Principal
   if (!can(principal, 'period.soft_close')) throw new DomainError('FORBIDDEN', 'Your role cannot soft-close periods.');
   const period = await tx.get('periods', periodId);
   if (!period || period.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'period not found');
+  if (!canOn(principal, 'period.soft_close', period.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot soft-close this entity\'s periods.');
   if (period.status !== 'open') throw new DomainError('CONFLICT', `${period.name} is ${period.status.replace('_', ' ')}.`);
   return transition(tx, ctx, period, 'soft_closed', principal);
 }
@@ -77,6 +78,7 @@ export async function softClose(tx: Tx, ctx: DomainContext, principal: Principal
 /** Lock every entity's period for a close (hard close). */
 export async function lockClose(tx: Tx, ctx: DomainContext, lookups: LedgerLookups, principal: Principal, closeId: string, comment?: string): Promise<Row<'closes'>> {
   if (!can(principal, 'period.lock')) throw new DomainError('FORBIDDEN', 'Your role cannot lock periods.');
+  if (!canOn(principal, 'period.lock', null)) throw new DomainError('FORBIDDEN', 'Locking a close locks every entity; your rights cover only some entities.');
   const close = await tx.get('closes', closeId);
   if (!close || close.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'close not found');
   if (close.status === 'closed') return close;
@@ -110,6 +112,7 @@ export async function lockClose(tx: Tx, ctx: DomainContext, lookups: LedgerLooku
 
 export async function reopenPeriod(tx: Tx, ctx: DomainContext, lookups: LedgerLookups, principal: Principal, closeId: string, reason: string): Promise<Row<'closes'>> {
   if (!can(principal, 'period.reopen')) throw new DomainError('FORBIDDEN', 'Only the CFO can reopen a locked period.');
+  if (!canOn(principal, 'period.reopen', null)) throw new DomainError('FORBIDDEN', 'Reopening a close reopens every entity; your rights cover only some entities.');
   if (!reason || reason.trim().length < 10) throw new DomainError('VALIDATION', 'Reopening a locked period needs a documented reason (at least 10 characters).');
   const close = await tx.get('closes', closeId);
   if (!close || close.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'close not found');
