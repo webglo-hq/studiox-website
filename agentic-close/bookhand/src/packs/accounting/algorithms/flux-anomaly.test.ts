@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { usBusinessCalendar } from '../../../shared/dates';
 import { Prng } from '../../../shared/prng';
-import { benford, detectDuplicatePayments, reviewEntries, type ReviewEntry } from './anomaly';
+import { BENFORD_MIN_SAMPLE, benford, detectDuplicatePayments, reviewEntries, type ReviewEntry } from './anomaly';
 import { computeFlux, decomposeDrivers, draftExplanation } from './flux';
 
 describe('flux math', () => {
@@ -116,5 +116,12 @@ describe('JE anomaly detection', () => {
     const fabricated = Array.from({ length: 500 }, (_, i) => (5000 + (i % 400)) * 100); // all start with 5
     expect(benford(fabricated).conformity).toBe('nonconformity');
     expect(benford([1, 2, 3]).conformity).toBe('insufficient');
+  });
+
+  it('ACC-2: Benford says nothing below its sample floor (a few dozen account totals are not a population)', () => {
+    const rng = new Prng('benford-small');
+    const small = Array.from({ length: BENFORD_MIN_SAMPLE - 1 }, () => Math.round(10 ** (1 + rng.next() * 4) * 100));
+    expect(benford(small).conformity).toBe('insufficient');
+    expect(benford([...small, 12_345_00]).conformity).not.toBe('insufficient');
   });
 });

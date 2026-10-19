@@ -1,12 +1,15 @@
 import { appendAudit } from '../../../audit/audit';
 import type { Tx } from '../../../persistence/db';
 import type { Row } from '../../../persistence/schema';
-import { can, type Principal } from '../../../security/principal';
+import { can, canOn, canSeeEntity, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import { formatMoney } from '../../../shared/money';
 import { closeOntology } from '../ontology';
+import { convertMinor } from '../../../shared/money';
+import { FxTable } from '../domain/fx';
 import type { LedgerLookups } from '../domain/lookups';
+import type { ReconciliationSubject } from '../ontology/subjects';
 
 /**
  * Reconciliation workpapers. Sign convention: reconciling items are "GL minus external" contributions, so a
@@ -121,27 +124,99 @@ export interface RecCertification {
   problems: string[];
 }
 
-export async function certificationProblems(tx: Tx, rec: Row<'reconciliations'>): Promise<string[]> {
+/** Listed so it is not lost, but explains nothing: an "unexplained" reconciling item still counts as unexplained. */
+export const UNEXPLAINED_ITEM_KINDS: ReadonlySet<string> = new Set(['unexplained']);
+
+/** The reconciliation as the ontology sees it (AX-REC-01..03); `notes` is the note a certification would carry. */
+export async function reconciliationSubject(tx: Tx, rec: Row<'reconciliations'>, notes: string | null): Promise<ReconciliationSubject> {
+  const period = (await tx.get('periods', rec.period_id))!;
+  const items = await openItemsAsOf(tx, rec.id, period.end_date);
+  return {
+    id: rec.id,
+    recType: rec.rec_type,
+    currency: rec.currency,
+    glBalance: rec.gl_balance_minor,
+    externalBalance: rec.external_balance_minor,
+    reconcilingTotal: items.filter((i) => !UNEXPLAINED_ITEM_KINDS.has(i.kind)).reduce((s, i) => s + i.amount_minor, 0),
+    preparedBy: rec.prepared_by,
+    reviewedBy: rec.reviewed_by,
+    status: rec.status,
+    notes: notes?.trim() || null,
+    items: items.map((i) => ({ kind: i.kind, amount: i.amount_minor, itemDate: i.item_date, status: i.status, description: i.description })),
+    asOfDate: period.end_date,
+  };
+}
+
+/** The unexplained amount: what GL minus external minus the explained items leaves (AX-REC-01). */
+export function unexplainedOf(subject: ReconciliationSubject): number {
+  return subject.glBalance - subject.externalBalance - subject.reconcilingTotal;
+}
+
+/** Clearly-trivial threshold for the reconciliation's period, in the reconciliation's currency. */
+async function clearlyTrivialFor(tx: Tx, rec: Row<'reconciliations'>): Promise<number> {
+  const period = (await tx.get('periods', rec.period_id))!;
+  const [m] = await tx.find('materiality_settings', { tenant_id: rec.tenant_id, fiscal_year: period.fiscal_year }, { orderBy: [['version', 'desc']], limit: 1 });
+  const trivial = m?.trivial_minor ?? 500_000;
+  const tenant = await tx.get('tenants', rec.tenant_id);
+  const reporting = tenant?.reporting_currency ?? rec.currency;
+  if (reporting === rec.currency) return trivial;
+  const fx = await FxTable.load(tx, rec.tenant_id);
+  const type = fx.has(reporting, rec.currency, period.end_date, 'closing') ? 'closing' : 'spot';
+  return fx.has(reporting, rec.currency, period.end_date, type) ? convertMinor(trivial, fx.rate(reporting, rec.currency, period.end_date, type)) : trivial;
+}
+
+export interface CertificationCheck {
+  problems: string[];
+  /** The unexplained amount (a difference, or items listed as unexplained) the preparer must explain in a note. */
+  unexplained: number;
+  needsNote: boolean;
+}
+
+/**
+ * Whether a reconciliation may be certified: every difference is matched or listed, nothing awaits a decision,
+ * and the reconciliation axioms hold (AX-REC-01: whatever stays unexplained is within the clearly-trivial threshold
+ * and explained in the preparer's note). `note` is the note the certification would carry.
+ */
+export async function certificationCheck(tx: Tx, rec: Row<'reconciliations'>, note?: string | null): Promise<CertificationCheck> {
   const problems: string[] = [];
   if (rec.difference_minor !== 0) problems.push(`Unreconciled difference of ${formatMoney(rec.difference_minor, { currency: rec.currency })}: every difference must be matched or listed as a reconciling item.`);
   const pending = await tx.count('proposals', { tenant_id: rec.tenant_id, status: 'pending', kind: { in: ['rec_match', 'reconciling_item'] }, period_id: rec.period_id, entity_id: rec.entity_id });
   if (pending > 0) problems.push(`${pending} proposed match(es) or reconciling item(s) for this entity and period still await a decision.`);
-  return problems;
+  const subject = await reconciliationSubject(tx, rec, note === undefined ? rec.notes : note);
+  const unexplained = unexplainedOf(subject);
+  if (rec.difference_minor === 0) {
+    const ctx = { certifying: true, clearlyTrivialMinor: await clearlyTrivialFor(tx, rec), staleAfterDays: 60 };
+    for (const v of closeOntology.evaluate('bh:Reconciliation', subject, ctx)) if (v.severity === 'error' && v.axiom !== 'AX-REC-03') problems.push(v.message);
+  }
+  return { problems, unexplained, needsNote: unexplained !== 0 };
+}
+
+export async function certificationProblems(tx: Tx, rec: Row<'reconciliations'>, note?: string | null): Promise<string[]> {
+  return (await certificationCheck(tx, rec, note)).problems;
+}
+
+/** What stands in the way of certifying apart from the preparer's note, which is written when certifying. */
+export async function certificationBeforeNote(tx: Tx, rec: Row<'reconciliations'>): Promise<CertificationCheck> {
+  return certificationCheck(tx, rec, '(the preparer\'s note)');
 }
 
 /** Preparer / reviewer certification with maker-checker. */
 export async function signReconciliation(tx: Tx, ctx: DomainContext, principal: Principal, recId: string, role: 'preparer' | 'reviewer', comment?: string): Promise<Row<'reconciliations'>> {
+  const found = await tx.get('reconciliations', recId);
+  if (!found || found.tenant_id !== ctx.tenantId || !canSeeEntity(principal, found.entity_id)) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!canOn(principal, role === 'preparer' ? 'rec.prepare' : 'rec.review', found.entity_id)) throw new DomainError('FORBIDDEN', `Your role cannot ${role === 'preparer' ? 'prepare' : 'review'} reconciliations for this entity.`);
   let rec = await refreshReconciliation(tx, recId);
-  if (rec.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'reconciliation not found');
   const period = await tx.get('periods', rec.period_id);
   if (period?.status === 'locked') throw new DomainError('PERIOD_LOCKED', 'The period is locked.');
   const account = await tx.get('accounts', rec.account_id);
   const label = `${account?.number ?? ''} ${account?.name ?? ''}`.trim();
   if (role === 'preparer') {
     if (!can(principal, 'rec.prepare')) throw new DomainError('FORBIDDEN', 'Your role cannot prepare reconciliations.');
-    const problems = await certificationProblems(tx, rec);
+    // The preparer's comment is the note that explains anything still unexplained (AX-REC-01).
+    const note = comment?.trim() || rec.notes;
+    const problems = await certificationProblems(tx, rec, note);
     if (problems.length) throw new DomainError('CONFLICT', problems.join(' '), { problems });
-    rec = await tx.update('reconciliations', rec.id, { status: 'prepared', prepared_by: principal.user.id, prepared_at: ctx.clock.now(), reviewed_by: null, reviewed_at: null, notes: comment ?? rec.notes });
+    rec = await tx.update('reconciliations', rec.id, { status: 'prepared', prepared_by: principal.user.id, prepared_at: ctx.clock.now(), reviewed_by: null, reviewed_at: null, notes: note });
   } else {
     if (!can(principal, 'rec.review')) throw new DomainError('FORBIDDEN', 'Your role cannot review reconciliations.');
     if (rec.status !== 'prepared') throw new DomainError('CONFLICT', 'A reconciliation must be prepared before it is reviewed.');
@@ -157,7 +232,8 @@ export async function reopenReconciliation(tx: Tx, ctx: DomainContext, principal
   if (!can(principal, 'rec.review')) throw new DomainError('FORBIDDEN', 'Your role cannot reopen reconciliations.');
   if (!reason || reason.trim().length < 3) throw new DomainError('VALIDATION', 'Give a reason for reopening.');
   const rec = await tx.get('reconciliations', recId);
-  if (!rec || rec.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!rec || rec.tenant_id !== ctx.tenantId || !canSeeEntity(principal, rec.entity_id)) throw new DomainError('NOT_FOUND', 'reconciliation not found');
+  if (!canOn(principal, 'rec.review', rec.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot reopen reconciliations for this entity.');
   const updated = await tx.update('reconciliations', recId, { status: 'reopened', notes: `Reopened: ${reason.trim()}` });
   await tx.insert('signoffs', { tenant_id: ctx.tenantId, object_type: 'reconciliation', object_id: recId, role: 'reviewer', action: 'revoke', user_id: principal.user.id, comment: reason.trim() });
   await appendAudit(tx, ctx.tenantId, ctx.actor, { action: 'reconciliation.reopen', objectType: 'reconciliation', objectId: recId, summary: `Reopened reconciliation: ${reason.trim()}` }, ctx.clock.now());

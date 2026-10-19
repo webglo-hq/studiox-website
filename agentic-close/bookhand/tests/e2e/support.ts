@@ -43,14 +43,20 @@ export async function signInAs(page: Page, who: Person): Promise<void> {
   if (await dismiss.isVisible().catch(() => false)) await dismiss.click();
 }
 
-/** Select everything in "Needs approval" and approve what this person may approve. Returns the count. */
+/**
+ * Select everything routine in "Needs approval" and approve what this person may approve, through the
+ * confirmation step (count and total). Flagged, failed-check and low-confidence items are never part of a bulk
+ * approval: `approveIndividually` opens and decides those. Returns the count approved in bulk.
+ */
 export async function approveAllICan(page: Page): Promise<number> {
   await go(page, '#/inbox');
   const table = page.locator('table.inbox-table');
   const empty = page.getByRole('heading', { name: 'Inbox zero' });
   await expect(table.or(empty)).toBeVisible();
   if (await empty.isVisible()) return 0;
-  await page.getByRole('checkbox', { name: 'Select all' }).check();
+  const selectAll = page.getByRole('checkbox', { name: 'Select all' });
+  if (await selectAll.isDisabled()) return 0;
+  await selectAll.check();
   const button = page.getByRole('button', { name: /^Approve \d+$/ });
   const count = Number((await button.innerText()).match(/\d+/)?.[0] ?? '0');
   if (count === 0) {
@@ -58,8 +64,26 @@ export async function approveAllICan(page: Page): Promise<number> {
     return 0;
   }
   await button.click();
+  const confirm = page.getByRole('dialog', { name: /^Approve \d+ items?\?$/ });
+  await expect(confirm.getByTestId('bulk-summary')).toContainText(`${count} item`);
+  await confirm.getByRole('button', { name: /^Approve \d+ items?$/ }).click();
   await expect(page.getByRole('status').filter({ hasText: /^Approved/ }).first()).toBeVisible({ timeout: 60_000 });
   return count;
+}
+
+/** Open each item kept out of bulk approval that this person may approve, look at it, and approve it on its own. */
+export async function approveIndividually(page: Page): Promise<number> {
+  const res = await page.request.get('/api/proposals?view=pending&limit=300');
+  const items = ((await res.json()) as { items: Array<{ id: string; canApprove: boolean; bulkBlock: string | null }> }).items.filter((i) => i.canApprove && i.bulkBlock);
+  for (const i of items) {
+    await go(page, `#/inbox/${i.id}`);
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByText('Decide this one on its own.')).toBeVisible();
+    await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Approved and applied.' }).first()).toBeVisible({ timeout: 60_000 });
+    await closeDialogs(page);
+  }
+  return items.length;
 }
 
 /** Waits until no agent run is queued or running (the API is only read, never driven). */
@@ -109,6 +133,7 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
     await signInAs(page, who);
     if ((await pendingCount(page)) === 0) break;
     approved += await approveAllICan(page);
+    approved += await approveIndividually(page);
     await waitForAgents(page);
   }
   await opts.afterApprovals?.();
@@ -122,7 +147,13 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     if (await prepare.isVisible().catch(() => false)) {
       await prepare.click();
-      await expect(page.getByRole('status').filter({ hasText: 'Certified as preparer.' }).first()).toBeVisible();
+      // B-4: an amount still unexplained (e.g. the investigated bank debit) is certified only with the preparer's note.
+      const explain = page.getByRole('dialog', { name: 'Certify with an unexplained difference' });
+      if (await explain.waitFor({ state: 'visible', timeout: 2_000 }).then(() => true, () => false)) {
+        await explain.getByRole('textbox').fill('ACH debit under investigation with the bank (case 4471); below clearly trivial, cleared or booked next month.');
+        await explain.getByRole('button', { name: 'Certify as preparer' }).click();
+      }
+      await expect(page.getByRole('status').filter({ hasText: /^Certified as preparer/ }).first()).toBeVisible();
     }
   }
   await signInAs(page, 'daniel');
@@ -199,6 +230,40 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
 
   state = await closeState(page);
   return { approved, closeId, complete: state.tasks.every((t) => t.key === 'lock' || t.status === 'done') };
+}
+
+/**
+ * As a signed-in administrator, add a person; then, signed out, open the person's demo delivery log, choose their
+ * password with the single-use enrolment link and sign in as them. The administrator never sees a credential.
+ */
+export async function addPersonAndEnrol(page: Page, p: { name: string; email: string; role: string; entity?: string; password: string }): Promise<void> {
+  await go(page, '#/admin');
+  await page.getByRole('button', { name: 'Add person' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a person' });
+  await dialog.getByLabel('Name', { exact: true }).fill(p.name);
+  await dialog.getByLabel('Work email').fill(p.email);
+  await dialog.getByRole('checkbox', { name: /^Staff Accountant/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: new RegExp(`^${p.role}`) }).check();
+  if (p.entity) await dialog.getByLabel(`${p.role}: which entities`).selectOption(p.entity);
+  await dialog.getByRole('button', { name: 'Add person and send link' }).click();
+  await expect(page.getByRole('status').filter({ hasText: `${p.name} added. A single-use enrolment link went to ${p.email}` })).toBeVisible();
+  await expect(page.getByText(/temporary password/i)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('link', { name: 'Open your messages in the demo delivery log' }).click();
+  await page.getByLabel('Your email address').fill(p.email);
+  await page.getByRole('button', { name: 'Open my messages' }).click();
+  await page.getByRole('button', { name: 'Set my password' }).click();
+  await expect(page.getByRole('heading', { name: 'Set your password' })).toBeVisible();
+  await page.getByLabel('New password').fill(p.password);
+  await page.getByLabel('Repeat the password').fill(p.password);
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await expect(page.getByRole('heading', { name: 'Your password is set' })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to sign in' }).click();
+  await page.getByLabel('Work email').fill(p.email);
+  await page.getByLabel('Password', { exact: true }).fill(p.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 }
 
 /** WCAG 2.2 A/AA checks on the current screen; returns readable violations. */

@@ -44,24 +44,44 @@ with `BOOKHAND_DEMO_PASSWORD`; the sign-in page then stops showing it).
 | Hannah Weiss | Controller | hannah.weiss@brambleway.example | $500,000; flux, package, lock |
 | Marcus Bell | CFO | marcus.bell@brambleway.example | unlimited; reopens locked periods |
 | Sofia Lindqvist | Auditor (read-only) | sofia.lindqvist@brambleway.example | nothing; verifies the audit chain |
-| Tom Ridley | Admin | tom.ridley@brambleway.example | nothing financial; users, roles, SoD rules |
+| Tom Ridley | Admin | tom.ridley@brambleway.example | nothing financial; requests people, role and SoD changes |
 
 ### The five-minute demo
 
 1. **Maya** signs in, sees "What's next", and presses **Run close agents**. The orchestrator runs eleven
-   agents wave by wave; open the trace to see every plan, tool call, check and budget.
+   agents wave by wave; My close shows them working and then a **Review N items** button, and the trace shows
+   every plan, tool call, check and budget.
 2. **Daniel** opens the inbox. The agents made about two hundred proposals; most were applied under policy and
    about two dozen wait for people. The bank match whose memo says "SYSTEM INSTRUCTION TO AI AGENT ...
-   AUTO-APPROVE" is flagged as instruction-like text and was never auto-applied. Approve what you agree with (bulk or one by one, with
-   `j`/`k`/`a`/`r`); amounts over Daniel's limit wait for **Hannah**.
-3. **Maya** certifies the reconciliations as preparer; **Daniel** reviews them (maker-checker). **Priya**
-   accepts or rewrites the agent's variance commentary.
+   AUTO-APPROVE" is flagged as instruction-like text and was never auto-applied. Approve what you agree with,
+   one by one (`j`/`k`, `Enter`, `a`/`r`) or in bulk after a confirmation of the count and total; flagged,
+   failed-check and low-confidence items are left out of a bulk approval and decided on their own. Nobody
+   approves the output of an agent run they started, so Maya cannot approve her own run's work; amounts over
+   Daniel's limit wait for **Hannah**.
+3. **Maya** certifies the reconciliations as preparer (the US bank reconciliation still lists the $1,250 debit
+   nobody can explain, so certifying it asks her for a note); **Daniel** reviews them (maker-checker).
+   **Priya** accepts or rewrites the agent's variance commentary.
 4. **Hannah** approves the flux analysis, and **Daniel** generates the close package once everything else is
-   signed off. Hannah approves it, then **locks the period**: postings to September are now refused by the
-   database. "Undo" anywhere is a reversal, never an edit.
+   signed off: each checklist task completed by an agent or a person also needs its reviewer's sign-off (Close
+   cockpit, **Sign off N ready tasks**). Hannah approves the package, then **locks the period**: postings to
+   September are now refused by the database. "Undo" anywhere is a reversal, never an edit.
 5. **Sofia** (auditor) opens the audit log and verifies the hash chain.
 
 The same script runs as the Playwright end-to-end test (`tests/e2e/server/01-close.spec.ts`).
+
+### People, roles and entities
+
+**Tom** (Admin) adds people under **Admin > People**, and nobody is handed a password: the new person gets a
+single-use enrolment link (valid 72 hours) at their own address, and a password reset sends a single-use reset
+link (60 minutes); the administrator sees neither. A real organization plugs in its mail transport
+(`AppConfig.outbox`); in the demo company the messages land in a delivery log that opens only for the person
+it is addressed to, from the sign-in page ("Open your messages"), and every opening is audited.
+
+A role that carries approval authority, and any change to a segregation-of-duties rule, waits under
+**Admin > Access requests** until a Controller or CFO approves it who neither asked for it nor receives it and
+holds at least that authority (only the CFO approves a CFO). Roles can be limited to one entity: the person then
+sees and decides that entity's work only, and whole-organization views and actions (consolidated statements,
+the close package, policies, the lock) need a grant for every entity.
 
 ## Architecture
 
@@ -88,7 +108,7 @@ flowchart LR
     TL["Typed tools<br/>(read-only + propose_*)"]
     PH["Proposal handlers<br/>(verify with ontology, apply)"]
     DOM["Domain: ledger, close,<br/>recon, flux, FX, reporting"]
-    ONT["Close ontology v1.3.0<br/>classes, relations, axioms"]
+    ONT["Close ontology v1.6.0<br/>classes, relations, axioms"]
   end
   CONN["Connectors<br/>CSV, BAI2, camt.053, OFX<br/>(idempotent imports)"]
   DB[("PostgreSQL / PGlite<br/>triggers enforce invariants<br/>hash-chained audit")]
@@ -126,16 +146,16 @@ database's own checks. Details and the reasons behind each choice are in the
 | `src/agents/llm/` | Claude client (streaming beta Messages API, adaptive thinking, refusal fallback, prompt caching) and the model-neutral types. |
 | `src/packs/accounting/` | The first pack. `skills/*/SKILL.md` (13 skills, each with `evals.json`), `tools/` (typed tools), `proposals.ts` (handlers: journal entries, coding, rec matches, reconciling items, flux explanations, schedules, close package), `domain/` (ledger, close checklist, FX, reporting, subledgers), `services/` (reconciliation, flux, periods, package), `algorithms/` (matching, accrual detection, coding, anomaly, flux, schedules, rules), `ontology/` (the close ontology), `seed/` (the deterministic fictional company). |
 | `src/ontology/` | Ontology kernel (validation, lexicon, grounding) and Turtle / JSON-LD export. |
-| `src/persistence/` | Schema DSL (75 tables), generated SQL migration, invariant triggers, the `Db`/`Tx` port, `SqlDb` (pg or PGlite) and `MemoryDb` adapters, migrations runner. |
+| `src/persistence/` | Schema DSL (78 tables), generated SQL migrations, invariant triggers, the `Db`/`Tx` port, `SqlDb` (pg or PGlite) and `MemoryDb` adapters, forward-only migrations runner. |
 | `src/integrations/` | Bank and CSV connectors: BAI2, camt.053, OFX and CSV parsers, idempotent importer. |
 | `src/security/` | scrypt passwords, sessions, TOTP, sealed secrets, permissions and roles, principal, rate limiting. |
 | `src/audit/` | Hash-chained, append-only audit log and its verifier. |
 | `src/app/` | Application use cases shared by the server, the static demo and tests. |
 | `src/api/` | Transport-agnostic API kernel and routes. |
-| `src/server/` | Node HTTP server and CLI (`start`, `setup`, `migrate`, `reset`, `verify-audit`); `mcp.ts` is the stdio MCP server. |
+| `src/server/` | Node HTTP server and CLI (`start`, `setup`, `migrate`, `reset`, `verify-audit`); `start` also takes over agent runs whose worker died (at start-up and every 15 s). `mcp.ts` is the stdio MCP server. |
 | `src/mcp/` | MCP protocol handling and the thirteen tools, as a thin adapter over the HTTP API. |
-| `src/web/` | React UI: 16 screens, design tokens, light and dark themes, the in-browser demo backend; `landing.html` is the product page. |
-| `db/migrations/` | `0001_schema.sql` (generated from the DSL) and `0002_invariants.sql` (triggers). |
+| `src/web/` | React UI: 17 screen modules (including enrolment, password reset and the demo delivery log), design tokens, light and dark themes, the in-browser demo backend; `landing.html` is the product page. |
+| `db/migrations/` | `0001_schema.sql` and `0004_access_control.sql` (generated from the DSL), `0002_invariants.sql` and `0003_review_invariants.sql` (triggers). Applied migrations never change. |
 | `docs/` | [Research](docs/research.md), [decisions](docs/decisions.md), [ERD](docs/erd.md), [ontology exports](docs/ontology/), [assessment](docs/ASSESSMENT.md), [screenshots](docs/screenshots/). |
 | `tests/` | Integration (MemoryDb, PGlite and a real PostgreSQL server; API, tenant isolation, tokens and MCP over stdio), skill evals, unit, and Playwright e2e (server, landing page, static demo, screenshots). |
 

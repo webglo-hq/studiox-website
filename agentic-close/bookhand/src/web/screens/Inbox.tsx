@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, qs } from '../lib/api';
 import { date, KIND_LABELS, label, money } from '../lib/format';
 import { navigate, useAction, useApi, useHotkeys } from '../lib/hooks';
-import { Badge, Confidence, Drawer, Empty, ErrorBox, Money, ReasonDialog, Skeleton, StatusBadge, Tabs, Term } from '../components/ui';
+import { Badge, Confidence, Drawer, Empty, ErrorBox, Modal, Money, ReasonDialog, Skeleton, StatusBadge, Tabs, Term } from '../components/ui';
 
 interface Item {
   id: string;
@@ -13,7 +13,10 @@ interface Item {
   confidence: number;
   amount: number;
   currency: string;
+  /** What the amount column shows: the amount at stake, the variance being explained, or nothing. */
+  display: { minor: number | null; kind: 'at_stake' | 'variance' | 'none' };
   entity: string | null;
+  entityCurrency: string | null;
   status: string;
   disposition: string;
   autonomy: string;
@@ -28,10 +31,13 @@ interface Item {
   sampledForReview: boolean;
   postHocStatus: string;
   canApprove: boolean;
+  /** Why this item is decided on its own and never bulk-approved (null = bulk is fine). */
+  bulkBlock: string | null;
   blocks: string[];
   sodWarnings: string[];
   canReject: boolean;
   canReviewPostHoc: boolean;
+  canConfirmPostHoc: boolean;
   canAdopt: boolean;
   postedEntryId: string | null;
 }
@@ -55,15 +61,23 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openId, setOpenId] = useState<string | null>(initialId);
   const [rejecting, setRejecting] = useState<string[] | null>(null);
+  const [confirming, setConfirming] = useState<Item[] | null>(null);
   const { run, busy } = useAction();
   const items = useMemo(() => data?.items ?? [], [data]);
   useEffect(() => setSelected(new Set()), [view, kind, entity]);
   useEffect(() => setOpenId(initialId), [initialId]);
 
-  const approve = async (ids: string[]) => {
-    if (ids.length === 1) await run(() => api.post(`/api/proposals/${ids[0]}/approve`, {}), 'Approved and applied.');
-    else await run(() => api.post<{ ok: number; failed: number }>('/api/proposals/bulk', { ids, decision: 'approve' }), (r) => `Approved ${r.ok}${r.failed ? `; ${r.failed} could not be approved by you` : ''}.`);
+  const approveOne = async (id: string) => {
+    await run(() => api.post(`/api/proposals/${id}/approve`, {}), 'Approved and applied.');
     setSelected(new Set());
+  };
+  /** Bulk approval sends back the count and total the person confirmed; the server re-checks both. */
+  const approveBulk = async (list: Item[]) => {
+    const ids = list.map((i) => i.id);
+    const totalMinor = list.reduce((s, i) => s + i.amount, 0);
+    await run(() => api.post<{ ok: number; failed: number }>('/api/proposals/bulk', { ids, decision: 'approve', confirm: { count: ids.length, totalMinor } }), (r) => `Approved ${r.ok}${r.failed ? `; ${r.failed} could not be approved by you` : ''}.`);
+    setSelected(new Set());
+    setConfirming(null);
   };
   const current = items[cursor];
   useHotkeys(
@@ -77,12 +91,15 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
         else n.add(current.id);
         return n;
       }),
-      a: () => current?.canApprove && void approve([current.id]),
+      // A flagged, failed-check or low-confidence item is never approved blind: "a" opens it instead.
+      a: () => current?.canApprove && (current.bulkBlock ? setOpenId(current.id) : void approveOne(current.id)),
       r: () => current?.canReject && setRejecting([current.id]),
     },
-    !openId && !rejecting,
+    !openId && !rejecting && !confirming,
   );
-  const approvable = items.filter((i) => selected.has(i.id) && i.canApprove).map((i) => i.id);
+  const eligible = items.filter((i) => !i.bulkBlock);
+  const approvable = items.filter((i) => selected.has(i.id) && i.canApprove && !i.bulkBlock);
+  const individually = items.filter((i) => selected.has(i.id) && i.canApprove && i.bulkBlock);
   const rejectable = items.filter((i) => selected.has(i.id) && i.canReject).map((i) => i.id);
   const kinds = [...new Set(items.map((i) => i.kind))];
   const entities = [...new Set(items.map((i) => i.entity).filter(Boolean))] as string[];
@@ -141,19 +158,20 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
         )}
         <span className="grow" />
         <span className="tiny muted">
-          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">a</span> approve · <span className="kbd">r</span> reject · <span className="kbd">x</span> select
+          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">Enter</span> open · <span className="kbd">a</span> approve · <span className="kbd">r</span> reject · <span className="kbd">x</span> select
         </span>
       </div>
       {selected.size > 0 && (
         <div className="bulk-bar card card-pad row-wrap" role="region" aria-label="Bulk actions">
           <strong>{selected.size} selected</strong>
-          <button type="button" className="btn btn-primary btn-sm" disabled={!approvable.length || busy} onClick={() => void approve(approvable)}>
+          <button type="button" className="btn btn-primary btn-sm" disabled={!approvable.length || busy} onClick={() => setConfirming(approvable)}>
             <Check size={14} aria-hidden="true" /> Approve {approvable.length}
           </button>
           <button type="button" className="btn btn-danger btn-sm" disabled={!rejectable.length || busy} onClick={() => setRejecting(rejectable)}>
             <X size={14} aria-hidden="true" /> Reject {rejectable.length}
           </button>
-          {approvable.length < selected.size && <span className="small muted">{selected.size - approvable.length} need someone else (limit, role or SoD).</span>}
+          {individually.length > 0 && <span className="small muted">{individually.length} must be opened and decided on {individually.length === 1 ? 'its' : 'their'} own (flagged, failed check or low confidence).</span>}
+          {approvable.length + individually.length < selected.size && <span className="small muted">{selected.size - approvable.length - individually.length} need someone else (limit, role or SoD).</span>}
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>
             Clear
           </button>
@@ -174,11 +192,14 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
             <thead>
               <tr>
                 <th style={{ width: 36 }}>
+                  {/* Flagged, failed-check and low-confidence items are left out: they are opened and decided one by one. */}
                   <input
                     type="checkbox"
                     aria-label="Select all"
-                    checked={items.length > 0 && items.every((i) => selected.has(i.id))}
-                    onChange={(e) => setSelected(e.target.checked ? new Set(items.map((i) => i.id)) : new Set())}
+                    title="Selects every routine item; flagged, failed-check and low-confidence items are decided one by one"
+                    checked={eligible.length > 0 && eligible.every((i) => selected.has(i.id))}
+                    disabled={eligible.length === 0}
+                    onChange={(e) => setSelected(e.target.checked ? new Set(eligible.map((i) => i.id)) : new Set())}
                   />
                 </th>
                 <th>Proposal</th>
@@ -221,8 +242,14 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
                           </Badge>
                         </span>
                       )}
+                      {i.canApprove && i.bulkBlock && (
+                        <span title={i.bulkBlock}>
+                          <Badge tone="attention">Decide on its own</Badge>
+                        </span>
+                      )}
                     </div>
-                    <button type="button" className="link-button" onClick={(e) => { e.stopPropagation(); setCursor(idx); setOpenId(i.id); }}>
+                    {/* Focusing a proposal moves the cursor to it, so Enter and the shortcuts act on what has focus. */}
+                    <button type="button" className="link-button" onFocus={() => setCursor(idx)} onClick={(e) => { e.stopPropagation(); setCursor(idx); setOpenId(i.id); }}>
                       {i.title}
                     </button>
                     <div className="tiny muted">
@@ -232,7 +259,7 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
                   </td>
                   <td className="hide-sm">{i.entity ?? '—'}</td>
                   <td className="num">
-                    <Money minor={i.amount} currency={i.currency} />
+                    <ListAmount item={i} />
                   </td>
                   <td className="hide-sm">
                     <Confidence value={i.confidence} />
@@ -248,6 +275,7 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
         </div>
       )}
       {openId && <ProposalDrawer id={openId} onClose={() => { setOpenId(null); if (initialId) navigate('/inbox'); }} onReject={(id) => setRejecting([id])} />}
+      {confirming && <BulkConfirm items={confirming} busy={busy} onCancel={() => setConfirming(null)} onConfirm={() => void approveBulk(confirming)} />}
       {rejecting && (
         <ReasonDialog
           title={rejecting.length === 1 ? 'Reject proposal' : `Reject ${rejecting.length} proposals`}
@@ -264,6 +292,59 @@ export function InboxScreen({ initialId, view: viewParam }: { initialId: string 
         />
       )}
     </div>
+  );
+}
+
+function ListAmount({ item }: { item: Item }) {
+  if (item.display.kind === 'none' || item.display.minor === null) return <span className="muted" title="No ledger effect">—</span>;
+  if (item.display.kind === 'variance')
+    return (
+      <span title="The variance this explanation covers">
+        <Money minor={item.display.minor} currency={item.currency} signed />
+        <span className="tiny muted" style={{ display: 'block' }}>variance</span>
+      </span>
+    );
+  return <Money minor={item.display.minor} currency={item.currency} />;
+}
+
+/** Totals by currency (items are valued in the reporting currency, so this is normally one figure). */
+function totalsByCurrency(items: Item[]): Array<[string, number]> {
+  const t = new Map<string, number>();
+  for (const i of items) t.set(i.currency, (t.get(i.currency) ?? 0) + i.amount);
+  return [...t.entries()];
+}
+
+/** The confirmation step of a bulk approval: how many items, what they add up to, and what each one is. */
+function BulkConfirm({ items, busy, onCancel, onConfirm }: { items: Item[]; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const totals = totalsByCurrency(items);
+  return (
+    <Modal
+      title={`Approve ${items.length} ${items.length === 1 ? 'item' : 'items'}?`}
+      onClose={onCancel}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={onConfirm}>
+            <Check size={15} aria-hidden="true" /> Approve {items.length} {items.length === 1 ? 'item' : 'items'}
+          </button>
+        </>
+      }
+    >
+      <p className="small" data-testid="bulk-summary">
+        You are approving <strong>{items.length} {items.length === 1 ? 'item' : 'items'}</strong> with <strong>{totals.map(([c, m]) => money(m, c)).join(' + ')}</strong> at stake. Each one is applied as if you had approved it on its own and is recorded under your name.
+      </p>
+      <ul className="list card small" style={{ maxHeight: 260, overflow: 'auto' }} aria-label="Items to approve" tabIndex={0}>
+        {items.map((i) => (
+          <li key={i.id} className="row">
+            <span className="grow">{i.title}</span>
+            <ListAmount item={i} />
+          </li>
+        ))}
+      </ul>
+      <p className="tiny muted">Flagged, failed-check and low-confidence items are never part of a bulk approval: open and decide them one by one.</p>
+    </Modal>
   );
 }
 
@@ -314,9 +395,11 @@ function ProposalDrawer({ id, onClose, onReject }: { id: string; onClose: () => 
             )}
             {data.canReviewPostHoc && (
               <>
-                <button type="button" className="btn btn-primary" disabled={busy} onClick={async () => { const r = await run(() => api.post(`/api/proposals/${id}/post-hoc`, { decision: 'confirm' }), 'Confirmed.'); if (r) onClose(); }}>
-                  <CheckCircle2 size={15} aria-hidden="true" /> Confirm
-                </button>
+                {data.canConfirmPostHoc && (
+                  <button type="button" className="btn btn-primary" disabled={busy} onClick={async () => { const r = await run(() => api.post(`/api/proposals/${id}/post-hoc`, { decision: 'confirm' }), 'Confirmed.'); if (r) onClose(); }}>
+                    <CheckCircle2 size={15} aria-hidden="true" /> Confirm
+                  </button>
+                )}
                 <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setReversing(true)}>
                   <Undo2 size={15} aria-hidden="true" /> Reverse
                 </button>
@@ -347,6 +430,11 @@ function ProposalDrawer({ id, onClose, onReject }: { id: string; onClose: () => 
               <strong>Segregation-of-duties warning.</strong> {data.sodWarnings.join(' ')} You can approve, but the warning is recorded with your approval.
             </div>
           )}
+          {data.status === 'pending' && data.canApprove && data.bulkBlock && (
+            <div className="callout attention small" role="note">
+              <strong>Decide this one on its own.</strong> {data.bulkBlock} It is left out of bulk approval.
+            </div>
+          )}
           {data.riskFlags.length > 0 && (
             <div className="callout danger small">
               <AlertTriangle size={14} aria-hidden="true" /> Risk flags: {data.riskFlags.map(label).join(', ')}. Auto-apply is disabled for flagged items{data.riskFlags.includes('instruction_like_text') ? ': a source document contained instruction-like text, which the agent treated as data and did not act on.' : '.'}
@@ -360,6 +448,7 @@ function ProposalDrawer({ id, onClose, onReject }: { id: string; onClose: () => 
             <div>
               <div className="label">Amount at stake</div>
               <Money minor={data.amount} currency={data.currency} />
+              {data.entityCurrency && data.entityCurrency !== data.currency && <div className="tiny muted">translated from {data.entityCurrency}</div>}
             </div>
             <div>
               <div className="label">
@@ -372,7 +461,7 @@ function ProposalDrawer({ id, onClose, onReject }: { id: string; onClose: () => 
               {data.run ? `${data.skill} for ${data.run.requestedBy} (${data.run.mode}${data.run.model ? `, ${data.run.model}` : ''})` : data.skill}
             </div>
           </section>
-          <KindDetail detail={data.detail} currency={data.currency} />
+          <KindDetail detail={data.detail} currency={data.entityCurrency ?? data.currency} />
           <section>
             <h3 className="label">Deterministic checks</h3>
             <ul className="list card" style={{ marginTop: 6 }}>
@@ -428,6 +517,8 @@ function ProposalDrawer({ id, onClose, onReject }: { id: string; onClose: () => 
 
 interface EntryView {
   entity: string;
+  /** Debits and credits are in this currency (the entity's functional currency). */
+  functionalCurrency?: string;
   date: string;
   type: string;
   description: string;
@@ -481,16 +572,17 @@ export function EntryTable({ entry, currency }: { entry: EntryView; currency: st
   );
 }
 
-function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { type: string }; currency: string }) {
-  const entryCurrency = (e: EntryView | null) => (e?.entity === 'BW-UK' ? 'GBP' : currency);
+function KindDetail({ detail, currency: fallback }: { detail: Record<string, unknown> & { type: string }; currency: string }) {
+  const entryCurrency = (e: EntryView | null) => e?.functionalCurrency ?? fallback;
+  const currency = typeof detail.currency === 'string' ? detail.currency : fallback;
   switch (detail.type) {
     case 'entry': {
       const e = detail.entry as EntryView;
       return <EntryTable entry={e} currency={entryCurrency(e)} />;
     }
     case 'reversal': {
-      const e = detail.entry as { id: string; number: string; description: string; total: number } | null;
-      return e ? <div className="callout small">Reverses <a href={`#/ledger/${e.id}`}>{e.number}</a> ({e.description}, {money(e.total)}). Reason: {String(detail.reason ?? '')}</div> : null;
+      const e = detail.entry as { id: string; number: string; description: string; total: number; currency?: string } | null;
+      return e ? <div className="callout small">Reverses <a href={`#/ledger/${e.id}`}>{e.number}</a> ({e.description}, {money(e.total, e.currency ?? currency)}). Reason: {String(detail.reason ?? '')}</div> : null;
     }
     case 'coding': {
       const t = detail.transaction as { merchant: string; date: string; amount: number; currency: string; memo: string | null; mcc: string | null } | null;
@@ -556,7 +648,7 @@ function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { 
     case 'reconciling_item':
       return (
         <div className="card card-pad small">
-          <Term id="bh:ReconcilingItem">Reconciling item</Term> on {String(detail.account)}: <strong>{label(String(detail.kind))}</strong> {money(Number(detail.amount))} dated {date(String(detail.itemDate))}
+          <Term id="bh:ReconcilingItem">Reconciling item</Term> on {String(detail.account)}: <strong>{label(String(detail.kind))}</strong> {money(Number(detail.amount), currency)} dated {date(String(detail.itemDate))}
           {detail.expectedClearDate ? <> · clears {date(String(detail.expectedClearDate))}</> : null}
           <div className="text-2">{String(detail.description)}</div>
         </div>
@@ -566,7 +658,7 @@ function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { 
       return (
         <div className="card card-pad small stack" style={{ gap: 8 }}>
           <div>
-            <strong>{String(detail.account)}</strong>: {money(Number(detail.current))} vs {money(Number(detail.comparison))} ({money(Number(detail.variance), 'USD', { signed: true })})
+            <strong>{String(detail.account)}</strong>: {money(Number(detail.current), currency)} vs {money(Number(detail.comparison), currency)} ({money(Number(detail.variance), currency, { signed: true })})
           </div>
           <blockquote className="quote">{String(detail.explanation)}</blockquote>
           <div>
@@ -576,7 +668,7 @@ function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { 
             <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
               {drivers.map((d, i) => (
                 <li key={i}>
-                  {d.label}: {money(d.amount_minor, 'USD', { signed: true })}
+                  {d.label}: {money(d.amount_minor, currency, { signed: true })}
                 </li>
               ))}
             </ul>
@@ -596,7 +688,7 @@ function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { 
           </div>
           {res.type === 'reverse_entry' && res.entry ? (
             <div className="callout small">
-              Approving reverses <a href={`#/ledger/${(res.entry as { id: string }).id}`}>{(res.entry as { number: string }).number}</a> ({(res.entry as { description: string }).description}, {money((res.entry as { total: number }).total)}).
+              Approving reverses <a href={`#/ledger/${(res.entry as { id: string }).id}`}>{(res.entry as { number: string }).number}</a> ({(res.entry as { description: string }).description}, {money((res.entry as { total: number }).total, (res.entry as { currency?: string }).currency ?? currency)}).
               {(res.entry as { preparedBy?: string }).preparedBy && <> Prepared by "{(res.entry as { preparedBy: string }).preparedBy}" and approved by "{(res.entry as { approvedBy: string }).approvedBy}" in the source ERP.</>}
             </div>
           ) : res.type === 'journal_entry' && res.entry ? (
@@ -614,18 +706,18 @@ function KindDetail({ detail, currency }: { detail: Record<string, unknown> & { 
       return (
         <div className="stack" style={{ gap: 8 }}>
           <div className="card card-pad small">
-            New <Term id="bh:PrepaidSchedule">prepaid schedule</Term>: {String(detail.description)} · {money(Number(detail.total))} over {String(detail.months)} months from {date(String(detail.startDate))} · {String(detail.balanceAccount)} → {String(detail.plAccount)}
+            New <Term id="bh:PrepaidSchedule">prepaid schedule</Term>: {String(detail.description)} · {money(Number(detail.total), currency)} over {String(detail.months)} months from {date(String(detail.startDate))} · {String(detail.balanceAccount)} → {String(detail.plAccount)}
           </div>
-          {Boolean(detail.catchUpEntry) && <EntryTable entry={detail.catchUpEntry as EntryView} currency={currency} />}
+          {Boolean(detail.catchUpEntry) && <EntryTable entry={detail.catchUpEntry as EntryView} currency={entryCurrency(detail.catchUpEntry as EntryView)} />}
         </div>
       );
     case 'capitalize':
       return (
         <div className="stack" style={{ gap: 8 }}>
           <div className="card card-pad small">
-            <Term id="bh:FixedAsset">Fixed asset</Term>: {String(detail.description)} · {money(Number(detail.cost))} · {label(String(detail.assetClass))} · {String(detail.usefulLifeMonths)} months from {date(String(detail.inServiceDate))} · {String(detail.assetAccount)}
+            <Term id="bh:FixedAsset">Fixed asset</Term>: {String(detail.description)} · {money(Number(detail.cost), currency)} · {label(String(detail.assetClass))} · {String(detail.usefulLifeMonths)} months from {date(String(detail.inServiceDate))} · {String(detail.assetAccount)}
           </div>
-          <EntryTable entry={detail.reclass as EntryView} currency={currency} />
+          <EntryTable entry={detail.reclass as EntryView} currency={entryCurrency(detail.reclass as EntryView)} />
         </div>
       );
     case 'close_package': {

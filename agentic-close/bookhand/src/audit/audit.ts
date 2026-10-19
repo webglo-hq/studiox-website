@@ -6,9 +6,35 @@ import { GENESIS_HASH, sha256Hex } from '../shared/hash';
 
 /**
  * Tamper-evident audit log. Each event's hash covers the previous event's hash and the canonical JSON of the
- * event itself, so editing or deleting any past event breaks every hash after it. The database independently
- * rejects UPDATE/DELETE/TRUNCATE and any insert that does not continue the chain (0002_invariants.sql).
+ * event itself, so editing or deleting any past event breaks every hash after it. Every structured column that
+ * the log shows (time, actor and actor type, action, object type and id, summary, request id, IP) is bound to the
+ * hashed record: the database refuses a row whose columns disagree with it, and both verifiers check every
+ * column. The database independently rejects UPDATE/DELETE/TRUNCATE and any insert that does not continue the
+ * chain (0002_invariants.sql, 0003_review_invariants.sql).
  */
+
+/** Columns bound to the hashed record: each must equal its value in the record. */
+export const AUDIT_BOUND_COLUMNS = ['seq', 'tenant_id', 'occurred_at', 'actor_type', 'actor_id', 'actor_label', 'action', 'object_type', 'object_id', 'summary', 'request_id', 'ip'] as const;
+
+/** The first structured column that disagrees with the hashed record ("record" when it is not a JSON object), or null. */
+export function auditColumnMismatch(row: Record<string, unknown>): string | null {
+  let record: unknown;
+  try {
+    record = JSON.parse(String(row.record));
+  } catch {
+    return 'record';
+  }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return 'record';
+  const r = record as Record<string, unknown>;
+  for (const column of AUDIT_BOUND_COLUMNS) {
+    const hashed = r[column] ?? null;
+    const shown = row[column] ?? null;
+    const equal =
+      column === 'occurred_at' ? !Number.isNaN(Date.parse(String(hashed))) && Date.parse(String(hashed)) === Date.parse(String(shown)) : column === 'seq' ? Number(hashed) === Number(shown) : hashed === shown;
+    if (!equal) return column;
+  }
+  return null;
+}
 
 export interface AuditInput {
   action: string;
@@ -77,15 +103,9 @@ export async function verifyAuditChain(tx: Tx, tenantId: string): Promise<ChainV
     if (row.prev_hash !== prev) return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: 'prev_hash does not match previous event' };
     const hash = sha256Hex(`${row.prev_hash}\n${row.record}`);
     if (hash !== row.hash) return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: 'hash does not match record' };
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(row.record) as Record<string, unknown>;
-    } catch {
-      return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: 'record is not valid JSON' };
-    }
-    if (parsed.action !== row.action || parsed.object_id !== row.object_id || parsed.summary !== row.summary || parsed.actor_label !== row.actor_label) {
-      return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: 'structured columns disagree with the hashed record' };
-    }
+    const column = auditColumnMismatch(row);
+    if (column === 'record') return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: 'record is not valid JSON' };
+    if (column) return { ok: false, checked: expectedSeq - 1, headHash: prev, firstBadSeq: row.seq, reason: `structured columns disagree with the hashed record (${column})` };
     prev = row.hash;
     expectedSeq++;
   }

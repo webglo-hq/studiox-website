@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import type { Db, Tx } from '../../src/persistence/db';
 import { DbConstraintError } from '../../src/persistence/db';
+import { canonicalJson } from '../../src/shared/canonical-json';
 import { newId } from '../../src/shared/ids';
 import { GENESIS_HASH, sha256Hex } from '../../src/shared/hash';
 
@@ -123,6 +124,25 @@ async function post(tx: Tx, id: string, total: number, count: number, extra: Rec
     approval_basis: 'system',
     ...extra,
   });
+}
+
+/** An audit row exactly as appendAudit writes it: the columns are the hashed record. */
+function auditRow(fx: Fx, seq: number, prevHash: string, event: { occurred_at: string; action: string; summary: string }, columns: Record<string, unknown> = {}) {
+  const record = canonicalJson({ seq, tenant_id: fx.tenantId, actor_type: 'system', actor_id: null, actor_label: 'test', object_type: 'test', object_id: null, details: null, request_id: null, ip: null, ...event });
+  return {
+    tenant_id: fx.tenantId,
+    seq,
+    occurred_at: event.occurred_at,
+    actor_type: 'system' as const,
+    actor_label: 'test',
+    action: event.action,
+    object_type: 'test',
+    summary: event.summary,
+    record,
+    prev_hash: prevHash,
+    hash: sha256Hex(`${prevHash}\n${record}`),
+    ...columns,
+  };
 }
 
 async function expectKind(p: Promise<unknown>, kind: string) {
@@ -351,59 +371,27 @@ export function defineConformance(label: string, open: () => Promise<Db>): void 
     });
 
     it('keeps the audit log append-only and chained', async () => {
-      const record1 = JSON.stringify({ a: 1 });
-      const hash1 = sha256Hex(`${GENESIS_HASH}\n${record1}`);
+      const first = auditRow(fx, 1, GENESIS_HASH, { occurred_at: '2026-03-01T00:00:00.000Z', action: 'test.one', summary: 'one' });
       const row = await db.tx(async (tx) => {
         await tx.lockAuditChain(fx.tenantId);
-        return tx.insert('audit_log', {
-          tenant_id: fx.tenantId,
-          seq: 1,
-          occurred_at: '2026-03-01T00:00:00.000Z',
-          actor_type: 'system',
-          actor_label: 'test',
-          action: 'test.one',
-          object_type: 'test',
-          summary: 'one',
-          record: record1,
-          prev_hash: GENESIS_HASH,
-          hash: hash1,
-        });
+        return tx.insert('audit_log', first);
       });
-      await expectKind(
-        db.tx((tx) =>
-          tx.insert('audit_log', {
-            tenant_id: fx.tenantId,
-            seq: 2,
-            occurred_at: '2026-03-01T00:00:01.000Z',
-            actor_type: 'system',
-            actor_label: 'test',
-            action: 'test.two',
-            object_type: 'test',
-            summary: 'two',
-            record: '{}',
-            prev_hash: GENESIS_HASH,
-            hash: sha256Hex(`${GENESIS_HASH}\n{}`),
-          }),
-        ),
-        'audit_chain',
-      );
+      // Seq 2 that does not continue the chain (wrong previous hash).
+      await expectKind(db.tx((tx) => tx.insert('audit_log', auditRow(fx, 2, GENESIS_HASH, { occurred_at: '2026-03-01T00:00:01.000Z', action: 'test.two', summary: 'two' }))), 'audit_chain');
       await expectKind(db.tx((tx) => tx.update('audit_log', row.id, { summary: 'edited' })), 'immutable_row');
       await expectKind(db.tx((tx) => tx.delete('audit_log', row.id)), 'immutable_row');
-      await db.tx((tx) =>
-        tx.insert('audit_log', {
-          tenant_id: fx.tenantId,
-          seq: 2,
-          occurred_at: '2026-03-01T00:00:01.000Z',
-          actor_type: 'system',
-          actor_label: 'test',
-          action: 'test.two',
-          object_type: 'test',
-          summary: 'two',
-          record: '{}',
-          prev_hash: hash1,
-          hash: sha256Hex(`${hash1}\n{}`),
-        }),
-      );
+      await db.tx((tx) => tx.insert('audit_log', auditRow(fx, 2, first.hash, { occurred_at: '2026-03-01T00:00:01.000Z', action: 'test.two', summary: 'two' })));
+    });
+
+    it('SEC-2: refuses an audit row whose shown time, actor type, object type or IP differ from the hashed record', async () => {
+      const [last] = await db.read((tx) => tx.find('audit_log', { tenant_id: fx.tenantId }, { orderBy: [['seq', 'desc']], limit: 1 }));
+      const seq = (last?.seq ?? 0) + 1;
+      const prev = last?.hash ?? GENESIS_HASH;
+      const event = { occurred_at: '2026-03-02T09:00:00.000Z', action: 'test.three', summary: 'three' };
+      for (const tampered of [{ occurred_at: '2026-02-01T09:00:00.000Z' }, { actor_type: 'user' }, { object_type: 'journal_entry' }, { ip: '203.0.113.9' }, { record: 'not json' }]) {
+        await expectKind(db.tx((tx) => tx.insert('audit_log', auditRow(fx, seq, prev, event, tampered))), 'audit_chain');
+      }
+      await db.tx((tx) => tx.insert('audit_log', auditRow(fx, seq, prev, event)));
     });
 
     it('supports the query surface identically', async () => {
@@ -464,6 +452,58 @@ export function defineConformance(label: string, open: () => Promise<Db>): void 
       );
       expect(rate.rate).toBeCloseTo(1.27345678, 8);
       expect(rate.rate_date).toBe('2026-03-31');
+    });
+
+    it('BH-M4: refuses to move a draft line into a posted entry, or a posted line out of one', async () => {
+      const { posted, draftLine, postedLine, draftId } = await db.tx(async (tx) => {
+        const p = await draft(tx, fx);
+        await post(tx, p.je.id, p.total, p.count);
+        const d = await draft(tx, fx, { lines: [[fx.cash, 777, 0], [fx.revenue, 0, 777]] });
+        const dl = (await tx.find('journal_lines', { journal_entry_id: d.je.id }))[0]!;
+        const pl = (await tx.find('journal_lines', { journal_entry_id: p.je.id }))[0]!;
+        return { posted: p.je.id, draftLine: dl.id, postedLine: pl.id, draftId: d.je.id };
+      });
+      await expectKind(db.tx((tx) => tx.update('journal_lines', draftLine, { journal_entry_id: posted, line_number: 99 })), 'immutable_row');
+      await expectKind(db.tx((tx) => tx.update('journal_lines', postedLine, { journal_entry_id: draftId, line_number: 99 })), 'immutable_row');
+      const lines = await db.read((tx) => tx.find('journal_lines', { journal_entry_id: posted }));
+      expect(lines.reduce((s, l) => s + l.debit_minor, 0)).toBe(lines.reduce((s, l) => s + l.credit_minor, 0));
+    });
+
+    it('BH-M4: a posting that races a period lock never lands in the locked period', async () => {
+      const period = (
+        await db.tx((tx) =>
+          tx.insert('periods', { tenant_id: fx.tenantId, entity_id: fx.entityId, fiscal_year: 2026, period_number: 6, name: 'P6', start_date: '2026-06-01', end_date: '2026-06-28', status: 'open' }),
+        )
+      ).id;
+      const d = await db.tx((tx) => draft(tx, fx, { period, date: '2026-06-15' }));
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      // One person locks the period and keeps the transaction open; someone posts into it meanwhile.
+      const locking = db.tx(async (tx) => {
+        await tx.update('periods', period, { status: 'soft_closed' });
+        await tx.update('periods', period, { status: 'locked', locked_at: '2026-07-01T00:00:00.000Z' });
+        await held;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const posting = db.tx((tx) => post(tx, d.je.id, d.total, d.count)).then(
+        () => 'posted',
+        (e: unknown) => e,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      release();
+      await locking;
+      const outcome = await posting;
+      expect(outcome).toBeInstanceOf(DbConstraintError);
+      expect((outcome as DbConstraintError).kind).toBe('period_locked');
+      expect((await db.read((tx) => tx.get('journal_entries', d.je.id)))?.status).not.toBe('posted');
+    });
+
+    it('BH-M2: a proposal is never approved by whoever started the agent run that made it', async () => {
+      const proposal = await db.tx((tx) =>
+        tx.insert('proposals', { tenant_id: fx.tenantId, kind: 'journal_entry', disposition: 'needs_approval', title: 'Accrue a bill', why: 'The bill arrived after period end.', confidence: 0.9, currency: 'USD', payload: {}, autonomy_level: 'L1', required_permission: 'proposal.decide', maker_type: 'agent', requested_by: fx.userA, idempotency_key: `p-${newId()}` }),
+      );
+      await expectKind(db.tx((tx) => tx.update('proposals', proposal.id, { status: 'approved', decided_by: fx.userA, decided_at: '2026-03-20T10:00:00.000Z' })), 'invariant_violation');
+      await db.tx((tx) => tx.update('proposals', proposal.id, { status: 'approved', decided_by: fx.userB, decided_at: '2026-03-20T10:00:00.000Z' }));
     });
   });
 }

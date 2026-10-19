@@ -12,6 +12,7 @@ import { depreciationPlan, straightLine } from './algorithms/schedules';
 import { completeTask } from './domain/close';
 import { createAndPost, DEFAULT_CAPITALIZATION_THRESHOLD_MINOR, type EntryDraft, errorsOf, type PostBasis, reverseEntry, verifyDraft } from './domain/ledger';
 import { postCardTransaction } from './domain/subledgers';
+import { closeOntology } from './ontology';
 import type { AccountingScope } from './scope';
 import { publishPackage, type ClosePackageContent } from './services/package';
 import { ensureReconciliation, refreshReconciliation } from './services/recon';
@@ -512,12 +513,15 @@ const fluxExplanation: ProposalHandler<S> = {
     const p = FluxExplanationPayload.parse(draft.payload);
     const line = await scope.tx.get('flux_lines', p.fluxLineId);
     const analysis = line ? await scope.tx.get('flux_analyses', line.analysis_id) : null;
-    const driverSum = p.drivers.reduce((s, d) => s + d.amount_minor, 0);
+    const subject = { variance: line?.variance_minor ?? 0, driverTotal: p.drivers.reduce((s, d) => s + d.amount_minor, 0), coverage: p.coverage ?? 0 };
+    const violations = closeOntology.evaluate('bh:FluxExplanation', subject, {});
     return [
       { id: 'FLUX-LINE', label: 'Variance line exists and is material', passed: !!line && line.is_material, severity: 'error', message: 'flux line missing or not material' },
       { id: 'FLUX-OPEN', label: 'Analysis not yet approved', passed: analysis?.status !== 'approved', severity: 'error', message: 'analysis already approved' },
-      { id: 'AX-FLX-02', label: 'Drivers add up to the variance', passed: !!line && driverSum === line.variance_minor, severity: 'warning', message: `drivers total ${driverSum / 100} vs variance ${(line?.variance_minor ?? 0) / 100}` },
-      { id: 'AX-FLX-03', label: 'Drivers explain at least 80% of the variance', passed: (p.coverage ?? 0) >= 0.8, severity: 'warning', message: `coverage ${(((p.coverage ?? 0) * 100) | 0)}%` },
+      ...closeOntology.axiomsFor('bh:FluxExplanation').map((a) => {
+        const hit = violations.find((x) => x.axiom === a.id);
+        return { id: a.id, label: a.label, passed: !hit, severity: a.severity, message: hit?.message };
+      }),
     ];
   },
   async onCreate(proposal, scope) {

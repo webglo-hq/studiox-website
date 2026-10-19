@@ -1,10 +1,11 @@
 import { appendAudit } from '../../../audit/audit';
 import type { Tx } from '../../../persistence/db';
 import type { Row } from '../../../persistence/schema';
-import { can, type Principal } from '../../../security/principal';
+import { can, canOn, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { DomainError } from '../../../shared/errors';
 import type { LedgerLookups } from '../domain/lookups';
+import { checkTrialBalance, entityTrialBalance } from '../domain/reporting';
 import { fluxProblems } from './flux';
 import { recTypeFor } from './recon';
 
@@ -15,7 +16,7 @@ import { recTypeFor } from './recon';
  */
 
 export interface Blocker {
-  kind: 'task' | 'reconciliation' | 'proposal' | 'flux' | 'package' | 'period';
+  kind: 'task' | 'reconciliation' | 'proposal' | 'flux' | 'package' | 'period' | 'trial_balance';
   message: string;
   href?: string;
 }
@@ -42,6 +43,13 @@ export async function closeBlockers(tx: Tx, lookups: LedgerLookups, closeId: str
       if (!rec.length) blockers.push({ kind: 'reconciliation', message: `${entity.code} ${a.number} ${a.name}: reconciliation not started`, href: '#/recs' });
       for (const r of rec) if (r.status !== 'reviewed') blockers.push({ kind: 'reconciliation', message: `${entity.code} ${a.number} ${a.name}: ${r.status.replace('_', ' ')}`, href: `#/recs/${r.id}` });
     }
+  }
+  // The trial-balance axioms (AX-TB-01 balances, AX-TB-02 accounting equation) run on every entity's books: a
+  // period whose trial balance fails them never locks.
+  for (const p of periods) {
+    const entity = lookups.entitiesById.get(p.entity_id)!;
+    const tb = await entityTrialBalance(tx, lookups, p.entity_id, p.id, 'balance');
+    for (const v of checkTrialBalance(tb).filter((x) => x.severity === 'error')) blockers.push({ kind: 'trial_balance', message: `${v.message} (${v.axiom})`, href: `#/reports?view=tb&entity=${encodeURIComponent(entity.code)}` });
   }
   const pending = (await tx.find('proposals', { tenant_id: close.tenant_id, status: { in: ['pending', 'blocked'] } })).filter((p) => (!p.period_id || periods.some((x) => x.id === p.period_id)) && !opts.ignoreProposalKinds?.includes(p.kind));
   if (pending.length) blockers.push({ kind: 'proposal', message: `${pending.length} proposal(s) still await a decision`, href: '#/inbox' });
@@ -70,6 +78,7 @@ export async function softClose(tx: Tx, ctx: DomainContext, principal: Principal
   if (!can(principal, 'period.soft_close')) throw new DomainError('FORBIDDEN', 'Your role cannot soft-close periods.');
   const period = await tx.get('periods', periodId);
   if (!period || period.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'period not found');
+  if (!canOn(principal, 'period.soft_close', period.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot soft-close this entity\'s periods.');
   if (period.status !== 'open') throw new DomainError('CONFLICT', `${period.name} is ${period.status.replace('_', ' ')}.`);
   return transition(tx, ctx, period, 'soft_closed', principal);
 }
@@ -77,12 +86,19 @@ export async function softClose(tx: Tx, ctx: DomainContext, principal: Principal
 /** Lock every entity's period for a close (hard close). */
 export async function lockClose(tx: Tx, ctx: DomainContext, lookups: LedgerLookups, principal: Principal, closeId: string, comment?: string): Promise<Row<'closes'>> {
   if (!can(principal, 'period.lock')) throw new DomainError('FORBIDDEN', 'Your role cannot lock periods.');
+  if (!canOn(principal, 'period.lock', null)) throw new DomainError('FORBIDDEN', 'Locking a close locks every entity; your rights cover only some entities.');
   const close = await tx.get('closes', closeId);
   if (!close || close.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'close not found');
   if (close.status === 'closed') return close;
+  // Take the period rows first: a posting in flight finishes (it holds them FOR UPDATE while posting) before
+  // the gate below is evaluated, and no posting can start until this lock commits.
+  const entities = [...lookups.operatingEntities(), ...(lookups.eliminationEntity() ? [lookups.eliminationEntity()!] : [])];
+  for (const e of entities) {
+    const p = lookups.period(e.id, close.fiscal_year, close.period_number);
+    if (p) await tx.get('periods', p.id, { forUpdate: true });
+  }
   const blockers = await closeBlockers(tx, lookups, closeId, { ignoreTaskKeys: ['lock'] });
   if (blockers.length) throw new DomainError('CONFLICT', `The period cannot be locked yet: ${blockers.slice(0, 3).map((b) => b.message).join('; ')}${blockers.length > 3 ? ` and ${blockers.length - 3} more` : ''}.`, { blockers });
-  const entities = [...lookups.operatingEntities(), ...(lookups.eliminationEntity() ? [lookups.eliminationEntity()!] : [])];
   for (const e of entities) {
     const p = lookups.period(e.id, close.fiscal_year, close.period_number);
     if (!p) continue;
@@ -104,6 +120,7 @@ export async function lockClose(tx: Tx, ctx: DomainContext, lookups: LedgerLooku
 
 export async function reopenPeriod(tx: Tx, ctx: DomainContext, lookups: LedgerLookups, principal: Principal, closeId: string, reason: string): Promise<Row<'closes'>> {
   if (!can(principal, 'period.reopen')) throw new DomainError('FORBIDDEN', 'Only the CFO can reopen a locked period.');
+  if (!canOn(principal, 'period.reopen', null)) throw new DomainError('FORBIDDEN', 'Reopening a close reopens every entity; your rights cover only some entities.');
   if (!reason || reason.trim().length < 10) throw new DomainError('VALIDATION', 'Reopening a locked period needs a documented reason (at least 10 characters).');
   const close = await tx.get('closes', closeId);
   if (!close || close.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'close not found');

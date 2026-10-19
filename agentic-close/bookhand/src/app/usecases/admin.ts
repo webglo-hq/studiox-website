@@ -5,13 +5,12 @@ import type { Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import { closeOntology } from '../../packs/accounting/ontology';
 import { toGraph } from '../../ontology/export';
-import { hashPassword, passwordProblems } from '../../security/passwords';
-import { PERMISSIONS, ROLES } from '../../security/permissions';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { authorityOf, PERMISSIONS, ROLES } from '../../security/permissions';
+import { can, requireAllEntities, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { revokeSession, revokeUserSessions } from '../../security/sessions';
 import { DomainError } from '../../shared/errors';
-import { randomToken } from '../../shared/ids';
 import type { App, RequestMeta } from '../app';
+import { changeRoles, everEnrolled, issueCredentialLink, requestSodChange, resolveGrants, type GrantInput } from './access';
 
 /** Administration (users, roles, SoD rules, sessions), audit log, imports and the ontology explorer. */
 
@@ -21,7 +20,11 @@ export async function listUsers(app: App, p: Principal) {
     const users = await tx.find('users', { tenant_id: p.tenantId }, { orderBy: [['display_name', 'asc']] });
     const grants = await tx.find('user_roles', { tenant_id: p.tenantId });
     const roles = new Map((await tx.find('roles', {})).map((r) => [r.id, r]));
+    const entities = await tx.find('entities', { tenant_id: p.tenantId }, { orderBy: [['code', 'asc']] });
+    const entityCode = new Map(entities.map((e) => [e.id, e.code]));
     const sessions = await tx.find('sessions', { tenant_id: p.tenantId });
+    const pending = await tx.find('access_requests', { tenant_id: p.tenantId, kind: 'role_grant', status: 'pending' });
+    const tokens = await tx.find('credential_tokens', { tenant_id: p.tenantId });
     const now = app.clock.now();
     return {
       users: users.map((u) => ({
@@ -35,66 +38,59 @@ export async function listUsers(app: App, p: Principal) {
         lastLoginAt: u.last_login_at,
         lockedUntil: u.locked_until && u.locked_until > now ? u.locked_until : null,
         provider: u.identity_provider,
-        roles: grants.filter((g) => g.user_id === u.id).map((g) => ({ key: roles.get(g.role_id)?.key, name: roles.get(g.role_id)?.name, entityId: g.entity_id })),
+        // Not enrolled yet: the person never chose a password with their enrolment link.
+        enrolled: everEnrolled(u, tokens),
+        hasPassword: u.identity_provider !== 'password' || !!u.password_hash,
+        roles: grants.filter((g) => g.user_id === u.id).map((g) => ({ key: roles.get(g.role_id)?.key, name: roles.get(g.role_id)?.name, entityId: g.entity_id, entity: g.entity_id ? (entityCode.get(g.entity_id) ?? null) : null })),
+        pendingGrant: pending.filter((r) => r.target_user_id === u.id).map((r) => ({ id: r.id, summary: r.summary }))[0] ?? null,
         activeSessions: sessions.filter((s) => s.user_id === u.id && !s.revoked_at && s.idle_expires_at > now).length,
       })),
-      roles: ROLES.map((r) => ({ key: r.key, name: r.name, description: r.description, approvalLimit: r.approvalLimitMinor, readOnly: !!r.readOnly, permissions: r.permissions })),
+      roles: ROLES.map((r) => ({ key: r.key, name: r.name, description: r.description, approvalLimit: r.approvalLimitMinor, readOnly: !!r.readOnly, permissions: r.permissions, needsApproval: authorityOf(r.permissions).length > 0, entityScopable: r.key !== 'admin' })),
+      entities: entities.map((e) => ({ id: e.id, code: e.code, name: e.name })),
       permissions: Object.entries(PERMISSIONS).map(([key, description]) => ({ key, description })),
       canManage: can(p, 'admin.users'),
+      canApproveAccess: can(p, 'access.approve'),
+      pendingRequests: (await tx.count('access_requests', { tenant_id: p.tenantId, status: 'pending' })),
     };
   });
 }
 
-async function checkRoleConflicts(app: App, p: Principal, roleKeys: string[]) {
-  const rules = await app.read((tx) => tx.find('sod_rules', { tenant_id: p.tenantId, kind: 'role_conflict', enabled: true }));
-  for (const r of rules) {
-    const params = r.params as { role?: string; conflicts?: string[] };
-    if (params.role && roleKeys.includes(params.role) && (params.conflicts ?? []).some((c) => roleKeys.includes(c))) {
-      throw new DomainError('SOD_VIOLATION', `${r.code} ${r.name}: ${r.description}`);
-    }
-  }
-}
-
-export async function createUser(app: App, p: Principal, input: { email: string; name: string; title?: string; roles: string[] }, meta: RequestMeta = {}) {
-  requirePermission(p, 'admin.users', 'create users');
+function validName(input: { email: string; name: string }) {
   const email = String(input.email ?? '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new DomainError('VALIDATION', 'Enter a valid email address.');
   if (!input.name || input.name.trim().length < 2) throw new DomainError('VALIDATION', 'Enter the person\'s name.');
-  if (!input.roles?.length) throw new DomainError('VALIDATION', 'Give the person at least one role.');
-  await checkRoleConflicts(app, p, input.roles);
-  const tempPassword = `${randomToken(9)}-${randomToken(6)}`;
-  const hash = await hashPassword(tempPassword);
-  const user = await app.tx(async (tx) => {
-    // Sign-in identifies a person by email alone, so an email belongs to one account across all organizations.
-    if (await tx.findOne('users', { email })) throw new DomainError('CONFLICT', 'That email address is already in use.');
-    const u = await tx.insert('users', { tenant_id: p.tenantId, email, display_name: input.name.trim(), title: input.title?.trim() || null, password_hash: hash, avatar_hue: Math.floor(Math.random() * 360) });
-    for (const key of input.roles) {
-      const role = await tx.findOne('roles', { key });
-      if (!role) throw new DomainError('VALIDATION', `Unknown role ${key}`);
-      await tx.insert('user_roles', { tenant_id: p.tenantId, user_id: u.id, role_id: role.id, granted_by: p.user.id });
-    }
-    await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'user.create', objectType: 'user', objectId: u.id, summary: `Created ${u.display_name} (${email}) with roles ${input.roles.join(', ')}` }, app.clock.now());
-    return u;
-  });
-  return { id: user.id, temporaryPassword: tempPassword };
+  return email;
 }
 
-export async function setUserRoles(app: App, p: Principal, userId: string, roleKeys: string[], meta: RequestMeta = {}) {
+/**
+ * Add a person. Nobody receives a password: the person gets a single-use enrolment link at their own address.
+ * Roles without approval authority apply at once; roles that carry it wait for a second approver.
+ */
+export async function createUser(app: App, p: Principal, input: { email: string; name: string; title?: string; roles: GrantInput[]; reason?: string }, meta: RequestMeta = {}) {
+  requirePermission(p, 'admin.users', 'create users');
+  const email = validName(input);
+  if (!input.roles?.length) throw new DomainError('VALIDATION', 'Give the person at least one role.');
+  return app.tx(async (tx) => {
+    const grants = await resolveGrants(tx, p.tenantId, input.roles);
+    // Sign-in identifies a person by email alone, so an email belongs to one account across all organizations.
+    if (await tx.findOne('users', { email })) throw new DomainError('CONFLICT', 'That email address is already in use.');
+    const now = app.clock.now();
+    const u = await tx.insert('users', { tenant_id: p.tenantId, email, display_name: input.name.trim(), title: input.title?.trim() || null, password_hash: null, avatar_hue: Math.floor(Math.random() * 360), created_at: now, updated_at: now });
+    await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'user.create', objectType: 'user', objectId: u.id, summary: `Created ${u.display_name} (${email}) without a password: they choose one with their enrolment link` }, now);
+    const roles = await changeRoles(tx, app, p, u, grants, input.reason?.trim() || `New team member: ${u.display_name}`, meta);
+    const enrolment = await issueCredentialLink(tx, app, { user: u, purpose: 'enrolment', by: p, meta });
+    return { id: u.id, enrolment, applied: roles.applied, pending: roles.pending };
+  });
+}
+
+export async function setUserRoles(app: App, p: Principal, userId: string, input: GrantInput[], meta: RequestMeta = {}, reason?: string) {
   requirePermission(p, 'admin.roles', 'assign roles');
   if (userId === p.user.id) throw new DomainError('SOD_VIOLATION', 'You cannot change your own roles.');
-  await checkRoleConflicts(app, p, roleKeys);
   return app.tx(async (tx) => {
     const user = await tx.get('users', userId);
     if (!user || user.tenant_id !== p.tenantId) app.notFound('User');
-    for (const g of await tx.find('user_roles', { user_id: userId })) await tx.delete('user_roles', g.id);
-    for (const key of roleKeys) {
-      const role = await tx.findOne('roles', { key });
-      if (!role) throw new DomainError('VALIDATION', `Unknown role ${key}`);
-      await tx.insert('user_roles', { tenant_id: p.tenantId, user_id: userId, role_id: role.id, granted_by: p.user.id });
-    }
-    await revokeUserSessions(tx, userId, 'roles_changed', app.clock.now());
-    await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'user.roles', objectType: 'user', objectId: userId, summary: `Set roles of ${user.display_name} to ${roleKeys.join(', ') || 'none'} (sessions revoked)` }, app.clock.now());
-    return { ok: true };
+    const grants = await resolveGrants(tx, p.tenantId, input);
+    return { ok: true, ...(await changeRoles(tx, app, p, user, grants, reason?.trim() || `Role change for ${user.display_name}`, meta)) };
   });
 }
 
@@ -111,36 +107,53 @@ export async function setUserStatus(app: App, p: Principal, userId: string, stat
   });
 }
 
+/**
+ * Reset a password: the old one stops working, every session is signed out and the person gets a single-use
+ * reset link at their own address (someone who never enrolled gets a fresh enrolment link). The administrator
+ * never sees a password or the link.
+ */
 export async function resetPassword(app: App, p: Principal, userId: string, meta: RequestMeta = {}) {
   requirePermission(p, 'admin.users', 'reset passwords');
-  const temp = `${randomToken(9)}-${randomToken(6)}`;
-  if (passwordProblems(temp).length) throw new DomainError('INTERNAL', 'generated password failed policy');
-  const hash = await hashPassword(temp);
-  await app.tx(async (tx) => {
+  return app.tx(async (tx) => {
     const user = await tx.get('users', userId);
     if (!user || user.tenant_id !== p.tenantId) app.notFound('User');
-    await tx.update('users', userId, { password_hash: hash, failed_login_count: 0, locked_until: null, updated_at: app.clock.now() });
-    await revokeUserSessions(tx, userId, 'password_reset', app.clock.now());
-    await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'user.password_reset', objectType: 'user', objectId: userId, summary: `Reset the password of ${user.display_name} (sessions revoked)` }, app.clock.now());
+    if (user.identity_provider !== 'password') throw new DomainError('VALIDATION', `${user.display_name} signs in with single sign-on; reset it with the identity provider.`);
+    if (user.status !== 'active') throw new DomainError('VALIDATION', `${user.display_name} is disabled; enable the account first.`);
+    const now = app.clock.now();
+    const enrolled = everEnrolled(user, await tx.find('credential_tokens', { user_id: user.id }));
+    if (user.password_hash) {
+      await tx.update('users', userId, { password_hash: null, failed_login_count: 0, locked_until: null, updated_at: now });
+      await revokeUserSessions(tx, userId, 'password_reset', now);
+      await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'user.password_reset', objectType: 'user', objectId: userId, summary: `Reset the password of ${user.display_name}: the old password no longer works (sessions revoked)` }, now);
+    }
+    const link = await issueCredentialLink(tx, app, { user, purpose: enrolled ? 'password_reset' : 'enrolment', by: p, meta });
+    return { purpose: enrolled ? 'password_reset' : 'enrolment', ...link };
   });
-  return { temporaryPassword: temp };
 }
 
 export async function listSodRules(app: App, p: Principal) {
   if (!can(p, 'admin.sod') && !can(p, 'audit.view') && !can(p, 'close.view')) requirePermission(p, 'admin.sod');
-  return app.read(async (tx) => (await tx.find('sod_rules', { tenant_id: p.tenantId }, { orderBy: [['code', 'asc']] })).map((r) => ({ id: r.id, code: r.code, name: r.name, description: r.description, kind: r.kind, params: r.params, severity: r.severity, enabled: r.enabled, version: r.version, updatedAt: r.updated_at })));
+  return app.read(async (tx) => {
+    const pending = await tx.find('access_requests', { tenant_id: p.tenantId, kind: 'sod_rule_change', status: 'pending' });
+    return (await tx.find('sod_rules', { tenant_id: p.tenantId }, { orderBy: [['code', 'asc']] })).map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      description: r.description,
+      kind: r.kind,
+      params: r.params,
+      severity: r.severity,
+      enabled: r.enabled,
+      version: r.version,
+      updatedAt: r.updated_at,
+      pendingChange: pending.filter((x) => x.sod_rule_id === r.id).map((x) => ({ id: x.id, summary: x.summary }))[0] ?? null,
+    }));
+  });
 }
 
+/** A rule change never applies at once: it waits for a second approver (see access.ts). */
 export async function updateSodRule(app: App, p: Principal, id: string, patch: { enabled?: boolean; severity?: 'block' | 'warn'; params?: Record<string, unknown>; reason: string }, meta: RequestMeta = {}) {
-  requirePermission(p, 'admin.sod', 'edit segregation-of-duties rules');
-  if (!patch.reason || patch.reason.trim().length < 5) throw new DomainError('VALIDATION', 'Say why you are changing a control.');
-  return app.tx(async (tx) => {
-    const r = await tx.get('sod_rules', id);
-    if (!r || r.tenant_id !== p.tenantId) app.notFound('SoD rule');
-    const updated = await tx.update('sod_rules', id, { enabled: patch.enabled ?? r.enabled, severity: patch.severity ?? r.severity, params: patch.params ?? r.params, version: r.version + 1, updated_by: p.user.id, updated_at: app.clock.now() });
-    await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'sod.update', objectType: 'sod_rule', objectId: id, summary: `${r.code} ${r.name} v${updated.version}: ${patch.enabled === false ? 'disabled' : patch.enabled === true ? 'enabled' : 'updated'} (${patch.reason.trim()})`, details: { before: { enabled: r.enabled, severity: r.severity, params: r.params }, after: { enabled: updated.enabled, severity: updated.severity, params: updated.params } } }, app.clock.now());
-    return updated;
-  });
+  return requestSodChange(app, p, id, patch, meta);
 }
 
 export async function listSessions(app: App, p: Principal) {
@@ -168,7 +181,8 @@ export async function adminRevokeSession(app: App, p: Principal, id: string, met
 // ------------------------------------------------------------------ audit
 
 export async function auditLog(app: App, p: Principal, f: { action?: string; objectType?: string; objectId?: string; actor?: string; limit?: number; beforeSeq?: number }) {
-  if (!can(p, 'audit.view')) requirePermission(p, 'audit.view');
+  // The log records every entity's events, so it is read by people whose audit access covers every entity.
+  requirePermissionOn(p, 'audit.view', null, 'read the audit log');
   return app.read(async (tx) => {
     const where: Where<'audit_log'> = { tenant_id: p.tenantId };
     if (f.objectType) where.object_type = f.objectType;
@@ -183,7 +197,7 @@ export async function auditLog(app: App, p: Principal, f: { action?: string; obj
 }
 
 export async function verifyAudit(app: App, p: Principal, meta: RequestMeta = {}) {
-  requirePermission(p, 'audit.verify', 'verify the audit chain');
+  requirePermissionOn(p, 'audit.verify', null, 'verify the audit chain');
   const result = await app.read((tx) => verifyAuditChain(tx, p.tenantId));
   await app.tx((tx) => appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'audit.verify', objectType: 'audit_log', summary: `Verified the audit chain: ${result.ok ? `intact (${result.checked} events)` : `BROKEN at seq ${result.firstBadSeq}: ${result.reason}`}`, details: result }, app.clock.now()));
   return result;
@@ -193,6 +207,7 @@ export async function verifyAudit(app: App, p: Principal, meta: RequestMeta = {}
 
 export async function listImports(app: App, p: Principal) {
   requirePermission(p, 'close.view');
+  requireAllEntities(p, 'Imports');
   return app.read(async (tx) => {
     const batches = await tx.find('import_batches', { tenant_id: p.tenantId }, { orderBy: [['started_at', 'desc']], limit: 60 });
     const docs = new Map((batches.length ? await tx.find('source_documents', { id: { in: batches.map((b) => b.source_document_id) } }) : []).map((d) => [d.id, d]));
@@ -208,7 +223,8 @@ export async function listImports(app: App, p: Principal) {
 }
 
 export async function importFile(app: App, p: Principal, input: { filename: string; content: string; adapterKey?: string }, meta: RequestMeta = {}) {
-  requirePermission(p, 'import.run', 'import files');
+  // A file can carry any entity's records (bank statements, ERP exports), so the right to import must cover every entity.
+  requirePermissionOn(p, 'import.run', null, 'import files');
   if (!input.filename || typeof input.content !== 'string') throw new DomainError('VALIDATION', 'Choose a file.');
   return app.tx(async (tx) => importDocument(tx, app.ctx(p, meta), await app.lookups(tx, p.tenantId), { filename: input.filename.slice(0, 200), content: input.content, adapterKey: input.adapterKey }));
 }

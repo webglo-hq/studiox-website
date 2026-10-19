@@ -703,6 +703,14 @@ table.table {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--border);
+  /* A tall dialog scrolls inside, keeping its title and buttons on screen. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(88vh - 16px);
+}
+.modal > .card-pad {
+  overflow-y: auto;
+  min-height: 0;
 }
 @keyframes fade {
   from {

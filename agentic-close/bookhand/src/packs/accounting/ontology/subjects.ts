@@ -65,11 +65,14 @@ export interface JournalEntryContext {
 
 export interface TrialBalanceSubject {
   entityLabel: string;
+  /** Currency of the balances (an entity's functional currency, or the reporting currency when consolidated). */
+  currency?: string;
   rows: Array<{ accountNumber: string; accountName: string; accountClass: ResolvedAccount['accountClass']; normalBalance: 'debit' | 'credit'; subtype: string; debit: number; credit: number }>;
 }
 
 export interface ReconciliationSubject {
   id: string;
+  currency?: string;
   recType: string;
   glBalance: number;
   externalBalance: number;
@@ -91,9 +94,19 @@ export interface ReconciliationContext {
 
 export interface FluxSubject {
   status: string;
+  currency?: string;
   preparedBy: string | null;
   approvedBy: string | null;
   lines: Array<{ accountNumber: string; current: number; comparison: number; variance: number; isMaterial: boolean; explanationStatus: string; explanation: string | null }>;
+}
+
+/** An agent's variance explanation: the drivers it names against the variance of its flux line. */
+export interface FluxExplanationSubject {
+  variance: number;
+  driverTotal: number;
+  /** Share of the variance the drivers account for (0..1). */
+  coverage: number;
+  currency?: string;
 }
 
 export interface MaterialitySubject {
@@ -104,6 +117,7 @@ export interface MaterialitySubject {
 
 export interface ScheduleSubject {
   kind: 'amortization' | 'depreciation';
+  currency?: string;
   label: string;
   total: number;
   salvage: number;
@@ -113,6 +127,7 @@ export interface ScheduleSubject {
 
 export interface IntercompanySubject {
   pairLabel: string;
+  currency?: string;
   receivableReporting: number;
   payableReporting: number;
   toleranceMinor: number;

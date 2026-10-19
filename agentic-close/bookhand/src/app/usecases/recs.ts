@@ -1,8 +1,9 @@
 import { appendAudit } from '../../audit/audit';
 import type { Row } from '../../persistence/schema';
-import { certificationProblems, ensureReconciliation, recTypeFor, refreshReconciliation, reopenReconciliation, signReconciliation } from '../../packs/accounting/services/recon';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { certificationBeforeNote, ensureReconciliation, recTypeFor, refreshReconciliation, reopenReconciliation, signReconciliation } from '../../packs/accounting/services/recon';
+import { canOn, canSeeEntity, requirePermission, requirePermissionOn, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
+import { formatMoney } from '../../shared/money';
 import type { App, RequestMeta } from '../app';
 import { currentClose } from './close';
 
@@ -16,7 +17,7 @@ export async function listRecs(app: App, p: Principal, closeId?: string) {
     const lookups = await app.lookups(tx, p.tenantId);
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u.display_name]));
     const rows = [];
-    for (const e of lookups.operatingEntities()) {
+    for (const e of lookups.operatingEntities().filter((x) => canSeeEntity(p, x.id))) {
       const period = lookups.period(e.id, close.fiscal_year, close.period_number);
       if (!period) continue;
       const recs = await tx.find('reconciliations', { period_id: period.id });
@@ -62,6 +63,11 @@ export async function listRecs(app: App, p: Principal, closeId?: string) {
 
 export async function recDetail(app: App, p: Principal, recId: string) {
   requirePermission(p, 'rec.view');
+  const visible = await app.read(async (tx) => {
+    const r = await tx.get('reconciliations', recId);
+    return !!r && r.tenant_id === p.tenantId && canSeeEntity(p, r.entity_id);
+  });
+  if (!visible) app.notFound('Reconciliation');
   await app.tx((tx) => refreshReconciliation(tx, recId).catch(() => null));
   return app.read(async (tx) => {
     const rec = await tx.get('reconciliations', recId);
@@ -93,9 +99,11 @@ export async function recDetail(app: App, p: Principal, recId: string) {
     const openLedger = periodLines.filter((l) => periodEntries.get(l.journal_entry_id)?.status === 'posted' && !claimedLines.has(l.id));
     const pending = await tx.find('proposals', { tenant_id: p.tenantId, status: 'pending', entity_id: rec.entity_id, period_id: rec.period_id, kind: { in: ['rec_match', 'reconciling_item'] } });
     const signoffs = await tx.find('signoffs', { object_type: 'reconciliation', object_id: rec.id }, { orderBy: [['signed_at', 'asc']] });
-    const problems = await certificationProblems(tx, rec);
+    // The note an unexplained amount needs is written when certifying (needsNote), so it is not listed as a problem.
+    const check = await certificationBeforeNote(tx, rec);
+    const problems = check.problems;
     return {
-      rec: { id: rec.id, type: rec.rec_type, status: rec.status, risk: rec.risk, currency: rec.currency, gl: rec.gl_balance_minor, external: rec.external_balance_minor, reconcilingTotal: rec.reconciling_total_minor, difference: rec.difference_minor, notes: rec.notes, preparedBy: rec.prepared_by ? users.get(rec.prepared_by) ?? null : null, preparedAt: rec.prepared_at, reviewedBy: rec.reviewed_by ? users.get(rec.reviewed_by) ?? null : null, reviewedAt: rec.reviewed_at },
+      rec: { id: rec.id, type: rec.rec_type, status: rec.status, risk: rec.risk, currency: rec.currency, gl: rec.gl_balance_minor, external: rec.external_balance_minor, reconcilingTotal: rec.reconciling_total_minor, difference: rec.difference_minor, unexplained: check.unexplained, notes: rec.notes, preparedBy: rec.prepared_by ? users.get(rec.prepared_by) ?? null : null, preparedAt: rec.prepared_at, reviewedBy: rec.reviewed_by ? users.get(rec.reviewed_by) ?? null : null, reviewedAt: rec.reviewed_at },
       entity: lookups.entitiesById.get(rec.entity_id)!.code,
       period: { id: period.id, name: period.name, start: period.start_date, end: period.end_date, status: period.status },
       account: { number: account.number, name: account.name, subtype: account.subtype },
@@ -125,7 +133,7 @@ export async function recDetail(app: App, p: Principal, recId: string) {
       openLedger: openLedger.map((l) => ({ id: l.id, date: l.entry_date, amount: l.debit_minor - l.credit_minor, entryNumber: periodEntries.get(l.journal_entry_id)?.entry_number, entryId: l.journal_entry_id, description: periodEntries.get(l.journal_entry_id)?.description, memo: l.memo })),
       pendingProposals: pending.map((x) => ({ id: x.id, kind: x.kind, title: x.title, confidence: x.confidence })),
       signoffs: signoffs.map((s) => ({ role: s.role, action: s.action, user: users.get(s.user_id) ?? s.user_id, at: s.signed_at, comment: s.comment })),
-      certification: { problems, canPrepare: can(p, 'rec.prepare') && problems.length === 0 && rec.status !== 'reviewed' && rec.status !== 'prepared', canReview: can(p, 'rec.review') && rec.status === 'prepared' && rec.prepared_by !== p.user.id, canReopen: can(p, 'rec.review') && (rec.status === 'reviewed' || rec.status === 'prepared') },
+      certification: { problems, needsNote: check.needsNote, canPrepare: canOn(p, 'rec.prepare', rec.entity_id) && problems.length === 0 && rec.status !== 'reviewed' && rec.status !== 'prepared', canReview: canOn(p, 'rec.review', rec.entity_id) && rec.status === 'prepared' && rec.prepared_by !== p.user.id, canReopen: canOn(p, 'rec.review', rec.entity_id) && (rec.status === 'reviewed' || rec.status === 'prepared') },
     };
   });
 }
@@ -145,7 +153,8 @@ export async function manualMatch(app: App, p: Principal, recId: string, bankIds
   if (!note || note.trim().length < 5) throw new DomainError('VALIDATION', 'Say why these lines belong together.');
   return app.tx(async (tx) => {
     const rec = await tx.get('reconciliations', recId);
-    if (!rec || rec.tenant_id !== p.tenantId || !rec.bank_account_id) app.notFound('Bank reconciliation');
+    if (!rec || rec.tenant_id !== p.tenantId || !rec.bank_account_id || !canSeeEntity(p, rec.entity_id)) app.notFound('Bank reconciliation');
+    requirePermissionOn(p, 'rec.prepare', rec.entity_id, 'match reconciliation lines');
     let bankTotal = 0;
     let ledgerTotal = 0;
     const bank: Row<'bank_transactions'>[] = [];
@@ -160,7 +169,7 @@ export async function manualMatch(app: App, p: Principal, recId: string, bankIds
       if (!l || l.account_id !== rec.account_id) throw new DomainError('CONFLICT', 'A ledger line is not on this cash account.');
       ledgerTotal += l.debit_minor - l.credit_minor;
     }
-    if (bankTotal !== ledgerTotal) throw new DomainError('VALIDATION', `Bank lines total ${bankTotal / 100} but ledger lines total ${ledgerTotal / 100}; amounts must agree (book the difference separately).`);
+    if (bankTotal !== ledgerTotal) throw new DomainError('VALIDATION', `Bank lines total ${formatMoney(bankTotal, { currency: rec.currency })} but ledger lines total ${formatMoney(ledgerTotal, { currency: rec.currency })}; amounts must agree (book the difference separately).`);
     const now = app.clock.now();
     const match = await tx.insert('rec_matches', { tenant_id: p.tenantId, reconciliation_id: rec.id, match_type: 'manual', status: 'accepted', confidence: 1, rule: 'manual match', explanation: note.trim(), accepted_by: p.user.id, accepted_at: now });
     for (const b of bank) {
@@ -182,6 +191,10 @@ export async function startRec(app: App, p: Principal, entityId: string, periodI
   requirePermission(p, 'rec.prepare', 'prepare reconciliations');
   return app.tx(async (tx) => {
     const lookups = await app.lookups(tx, p.tenantId);
+    const entity = lookups.entitiesById.get(entityId);
+    const period = lookups.periodsById.get(periodId);
+    if (!entity || !period || period.entity_id !== entity.id || !canSeeEntity(p, entity.id)) app.notFound('Entity period');
+    requirePermissionOn(p, 'rec.prepare', entity.id, 'prepare reconciliations');
     const account = lookups.account(accountNumber);
     if (!account) app.notFound('Account');
     const type = recTypeFor(account) ?? 'balance_sheet';

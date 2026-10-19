@@ -105,7 +105,7 @@ export function RecsScreen() {
 }
 
 interface RecDetail {
-  rec: { id: string; type: string; status: string; risk: string; currency: string; gl: number; external: number; reconcilingTotal: number; difference: number; notes: string | null; preparedBy: string | null; preparedAt: string | null; reviewedBy: string | null; reviewedAt: string | null };
+  rec: { id: string; type: string; status: string; risk: string; currency: string; gl: number; external: number; reconcilingTotal: number; difference: number; unexplained: number; notes: string | null; preparedBy: string | null; preparedAt: string | null; reviewedBy: string | null; reviewedAt: string | null };
   entity: string;
   period: { id: string; name: string; start: string; end: string; status: string };
   account: { number: string; name: string; subtype: string };
@@ -117,7 +117,7 @@ interface RecDetail {
   openLedger: Array<{ id: string; date: string; amount: number; entryNumber?: string; entryId: string; description?: string; memo: string | null }>;
   pendingProposals: Array<{ id: string; kind: string; title: string; confidence: number }>;
   signoffs: Array<{ role: string; action: string; user: string; at: string; comment: string | null }>;
-  certification: { problems: string[]; canPrepare: boolean; canReview: boolean; canReopen: boolean };
+  certification: { problems: string[]; needsNote: boolean; canPrepare: boolean; canReview: boolean; canReopen: boolean };
 }
 
 export function RecWorkbench({ id }: { id: string }) {
@@ -127,6 +127,7 @@ export function RecWorkbench({ id }: { id: string }) {
   const [pickLedger, setPickLedger] = useState<Set<string>>(new Set());
   const [note, setNote] = useState('');
   const [reopen, setReopen] = useState(false);
+  const [certifyNote, setCertifyNote] = useState(false);
   const [showAccepted, setShowAccepted] = useState(false);
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Skeleton rows={10} />;
@@ -171,7 +172,7 @@ export function RecWorkbench({ id }: { id: string }) {
             </button>
           )}
           {data.certification.canPrepare && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void run(() => api.post(`/api/recs/${id}/sign`, { role: 'preparer' }), 'Certified as preparer.')}>
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => (data.certification.needsNote ? setCertifyNote(true) : void run(() => api.post(`/api/recs/${id}/sign`, { role: 'preparer' }), 'Certified as preparer.'))}>
               <ShieldCheck size={15} aria-hidden="true" /> Certify as preparer
             </button>
           )}
@@ -207,10 +208,10 @@ export function RecWorkbench({ id }: { id: string }) {
           </div>
           <div className="delta">{data.items.filter((i) => !i.clearedDate || i.clearedDate > data.period.end).length} open</div>
         </div>
-        <div className={`card stat${rec.difference === 0 ? ' ok' : ' bad'}`}>
+        <div className={`card stat${rec.unexplained === 0 ? ' ok' : ' bad'}`}>
           <div className="label">Unexplained difference</div>
-          <div className="value">{rec.difference === 0 ? <span className="pos">0.00</span> : <Money minor={rec.difference} currency={cur} className="neg" />}</div>
-          <div className="delta">GL − external − items</div>
+          <div className="value">{rec.unexplained === 0 ? <span className="pos">0.00</span> : <Money minor={rec.unexplained} currency={cur} className="neg" />}</div>
+          <div className="delta">{rec.unexplained !== 0 && rec.difference === 0 ? 'listed as unexplained: needs a note to certify' : 'GL − external − explained items'}</div>
         </div>
       </section>
 
@@ -436,6 +437,16 @@ export function RecWorkbench({ id }: { id: string }) {
           </ul>
         )}
       </section>
+      {certifyNote && (
+        <ReasonDialog
+          title="Certify with an unexplained difference"
+          prompt={`${money(rec.unexplained, cur)} is still unexplained. Say what it is, why it is acceptable and what happens next (your note is kept with the certification).`}
+          confirmLabel="Certify as preparer"
+          minLength={15}
+          onClose={() => setCertifyNote(false)}
+          onSubmit={(comment) => run(() => api.post(`/api/recs/${id}/sign`, { role: 'preparer', comment }), 'Certified as preparer, with your note.')}
+        />
+      )}
       {reopen && <ReasonDialog title="Reopen reconciliation" prompt="What needs another look?" confirmLabel="Reopen" onClose={() => setReopen(false)} onSubmit={(reason) => run(() => api.post(`/api/recs/${id}/reopen`, { reason }), 'Reopened.')} />}
     </div>
   );

@@ -9,6 +9,13 @@ test('the landing page explains the product, shows the tiers and leads to the de
   const tiers = page.locator('#pricing article');
   await expect(tiers).toHaveCount(3);
   await expect(tiers.getByRole('heading', { level: 3 })).toHaveText(['Team', 'Growth', 'Enterprise']);
+  // B-10: the page claims only what the product does: single sign-on is planned, and the approval controls are
+  // described as built (launchers never approve their run's output; nobody grants themselves authority).
+  await expect(tiers.nth(2).getByRole('listitem').filter({ hasText: 'Single sign-on' })).toContainText('planned');
+  const controls = page.locator('#controls');
+  await expect(controls).toContainText('started the agent run behind it');
+  await expect(controls).toContainText('Nobody grants themselves power');
+  await expect(controls).not.toContainText('Nobody approves their own journal, reconciliation, flux explanation or task');
   expect(await axeViolations(page)).toEqual([]);
 
   await page.emulateMedia({ colorScheme: 'dark' });

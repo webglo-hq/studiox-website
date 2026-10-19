@@ -1,11 +1,13 @@
+import { auditColumnMismatch } from '../audit/audit';
 import { GENESIS_HASH, sha256Hex } from '../shared/hash';
 import { DbConstraintError } from './db';
 import type { Row, TableName } from './schema';
 
 /**
  * Procedural invariants enforced by the memory adapter. Each mirrors a trigger in
- * db/migrations/0002_invariants.sql; the conformance suite (tests/integration/conformance.ts, run by
- * persistence.test.ts) drives the same violations through every adapter and asserts identical error kinds.
+ * db/migrations/0002_invariants.sql or 0003_review_invariants.sql; the conformance suite
+ * (tests/integration/conformance.ts, run by persistence.test.ts) drives the same violations through every
+ * adapter and asserts identical error kinds.
  */
 
 export interface GuardContext {
@@ -37,6 +39,8 @@ export const MSG = {
   periodTransition: 'invalid period status transition',
   reopenCount: 'reopening a locked period must increment reopened_count',
   auditChain: 'audit log chain broken: prev_hash/seq/hash do not continue the chain',
+  auditColumns: 'audit event columns must equal the hashed record',
+  requesterApproves: 'the person who started an agent run cannot approve its output',
   appendOnly: 'append-only table: rows cannot be updated or deleted',
   postedDocument: 'the amount of a posted document cannot change; reverse and re-enter it',
 } as const;
@@ -54,6 +58,12 @@ const ADJUSTING_TYPES = new Set([
 
 function fail(kind: ConstructorParameters<typeof DbConstraintError>[0], message: string, table: string, constraint: string): never {
   throw new DbConstraintError(kind, message, { table, constraint });
+}
+
+function checkProposal(row: Record<string, unknown>): void {
+  if (row.status === 'approved' && row.decided_by != null && row.decided_by === row.requested_by) {
+    fail('invariant_violation', MSG.requesterApproves, 'proposals', 'proposal_requester_independent');
+  }
 }
 
 function validatePosting(je: Record<string, unknown>, ctx: GuardContext): void {
@@ -134,7 +144,9 @@ export const memoryGuards: Partial<Record<TableName, TableGuard>> = {
     beforeUpdate(before, after, ctx) {
       const je = ctx.get('journal_entries', String(before.journal_entry_id));
       if (je && je.status === 'posted') fail('immutable_row', MSG.lineParentPosted, 'journal_lines', 'jl_parent_posted');
+      // The entry a line moves into is checked too: a draft line must never join a posted entry.
       const nextJe = ctx.get('journal_entries', String(after.journal_entry_id));
+      if (nextJe && nextJe.status === 'posted') fail('immutable_row', MSG.lineParentPosted, 'journal_lines', 'jl_parent_posted');
       if (nextJe && (nextJe.entity_id !== after.entity_id || nextJe.period_id !== after.period_id || nextJe.entry_date !== after.entry_date)) {
         fail('invariant_violation', MSG.lineHeaderMismatch, 'journal_lines', 'jl_header_match');
       }
@@ -166,7 +178,12 @@ export const memoryGuards: Partial<Record<TableName, TableGuard>> = {
       if (Number(row.seq) !== expectedSeq || row.prev_hash !== expectedPrev || row.hash !== expectedHash) {
         fail('audit_chain', MSG.auditChain, 'audit_log', 'audit_chain');
       }
+      if (auditColumnMismatch(row)) fail('audit_chain', MSG.auditColumns, 'audit_log', 'audit_record_columns');
     },
+  },
+  proposals: {
+    beforeInsert: (row) => checkProposal(row),
+    beforeUpdate: (_before, after) => checkProposal(after),
   },
 };
 

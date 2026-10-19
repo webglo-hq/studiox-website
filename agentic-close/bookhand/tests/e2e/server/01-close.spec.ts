@@ -27,11 +27,15 @@ test('a staff accountant, a senior, the controller and the CFO close September e
   await expect(page.getByRole('heading', { name: "What's next for you" })).toBeVisible();
   await expect(page.getByText('Run the close agents')).toBeVisible();
 
-  // 2. Run the close agents and follow the orchestrator's trace.
+  // 2. Run the close agents: My close shows them working, then the call to review what they left (B-7).
   await page.getByRole('button', { name: 'Run close agents' }).first().click();
-  await expect(page).toHaveURL(/#\/runs\//);
-  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Close agents (are working|finished)$/ })).toBeVisible();
+  expect(page.url()).not.toContain('#/runs/');
   await waitForAgents(page);
+  await expect(page.getByRole('link', { name: /^Review \d+ items?$/ })).toBeVisible({ timeout: 30_000 });
+  // The orchestrator's trace is one click away.
+  await page.getByRole('link', { name: 'Open the agent trace' }).click();
+  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
   await expect(page.getByText('Completed').first()).toBeVisible({ timeout: 30_000 });
   await remember();
 
@@ -58,6 +62,17 @@ test('a staff accountant, a senior, the controller and the CFO close September e
   for (const re of [/Accrue Fieldnote Research \$24,000\.00/, /Duplicate payment to Copperline Legal LLP: \$18,400\.00/, /Capitalize APPLE STORE #R102 \$14,800\.00/, /Outstanding check \$4,200\.00/, /Deposit in transit \$12,100\.00/, /Investigate unexplained bank debit \$1,250\.00/, /True up IC-2026-09-MGMT/, /Explain 6310 Events and conferences/, /HALCYON FREIGHT/]) {
     expect(titles).toMatch(re);
   }
+
+  // The approved close package: the balance sheet foots with current-year earnings in equity (B-1), and the
+  // income statement ends in net income.
+  await signInAs(page, 'hannah');
+  await go(page, `#/close/${closeId}/package`);
+  const bs = page.getByRole('region', { name: 'Consolidated balance sheet' });
+  await expect(bs.getByRole('cell', { name: 'Current-year earnings' })).toBeVisible();
+  await expect(bs.getByRole('cell', { name: 'Total liabilities and equity' })).toBeVisible();
+  await expect(bs.getByTestId('bs-footing')).toHaveText('Foots: assets = liabilities + equity');
+  await expect(page.getByRole('cell', { name: 'Net income', exact: true })).toBeVisible();
+  await expect(page.getByText(/-\$0(?![\d.,])/)).toHaveCount(0);
 
   // 5. Lock the period.
   await signInAs(page, 'hannah');

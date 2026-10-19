@@ -48,10 +48,54 @@ export function requirePermission(p: Principal, permission: Permission, what?: s
   }
 }
 
+// ------------------------------------------------------------------ entity scope
+//
+// An object belongs to one entity (entity_id) or to the whole organization (null: consolidated reports, the
+// close orchestrator, the close package, skill policies, the audit log). A grant limited to an entity covers that
+// entity's objects only; whole-organization objects and actions need a grant for every entity.
+
+const covers = (grant: { entityId: string | null }, entityId: string | null | undefined) => grant.entityId === null || (!!entityId && grant.entityId === entityId);
+
+/** Whether `p` may see an object of `entityId` (null = a whole-organization object). */
 export function canSeeEntity(p: Principal, entityId: string | null | undefined): boolean {
-  return !entityId || p.entityIds === null || p.entityIds.includes(entityId);
+  return p.entityIds === null || (!!entityId && p.entityIds.includes(entityId));
 }
 
-export function withinLimit(p: Principal, amountMinor: number): boolean {
-  return p.approvalLimitMinor === null || Math.abs(amountMinor) <= p.approvalLimitMinor;
+/** The query condition limiting rows to the entities `p` sees (undefined = every entity). */
+export function entityScope(p: Principal): { in: string[] } | undefined {
+  return p.entityIds === null ? undefined : { in: p.entityIds };
+}
+
+/** Whether a grant holding `permission` covers `entityId` (null = the whole organization). */
+export function canOn(p: Principal, permission: Permission, entityId: string | null | undefined): boolean {
+  return p.user.status === 'active' && p.roles.some((r) => ((r.permissions as Permission[]) ?? []).includes(permission) && covers(r, entityId));
+}
+
+export function requirePermissionOn(p: Principal, permission: Permission, entityId: string | null | undefined, what?: string): void {
+  requirePermission(p, permission, what);
+  if (!canOn(p, permission, entityId)) {
+    throw new DomainError('FORBIDDEN', entityId ? `${p.user.display_name} may ${what ?? permission} only for other entities, not this one.` : `${p.user.display_name} may ${what ?? permission} only for some entities; this covers the whole organization.`, { permission, entityId: entityId ?? null });
+  }
+}
+
+/** Refuse whole-organization actions and views (consolidated reports, the close orchestrator, policies) to someone limited to some entities. */
+export function requireAllEntities(p: Principal, what: string): void {
+  if (p.entityIds !== null) throw new DomainError('FORBIDDEN', `${what} covers every entity; your access is limited to some.`);
+}
+
+/** The highest approval limit among the grants covering `entityId` (null = unlimited). */
+export function approvalLimitOn(p: Principal, entityId: string | null | undefined): number | null {
+  let limit = 0;
+  for (const r of p.roles) {
+    if (!covers(r, entityId)) continue;
+    if (r.approval_limit_minor === null) return null;
+    limit = Math.max(limit, r.approval_limit_minor);
+  }
+  return limit;
+}
+
+/** Within the approval limit; with an entity, only grants covering that entity count. */
+export function withinLimit(p: Principal, amountMinor: number, entityId?: string | null): boolean {
+  const limit = entityId === undefined ? p.approvalLimitMinor : approvalLimitOn(p, entityId);
+  return limit === null || Math.abs(amountMinor) <= limit;
 }

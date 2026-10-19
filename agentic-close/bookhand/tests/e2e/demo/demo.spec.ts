@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { approveAllICan, axeViolations, closeDialogs, go, signInAs } from '../support';
+import { addPersonAndEnrol, approveAllICan, axeViolations, closeDialogs, go, signInAs } from '../support';
 
 /**
  * The zero-install demo: one static index.html, no backend and no network. The full application (domain,
@@ -40,8 +40,7 @@ test('boots offline, runs the agents and takes decisions without any network req
   await expect(page.getByText('Zero-install demo.')).toBeVisible();
   await expect(page.getByText('Offline agents').first()).toBeVisible();
   await page.getByRole('button', { name: 'Run close agents' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
-  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByRole('link', { name: /^Review \d+ items?$/ })).toBeVisible({ timeout: 180_000 });
 
   // A senior accountant rejects one item with a reason, then approves the rest that are within the limit.
   await signInAs(page, 'daniel');
@@ -82,6 +81,72 @@ test('boots offline, runs the agents and takes decisions without any network req
   expect(errors).toEqual([]);
 });
 
+test('B-7, B-2, B-3: run the agents from My close, review in bulk with a confirmation, open the focused proposal with Enter', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
+  await signInAs(page, 'maya');
+
+  // B-7: starting the agents keeps you on My close, which then offers the next step.
+  await page.getByRole('button', { name: 'Run close agents' }).first().click();
+  await expect(page.getByRole('heading', { name: /^Close agents (are working|finished)$/ })).toBeVisible();
+  expect(await page.evaluate(() => window.location.hash)).not.toContain('/runs/');
+  const review = page.getByRole('link', { name: /^Review \d+ items?$/ });
+  await expect(review).toBeVisible({ timeout: 180_000 });
+  await review.click();
+  await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible();
+
+  // B-2: "Select all" leaves out flagged and low-confidence items; approving asks for confirmation with the count and total.
+  await signInAs(page, 'daniel');
+  await go(page, '#/inbox');
+  await expect(page.locator('table.inbox-table')).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Select all' }).check();
+  await expect(page.getByRole('checkbox', { name: /^Select Match .*HALCYON FREIGHT/ })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /^Select Investigate unexplained bank debit/ })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /^Select Accrue Fieldnote Research/ })).toBeChecked();
+  const approve = page.getByRole('button', { name: /^Approve \d+$/ });
+  const count = Number((await approve.innerText()).match(/\d+/)?.[0] ?? '0');
+  expect(count).toBeGreaterThan(0);
+  await approve.click();
+  const confirm = page.getByRole('dialog', { name: `Approve ${count} ${count === 1 ? 'item' : 'items'}?` });
+  await expect(confirm.getByTestId('bulk-summary')).toContainText(`${count} ${count === 1 ? 'item' : 'items'}`);
+  await expect(confirm.getByTestId('bulk-summary')).toContainText(/\$[\d,]+\.\d\d at stake/);
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Clear' }).click();
+
+  // B-3: Enter activates the control that has focus. Focus the second proposal, move the shortcut cursor two
+  // rows on with "j", then press Enter: the focused proposal opens, not the cursor row.
+  const titles = page.locator('table.inbox-table tbody tr td .link-button');
+  const second = titles.nth(1);
+  const wanted = (await second.innerText()).trim();
+  await second.focus();
+  await page.keyboard.press('j');
+  await page.keyboard.press('j');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog').getByRole('heading', { level: 2 }).first()).toHaveText(wanted);
+  await closeDialogs(page);
+
+  // B-1: the balance sheet shows current-year earnings inside equity and foots.
+  await go(page, '#/reports?view=bs');
+  const bs = page.getByRole('region', { name: /Consolidated balance sheet/ });
+  await expect(bs.getByRole('cell', { name: 'Current-year earnings' })).toBeVisible();
+  await expect(bs.getByRole('cell', { name: 'Total liabilities and equity' })).toBeVisible();
+  await expect(bs.getByTestId('bs-footing')).toHaveText('Foots: assets = liabilities + equity');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('BH-C1: an admin adds a person who enrols from their own delivery log; the role waits for the Controller', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
+  await signInAs(page, 'tom');
+  await addPersonAndEnrol(page, { name: 'Rosa Field', email: 'rosa.field@brambleway.example', role: 'Senior Accountant', password: 'quiet-harbour-lantern-42' });
+  await expect(page.getByText('You have no roles yet')).toBeVisible();
+  await signInAs(page, 'hannah');
+  await page.getByRole('link', { name: /Decide 1 access request/ }).click();
+  await page.getByRole('listitem').filter({ hasText: 'Grant Senior Accountant to Rosa Field' }).getByRole('button', { name: 'Approve' }).click();
+  await expect(page.getByRole('status').filter({ hasText: /^Approved: Grant Senior Accountant to Rosa Field/ })).toBeVisible();
+});
+
 test('works at phone width without horizontal scrolling and passes WCAG 2.2 AA checks', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
@@ -115,7 +180,9 @@ test('every screen passes WCAG 2.2 AA checks in light and dark themes', async ({
   await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
   await signInAs(page, 'maya');
   await page.getByRole('button', { name: 'Run close agents' }).first().click();
-  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByRole('link', { name: /^Review \d+ items?$/ })).toBeVisible({ timeout: 180_000 });
+  await page.getByRole('link', { name: 'Open the agent trace' }).click();
+  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible();
   const runHash = await page.evaluate(() => window.location.hash);
   await signInAs(page, 'hannah');
   type Check = (p: Page) => Promise<unknown>;

@@ -618,7 +618,7 @@ const jeReview: SkillEngine = {
     const inp = input(agent);
     await agent.plan(['Test the population of manual, imported and agent entries and vendor payments', 'Raise findings with a recommended resolution', 'Report Benford conformity']);
     const ctx = await agent.call<CloseContext>('close_context', { closeId: inp.closeId });
-    const s = await agent.call<{ population: { entriesTested: number; paymentsTested: number }; findings: ReviewFinding[]; benford: { n: number; mad: number; conformity: string }; accounts: { refundReceivable: string } }>('je_scan_anomalies', { period: inp.period });
+    const s = await agent.call<{ population: { entriesTested: number; paymentsTested: number }; findings: ReviewFinding[]; benford: { n: number; mad: number; conformity: string; population?: string }; accounts: { refundReceivable: string } }>('je_scan_anomalies', { period: inp.period });
     const minSeverity = Number(agent.policy.thresholds.minSeverity ?? 2);
     const rank = { low: 1, medium: 2, high: 3 } as const;
     for (const f of s.findings) {
@@ -688,7 +688,7 @@ const jeReview: SkillEngine = {
         resolution: { type: 'none' },
       });
     }
-    await agent.note(`Benford first-digit test: ${s.benford.conformity} (MAD ${s.benford.mad}, n = ${s.benford.n})`, { benford: s.benford }, 'observation');
+    await agent.note(`Benford first-digit test: ${s.benford.conformity} (MAD ${s.benford.mad}, n = ${s.benford.n}${s.benford.population ? ` ${s.benford.population}` : ''})`, { benford: s.benford }, 'observation');
     return `Reviewed ${s.population.entriesTested} entries and ${s.population.paymentsTested} payments for ${inp.period}: ${s.findings.length} red flag(s). Benford ${s.benford.conformity}. ${tally(agent)}.`;
   },
 };

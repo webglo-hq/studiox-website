@@ -1,7 +1,7 @@
 import { appendAudit } from '../../../audit/audit';
 import type { Tx } from '../../../persistence/db';
 import type { Row } from '../../../persistence/schema';
-import { can, type Principal } from '../../../security/principal';
+import { can, canOn, canSeeEntity, type Principal } from '../../../security/principal';
 import type { DomainContext } from '../../../shared/context';
 import { addMonths } from '../../../shared/dates';
 import { DomainError } from '../../../shared/errors';
@@ -127,6 +127,8 @@ export async function explainLine(tx: Tx, ctx: DomainContext, principal: Princip
   const line = await tx.get('flux_lines', lineId);
   if (!line || line.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'flux line not found');
   const analysis = await tx.get('flux_analyses', line.analysis_id);
+  if (!canSeeEntity(principal, analysis?.entity_id)) throw new DomainError('NOT_FOUND', 'flux line not found');
+  if (!canOn(principal, 'flux.explain', analysis?.entity_id)) throw new DomainError('FORBIDDEN', 'Your role cannot explain variances for this entity.');
   if (analysis?.status === 'approved') throw new DomainError('CONFLICT', 'The flux analysis is already approved.');
   if (line.proposal_id) {
     const p = await tx.get('proposals', line.proposal_id);
@@ -146,7 +148,8 @@ export async function fluxProblems(tx: Tx, analysisId: string): Promise<string[]
 export async function approveFlux(tx: Tx, ctx: DomainContext, principal: Principal, analysisId: string, comment?: string): Promise<Row<'flux_analyses'>> {
   if (!can(principal, 'flux.approve')) throw new DomainError('FORBIDDEN', 'Your role cannot approve the flux analysis.');
   const analysis = await tx.get('flux_analyses', analysisId);
-  if (!analysis || analysis.tenant_id !== ctx.tenantId) throw new DomainError('NOT_FOUND', 'analysis not found');
+  if (!analysis || analysis.tenant_id !== ctx.tenantId || !canSeeEntity(principal, analysis.entity_id)) throw new DomainError('NOT_FOUND', 'analysis not found');
+  if (!canOn(principal, 'flux.approve', analysis.entity_id)) throw new DomainError('FORBIDDEN', analysis.entity_id ? 'Your role cannot approve the flux analysis of this entity.' : 'The consolidated flux analysis covers every entity; your approval rights cover only some.');
   if (analysis.status === 'approved') return analysis;
   const problems = await fluxProblems(tx, analysisId);
   if (problems.length) throw new DomainError('CONFLICT', problems.join(' '), { problems });

@@ -190,6 +190,18 @@ export const storage = {
 
 // ------------------------------------------------------------------ keyboard shortcuts
 
+const INTERACTIVE = 'button, a[href], input, select, textarea, summary, [contenteditable="true"], [role="button"], [role="link"], [role="checkbox"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"]';
+
+/**
+ * True when the key belongs to the focused control rather than to a page shortcut: Enter and Space activate
+ * whatever has focus (a button, a link, a checkbox), so a shortcut must never act on some other item instead.
+ */
+export function keyBelongsToFocusedControl(key: string, target: EventTarget | null): boolean {
+  if (key !== 'Enter' && key !== ' ') return false;
+  const el = target as (Element & { closest?: (s: string) => Element | null }) | null;
+  return !!el?.closest?.(INTERACTIVE);
+}
+
 export function useHotkeys(map: Record<string, (e: KeyboardEvent) => void>, enabled = true): void {
   const ref = useRef(map);
   ref.current = map;
@@ -201,6 +213,7 @@ export function useHotkeys(map: Record<string, (e: KeyboardEvent) => void>, enab
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keyBelongsToFocusedControl(e.key, t)) return;
       const key = prefix ? `${prefix} ${e.key}` : e.key;
       if (ref.current[key]) {
         e.preventDefault();

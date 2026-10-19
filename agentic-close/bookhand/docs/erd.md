@@ -1,8 +1,8 @@
 # Bookhand data model (ERD)
 
-Generated from `src/persistence/schema` by `scripts/gen-erd.ts`; do not edit by hand. 75 tables in 16 areas. Every business table is scoped by `tenant_id`; the tenant edges are omitted from the diagrams for readability.
+Generated from `src/persistence/schema` by `scripts/gen-erd.ts`; do not edit by hand. 78 tables in 16 areas. Every business table is scoped by `tenant_id`; the tenant edges are omitted from the diagrams for readability.
 
-Invariants enforced by the database itself (`db/migrations/0002_invariants.sql`, mirrored by the in-memory adapter): balanced, immutable posted journals; posting only into open periods; reversal-only corrections; append-only audit, approvals, sign-offs, skill versions and agent traces; a hash-chained audit log; maker-checker on human approvals.
+Invariants enforced by the database itself (`db/migrations/0002_invariants.sql` and `0003_review_invariants.sql`, mirrored by the in-memory adapter): balanced, immutable posted journals whose lines can be neither added, changed, moved in nor moved out; posting only into open periods, with the period row locked while posting; reversal-only corrections; append-only audit, approvals, sign-offs, skill versions and agent traces; a hash-chained audit log whose every shown column must equal the hashed record; maker-checker on human approvals; nobody approves the output of an agent run they started.
 
 ## Tenancy & security
 
@@ -134,6 +134,50 @@ erDiagram
     jsonb response
     timestamptz created_at
   }
+  access_requests {
+    uuid id PK
+    uuid tenant_id FK
+    enum kind
+    uuid target_user_id FK
+    uuid sod_rule_id FK
+    jsonb payload
+    text summary
+    text reason
+    enum status
+    uuid requested_by FK
+    timestamptz requested_at
+    uuid decided_by FK
+    timestamptz decided_at
+    text decision_reason
+  }
+  credential_tokens {
+    uuid id PK
+    uuid tenant_id FK
+    uuid user_id FK
+    enum purpose
+    text token_hash UK
+    uuid created_by FK
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz used_at
+    timestamptz revoked_at
+  }
+  outbox_messages {
+    uuid id PK
+    uuid tenant_id FK
+    uuid to_user_id FK
+    text to_email
+    enum kind
+    text subject
+    text body
+    text link
+    text transport
+    enum status
+    timestamptz created_at
+    timestamptz delivered_at
+    int opened_count
+    timestamptz last_opened_at
+  }
   entities |o--o{ entities : "parent_entity_id"
   users ||--o{ user_roles : "user_id"
   roles ||--o{ user_roles : "role_id"
@@ -143,6 +187,13 @@ erDiagram
   sessions |o--o{ sessions : "rotated_from_id"
   users ||--o{ api_tokens : "user_id"
   users |o--o{ sod_rules : "updated_by"
+  users |o--o{ access_requests : "target_user_id"
+  sod_rules |o--o{ access_requests : "sod_rule_id"
+  users ||--o{ access_requests : "requested_by"
+  users |o--o{ access_requests : "decided_by"
+  users ||--o{ credential_tokens : "user_id"
+  users |o--o{ credential_tokens : "created_by"
+  users |o--o{ outbox_messages : "to_user_id"
 ```
 
 | Table | Ontology class | Notes |
@@ -157,6 +208,9 @@ erDiagram
 | `sod_rules` | `bh:SegregationOfDutiesRule` | Segregation-of-duties rule enforced by the runtime and checked by the JE review skill. |
 | `holidays` |  | Company holidays added to the bank-holiday calendar for workday math. |
 | `idempotency_keys` |  | Stored responses for retried mutating requests (Idempotency-Key header). |
+| `access_requests` | `bh:AccessRequest` | A change to access or controls held for a second person: a role grant that carries approval authority, or a segregation-of-duties rule change. Applied only when someone other than the requester and the grantee approves it. |
+| `credential_tokens` | `bh:CredentialLink` | Single-use, expiring enrolment or password-reset link for one person; only its hash is stored and nobody but the addressee receives it. |
+| `outbox_messages` | `bh:OutboxMessage` | Messages Bookhand sends people (enrolment and reset links, lockout notices), queued for the configured transport; a demo organization reads them in its delivery log. |
 
 ## Audit
 

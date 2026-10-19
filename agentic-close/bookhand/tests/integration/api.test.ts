@@ -214,8 +214,11 @@ describe('API kernel: authentication, CSRF, RBAC and errors', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 9; i++) statuses.push((await c.call('POST', '/api/auth/login', { email: email('priya'), password: `wrong-${i}` })).status);
     expect(statuses).toContain(429);
+    // The account is locked: even the right password is refused, with the same answer as a wrong one (SEC-1), so
+    // the response does not tell a guesser that the account exists.
     const fresh = new Client(kernel, '10.0.0.11');
     const locked = await fresh.call('POST', '/api/auth/login', { email: email('priya'), password: 'bookhand-demo' });
-    expect(locked.status).toBe(429);
+    expect(locked.status).toBe(401);
+    expect((locked.body as { error: { message: string } }).error.message).toBe('Email or password is incorrect.');
   });
 });

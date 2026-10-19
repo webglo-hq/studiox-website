@@ -111,11 +111,22 @@ function comment(spec: TableSpec): string {
   return `COMMENT ON TABLE ${q(spec.name)} IS ${literal(spec.description)};`;
 }
 
-/** The complete initial schema migration. Deterministic: same schema -> same bytes. */
-export function generateSchemaSql(): string {
-  const specs = TABLE_NAMES.map((n: TableName) => schema[n] as unknown as TableSpec);
+/**
+ * Migrations generated from the schema DSL. A table belongs to the migration named by its `migration` option
+ * (default 0001); hand-written migrations (triggers, data fixes) sit between them in version order.
+ */
+export const GENERATED_MIGRATIONS: ReadonlyArray<{ version: string; name: string }> = [
+  { version: '0001', name: 'schema' },
+  { version: '0004', name: 'access_control' },
+];
+
+/** A generated migration (by default the initial schema). Deterministic: same schema -> same bytes. */
+export function generateSchemaSql(version = '0001'): string {
+  const migration = GENERATED_MIGRATIONS.find((m) => m.version === version);
+  if (!migration) throw new Error(`no generated migration ${version}`);
+  const specs = TABLE_NAMES.map((n: TableName) => schema[n] as unknown as TableSpec).filter((s) => (s.migration ?? '0001') === version);
   const parts: string[] = [
-    '-- 0001_schema.sql',
+    `-- ${version}_${migration.name}.sql`,
     '-- GENERATED from src/persistence/schema by `npm run db:generate`. Do not edit by hand:',
     '-- tests/unit/ddl.test.ts fails if this file drifts from the schema.',
     '',

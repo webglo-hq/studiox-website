@@ -10,6 +10,9 @@ import { PeriodKey, periodOf, type Tool, type X } from './common';
 
 /** Journal-entry review, flux analysis and close orchestration. */
 
+/** Entries whose amounts are computed, not incurred, so they do not belong in a Benford population. */
+const BENFORD_EXCLUDED_TYPES = ['reversing', 'elimination', 'revaluation', 'depreciation', 'amortization', 'opening'] as const;
+
 export const reviewTools: Tool[] = [
   {
     name: 'je_scan_anomalies',
@@ -48,6 +51,7 @@ export const reviewTools: Tool[] = [
             externalPreparedBy: j.external_prepared_by,
             externalApprovedBy: j.external_approved_by,
             preparedByRunId: j.prepared_by_run_id,
+            currency: e.functional_currency,
           });
         }
         const lookbackStart = (() => {
@@ -66,6 +70,7 @@ export const reviewTools: Tool[] = [
             date: pay.payment_date,
             amount: pay.amount_minor,
             reference: pay.reference,
+            currency: pay.currency,
             bills: bills.map((b) => {
               const bl = billLines.find((l) => l.bill_id === b.id);
               return { id: b.id, billNumber: b.bill_number, amount: b.amount_minor, billDate: b.bill_date, accountNumber: bl ? lookups.accountsById.get(bl.account_id)?.number : undefined, departmentCode: bl?.department_id ? (lookups.departments.get(bl.department_id)?.code ?? null) : null, entity: e.code };
@@ -76,12 +81,23 @@ export const reviewTools: Tool[] = [
       const roles = await x.tx.find('roles', {});
       const limits = [...new Set(roles.map((r) => r.approval_limit_minor).filter((l): l is number => !!l && l > 0))];
       const findings = [...detectDuplicatePayments(payments).filter((f) => payments.find((p) => p.id === f.subjectIds[1])?.date.slice(0, 7) === input.period), ...reviewEntries(entries, { calendar: x.pack.calendar, roundAmountMinMinor: 1_000_000, approvalLimits: limits })];
-      const allLines = await x.tx.sumLines({ tenantId: x.ctx.tenantId, periodIds: lookups.operatingEntities().map((e) => periodOf(x, e.id, input.period).id), groupBy: ['account_id'] });
+      // Benford's law describes a population of individual amounts, not a few dozen account totals: test every posted
+      // line of the twelve months ending with this period (mechanical entries such as depreciation, reversals and
+      // eliminations left out); below the sample floor the result is "insufficient".
+      const amounts: number[] = [];
+      for (const e of lookups.operatingEntities()) {
+        const end = periodOf(x, e.id, input.period);
+        const periodIds = Array.from({ length: 12 }, (_, k) => addMonths(end.fiscal_year, end.period_number, -k))
+          .map((m) => lookups.period(e.id, m.year, m.month)?.id)
+          .filter((id): id is string => !!id);
+        const posted = new Set((await x.tx.find('journal_entries', { entity_id: e.id, period_id: { in: periodIds }, status: 'posted', entry_type: { notIn: BENFORD_EXCLUDED_TYPES } })).map((j) => j.id));
+        for (const l of await x.tx.find('journal_lines', { entity_id: e.id, period_id: { in: periodIds } })) if (posted.has(l.journal_entry_id)) amounts.push(Math.max(l.debit_minor, l.credit_minor));
+      }
       return {
         period: input.period,
         population: { entriesTested: entries.length, paymentsTested: payments.length },
         findings: findings.map((f) => ({ ...f, payments: f.kind === 'duplicate_payment' ? payments.filter((p) => f.subjectIds.includes(p.id)) : undefined, entry: f.kind !== 'duplicate_payment' ? entries.find((e) => e.id === f.subjectIds[0]) : undefined })),
-        benford: benford(allLines.map((l) => Math.max(l.debit_minor, l.credit_minor))),
+        benford: { ...benford(amounts), population: 'posted journal lines, trailing 12 months' },
         accounts: { refundReceivable: lookups.accountsBySubtype('bh:OtherReceivable')[0]?.number ?? '' },
       };
     },

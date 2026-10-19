@@ -1,7 +1,9 @@
 import { ArrowLeft, Check, FileText, Printer, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
+import { footBalanceSheet } from '../../packs/accounting/domain/footing';
 import { date, money, pct, recTypeLabel } from '../lib/format';
 import { navigate, useAction, useApi } from '../lib/hooks';
+import { BalanceSheetTable } from '../components/BalanceSheet';
 import { Badge, Empty, ErrorBox, Skeleton, StatusBadge, Term } from '../components/ui';
 
 interface StatementLine {
@@ -38,7 +40,8 @@ interface PackageData {
   canApprove: boolean;
 }
 
-function Statement({ title, sections, currency }: { title: string; sections: Array<{ name: string; lines: StatementLine[]; total: number }>; currency: string }) {
+/** The income statement as printed: sections and their totals, ending with net income. */
+function Statement({ title, sections, currency, bottomLine }: { title: string; sections: Array<{ name: string; lines: StatementLine[]; total: number }>; currency: string; bottomLine: { label: string; amount: number } }) {
   return (
     <div className="card table-wrap">
       <div className="card-head">
@@ -58,13 +61,15 @@ function Statement({ title, sections, currency }: { title: string; sections: Arr
                 <td className="num">{money(l.amount, currency, { cents: false })}</td>
               </tr>
             )),
-            <tr key={`${s.name}-t`}>
-              <td style={{ fontWeight: 600 }}>Total {s.name.toLowerCase()}</td>
-              <td className="num" style={{ fontWeight: 600 }}>
-                {money(s.total, currency, { cents: false })}
-              </td>
+            <tr key={`${s.name}-t`} className="total-row">
+              <td>Total {s.name.toLowerCase()}</td>
+              <td className="num">{money(s.total, currency, { cents: false })}</td>
             </tr>,
           ])}
+          <tr className="total-row grand-row">
+            <td>{bottomLine.label}</td>
+            <td className="num">{money(bottomLine.amount, currency, { cents: false })}</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -78,6 +83,8 @@ export function PackageScreen({ closeId }: { closeId: string }) {
   if (!data) return <Skeleton rows={10} />;
   const p = data.latest?.content;
   const cur = p?.reportingCurrency ?? 'USD';
+  // Re-foot what is shown: a package generated before current-year earnings sat inside equity says so loudly.
+  const foots = p ? footBalanceSheet(p.statements.balanceSheet.sections).foots : true;
   return (
     <div className="stack package" style={{ gap: 16 }}>
       <a href={`#/close/${closeId}`} className="small row no-print">
@@ -148,7 +155,7 @@ export function PackageScreen({ closeId }: { closeId: string }) {
             <div className="card stat">
               <div className="label">Total assets</div>
               <div className="value">{money(p.statements.balanceSheet.totalAssets, cur, { compact: true })}</div>
-              <div className="delta">{p.statements.balanceSheet.balances ? 'Balance sheet balances' : 'DOES NOT BALANCE'}</div>
+              <div className={`delta${foots ? '' : ' neg'}`}>{foots ? 'Balance sheet foots' : 'BALANCE SHEET DOES NOT FOOT'}</div>
             </div>
             <div className="card stat">
               <div className="label">Agent work</div>
@@ -159,8 +166,8 @@ export function PackageScreen({ closeId }: { closeId: string }) {
             </div>
           </section>
           <div className="grid grid-2">
-            <Statement title="Consolidated balance sheet" sections={p.statements.balanceSheet.sections} currency={cur} />
-            <Statement title="Consolidated income statement (month)" sections={p.statements.incomeStatement.sections} currency={cur} />
+            <BalanceSheetTable title="Consolidated balance sheet" sections={p.statements.balanceSheet.sections} currency={cur} heading="h3" />
+            <Statement title="Consolidated income statement (month)" sections={p.statements.incomeStatement.sections} currency={cur} bottomLine={{ label: 'Net income', amount: p.statements.incomeStatement.netIncome }} />
           </div>
           <section className="card table-wrap">
             <div className="card-head">

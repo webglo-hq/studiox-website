@@ -3,10 +3,10 @@ import type { Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import { reviewTask, signOffProblems } from '../../packs/accounting/domain/close';
 import { createEntry, type EntryDraft, errorsOf, postEntry, reverseEntry, verifyDraft } from '../../packs/accounting/domain/ledger';
-import { balanceSheet, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../../packs/accounting/domain/reporting';
+import { balanceSheet, checkTrialBalance, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../../packs/accounting/domain/reporting';
 import { approveFlux, explainLine } from '../../packs/accounting/services/flux';
 import { closeOntology } from '../../packs/accounting/ontology';
-import { can, requirePermission, withinLimit, type Principal } from '../../security/principal';
+import { can, canOn, canSeeEntity, entityScope, requireAllEntities, requirePermission, requirePermissionOn, withinLimit, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
 import { formatMoney } from '../../shared/money';
 import type { App, RequestMeta } from '../app';
@@ -18,9 +18,10 @@ export async function listEntries(app: App, p: Principal, f: { entity?: string; 
   requirePermission(p, 'je.view');
   return app.read(async (tx) => {
     const lookups = await app.lookups(tx, p.tenantId);
-    const where: Where<'journal_entries'> = { tenant_id: p.tenantId };
+    const scope = entityScope(p);
+    const where: Where<'journal_entries'> = { tenant_id: p.tenantId, ...(scope ? { entity_id: scope } : {}) };
     const entity = f.entity ? lookups.entity(f.entity) : undefined;
-    if (entity) where.entity_id = entity.id;
+    if (entity) where.entity_id = canSeeEntity(p, entity.id) ? entity.id : { in: [] };
     if (f.period && entity) {
       const [y, m] = f.period.split('-').map(Number);
       const per = lookups.period(entity.id, y!, m!);
@@ -72,7 +73,7 @@ export async function entryDetail(app: App, p: Principal, id: string) {
   requirePermission(p, 'je.view');
   return app.read(async (tx) => {
     const e = await tx.get('journal_entries', id);
-    if (!e || e.tenant_id !== p.tenantId) app.notFound('Journal entry');
+    if (!e || e.tenant_id !== p.tenantId || !canSeeEntity(p, e.entity_id)) app.notFound('Journal entry');
     const lookups = await app.lookups(tx, p.tenantId);
     const lines = await tx.find('journal_lines', { journal_entry_id: id }, { orderBy: [['line_number', 'asc']] });
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u.display_name]));
@@ -131,8 +132,8 @@ export async function entryDetail(app: App, p: Principal, id: string) {
       provenance: { document: doc ? { id: doc.id, filename: doc.filename, sha256: doc.sha256, uploadedAt: doc.uploaded_at } : null, batch: batch ? { id: batch.id, format: batch.format, status: batch.status } : null, locator: e.source_locator },
       proposal: proposal ? { id: proposal.id, title: proposal.title, status: proposal.status } : null,
       checks: checks.map((c) => ({ axiom: c.axiom, severity: c.severity, message: c.message })),
-      canApprove: e.status === 'pending_approval' && can(p, 'je.approve') && e.prepared_by !== p.user.id && withinLimit(p, e.total_minor),
-      canReverse: e.status === 'posted' && can(p, 'je.reverse') && !reversedBy && e.entry_type !== 'opening',
+      canApprove: e.status === 'pending_approval' && canOn(p, 'je.approve', e.entity_id) && e.prepared_by !== p.user.id && withinLimit(p, e.total_minor, e.entity_id),
+      canReverse: e.status === 'posted' && canOn(p, 'je.reverse', e.entity_id) && !reversedBy && e.entry_type !== 'opening',
     };
   });
 }
@@ -141,7 +142,10 @@ export async function prepareEntry(app: App, p: Principal, draft: EntryDraft, me
   requirePermission(p, 'je.prepare', 'prepare journal entries');
   return app.tx(async (tx) => {
     const ctx = app.ctx(p, meta);
-    const { entry, warnings } = await createEntry(tx, ctx, await app.lookups(tx, p.tenantId), draft, { status: 'pending_approval', source: 'manual', preparedBy: p.user.id });
+    const lookups = await app.lookups(tx, p.tenantId);
+    const target = lookups.entity(String(draft.entity ?? ''));
+    if (target) requirePermissionOn(p, 'je.prepare', target.id, 'prepare journal entries');
+    const { entry, warnings } = await createEntry(tx, ctx, lookups, draft, { status: 'pending_approval', source: 'manual', preparedBy: p.user.id });
     await appendAudit(tx, p.tenantId, ctx.actor, { action: 'journal_entry.prepare', objectType: 'journal_entry', objectId: entry.id, summary: `Prepared ${entry.entry_number} ${formatMoney(entry.total_minor)}: ${entry.description}` }, ctx.clock.now());
     return { entry, warnings };
   });
@@ -150,7 +154,10 @@ export async function prepareEntry(app: App, p: Principal, draft: EntryDraft, me
 export async function previewEntry(app: App, p: Principal, draft: EntryDraft) {
   requirePermission(p, 'je.view');
   return app.read(async (tx) => {
-    const { violations } = verifyDraft(await app.lookups(tx, p.tenantId), draft);
+    const lookups = await app.lookups(tx, p.tenantId);
+    const target = lookups.entity(String(draft.entity ?? ''));
+    if (target && !canSeeEntity(p, target.id)) app.notFound('Entity');
+    const { violations } = verifyDraft(lookups, draft);
     return { ok: errorsOf(violations).length === 0, checks: violations };
   });
 }
@@ -159,8 +166,9 @@ export async function approveEntry(app: App, p: Principal, id: string, meta: Req
   requirePermission(p, 'je.approve', 'approve journal entries');
   return app.tx(async (tx) => {
     const e = await tx.get('journal_entries', id);
-    if (!e || e.tenant_id !== p.tenantId) app.notFound('Journal entry');
-    if (!withinLimit(p, e.total_minor)) throw new DomainError('FORBIDDEN', `${formatMoney(e.total_minor)} is above your approval limit.`);
+    if (!e || e.tenant_id !== p.tenantId || !canSeeEntity(p, e.entity_id)) app.notFound('Journal entry');
+    requirePermissionOn(p, 'je.approve', e.entity_id, 'approve journal entries');
+    if (!withinLimit(p, e.total_minor, e.entity_id)) throw new DomainError('FORBIDDEN', `${formatMoney(e.total_minor)} is above your approval limit.`);
     const ctx = app.ctx(p, meta);
     const posted = await postEntry(tx, ctx, id, { basis: 'human_approval', approvedBy: p.user.id, postedBy: p.user.id });
     await appendAudit(tx, p.tenantId, ctx.actor, { action: 'journal_entry.approve', objectType: 'journal_entry', objectId: id, summary: `Approved and posted ${posted.entry_number}` }, ctx.clock.now());
@@ -173,7 +181,8 @@ export async function rejectEntry(app: App, p: Principal, id: string, reason: st
   if (!reason || reason.trim().length < 3) throw new DomainError('VALIDATION', 'Give a reason.');
   return app.tx(async (tx) => {
     const e = await tx.get('journal_entries', id);
-    if (!e || e.tenant_id !== p.tenantId) app.notFound('Journal entry');
+    if (!e || e.tenant_id !== p.tenantId || !canSeeEntity(p, e.entity_id)) app.notFound('Journal entry');
+    requirePermissionOn(p, 'je.approve', e.entity_id, 'reject journal entries');
     if (e.status !== 'pending_approval' && e.status !== 'draft') throw new DomainError('CONFLICT', 'Only unposted entries can be rejected.');
     const updated = await tx.update('journal_entries', id, { status: 'rejected' });
     await appendAudit(tx, p.tenantId, app.actorOf(p, meta), { action: 'journal_entry.reject', objectType: 'journal_entry', objectId: id, summary: `Rejected ${e.entry_number}: ${reason.trim()}` }, app.clock.now());
@@ -187,13 +196,20 @@ export async function reverse(app: App, p: Principal, id: string, reason: string
   if (!reason || reason.trim().length < 5) throw new DomainError('VALIDATION', 'Say why you are reversing it.');
   return app.tx(async (tx) => {
     const e = await tx.get('journal_entries', id);
-    if (!e || e.tenant_id !== p.tenantId) app.notFound('Journal entry');
-    if (!withinLimit(p, e.total_minor)) throw new DomainError('FORBIDDEN', `${formatMoney(e.total_minor)} is above your approval limit.`);
+    if (!e || e.tenant_id !== p.tenantId || !canSeeEntity(p, e.entity_id)) app.notFound('Journal entry');
+    requirePermissionOn(p, 'je.reverse', e.entity_id, 'reverse journal entries');
+    if (!withinLimit(p, e.total_minor, e.entity_id)) throw new DomainError('FORBIDDEN', `${formatMoney(e.total_minor)} is above your approval limit.`);
     return reverseEntry(tx, app.ctx(p, meta), await app.lookups(tx, p.tenantId), id, { reason: reason.trim(), basis: { basis: 'human_approval', approvedBy: p.user.id, postedBy: p.user.id } });
   });
 }
 
 // ------------------------------------------------------------------ reports
+
+/** The trial-balance axioms (AX-TB-01, AX-TB-02, AX-NB-01) evaluated on a balance-mode trial balance. */
+function tbChecks(tb: Parameters<typeof checkTrialBalance>[0]) {
+  if (tb.mode !== 'balance') return null;
+  return checkTrialBalance(tb).map((v) => ({ axiom: v.axiom, severity: v.severity, message: v.message }));
+}
 
 async function periodFor(app: App, p: Principal, periodKey?: string) {
   if (periodKey) {
@@ -212,14 +228,16 @@ export async function trialBalance(app: App, p: Principal, q: { entity?: string;
     const lookups = await app.lookups(tx, p.tenantId);
     const tenant = (await tx.get('tenants', p.tenantId))!;
     if (!q.entity || q.entity === 'consolidated') {
+      requireAllEntities(p, 'The consolidated trial balance');
       const tb = await consolidatedTrialBalance(tx, lookups, year, month, tenant.reporting_currency, q.mode ?? 'balance');
-      return { ...tb, byColumn: tb.byColumn, period: `${year}-${String(month).padStart(2, '0')}` };
+      return { ...tb, byColumn: tb.byColumn, period: `${year}-${String(month).padStart(2, '0')}`, checks: tbChecks(tb) };
     }
     const e = lookups.entity(q.entity);
-    if (!e) app.notFound('Entity');
+    if (!e || !canSeeEntity(p, e.id)) app.notFound('Entity');
     const per = lookups.period(e.id, year, month);
     if (!per) app.notFound('Period');
-    return { ...(await entityTrialBalance(tx, lookups, e.id, per.id, q.mode ?? 'balance')), period: `${year}-${String(month).padStart(2, '0')}` };
+    const tb = await entityTrialBalance(tx, lookups, e.id, per.id, q.mode ?? 'balance');
+    return { ...tb, period: `${year}-${String(month).padStart(2, '0')}`, checks: tbChecks(tb) };
   });
 }
 
@@ -230,12 +248,13 @@ export async function statements(app: App, p: Principal, q: { entity?: string; p
     const lookups = await app.lookups(tx, p.tenantId);
     const tenant = (await tx.get('tenants', p.tenantId))!;
     if (!q.entity || q.entity === 'consolidated') {
+      requireAllEntities(p, 'The consolidated statements');
       const bal = await consolidatedTrialBalance(tx, lookups, year, month, tenant.reporting_currency, 'balance');
       const act = await consolidatedTrialBalance(tx, lookups, year, month, tenant.reporting_currency, 'activity');
       return { balanceSheet: balanceSheet(bal), incomeStatement: incomeStatement(act), incomeStatementYtd: incomeStatement(bal), currency: tenant.reporting_currency, period: `${year}-${String(month).padStart(2, '0')}`, label: 'Consolidated', columns: bal.columns };
     }
     const e = lookups.entity(q.entity);
-    if (!e) app.notFound('Entity');
+    if (!e || !canSeeEntity(p, e.id)) app.notFound('Entity');
     const per = lookups.period(e.id, year, month)!;
     const bal = await entityTrialBalance(tx, lookups, e.id, per.id, 'balance');
     const act = await entityTrialBalance(tx, lookups, e.id, per.id, 'activity');
@@ -251,7 +270,7 @@ export async function accountActivity(app: App, p: Principal, q: { account: stri
     const lookups = await app.lookups(tx, p.tenantId);
     const a = lookups.account(q.account);
     if (!a) app.notFound('Account');
-    const entities = q.entity && q.entity !== 'consolidated' ? [lookups.entity(q.entity)!].filter(Boolean) : [...lookups.entitiesById.values()];
+    const entities = (q.entity && q.entity !== 'consolidated' ? [lookups.entity(q.entity)!].filter(Boolean) : [...lookups.entitiesById.values()]).filter((e) => canSeeEntity(p, e.id));
     const out = [];
     for (const e of entities) {
       const per = lookups.period(e.id, year, month);
@@ -277,7 +296,8 @@ export async function fluxView(app: App, p: Principal, closeId?: string) {
   const close = closeId ? await app.read((tx) => tx.get('closes', closeId)) : await currentClose(app, p.tenantId);
   if (!close || close.tenant_id !== p.tenantId) app.notFound('Close');
   return app.read(async (tx) => {
-    const analyses = await tx.find('flux_analyses', { close_id: close.id });
+    // A consolidated analysis (no entity) covers every entity; an entity's budget analysis covers that entity.
+    const analyses = (await tx.find('flux_analyses', { close_id: close.id })).filter((a) => canSeeEntity(p, a.entity_id));
     const users = new Map((await tx.find('users', { tenant_id: p.tenantId })).map((u) => [u.id, u.display_name]));
     const accounts = new Map((await tx.find('accounts', { tenant_id: p.tenantId })).map((a) => [a.id, a]));
     const out = [];
@@ -292,7 +312,7 @@ export async function fluxView(app: App, p: Principal, closeId?: string) {
         thresholdMinor: a.threshold_minor,
         approvedBy: a.approved_by ? users.get(a.approved_by) ?? null : null,
         approvedAt: a.approved_at,
-        canApprove: can(p, 'flux.approve') && a.status !== 'approved' && material.every((l) => l.explanation_status === 'accepted') && !material.some((l) => l.explained_by === p.user.id),
+        canApprove: canOn(p, 'flux.approve', a.entity_id) && a.status !== 'approved' && material.every((l) => l.explanation_status === 'accepted') && !material.some((l) => l.explained_by === p.user.id),
         lines: lines
           .map((l) => {
             const acct = accounts.get(l.account_id)!;
@@ -315,7 +335,7 @@ export async function approveFluxAnalysis(app: App, p: Principal, analysisId: st
     const analysis = await approveFlux(tx, ctx, p, analysisId, comment);
     // The Controller's approval is also the flux task's sign-off: one decision, recorded once on each object.
     const task = await tx.findOne('close_tasks', { close_id: analysis.close_id, key: 'flux' });
-    if (task?.status === 'ready_for_review' && can(p, 'close.task.review') && task.completed_by !== p.user.id && !(await signOffProblems(tx, task)).length) {
+    if (task?.status === 'ready_for_review' && canOn(p, 'close.task.review', task.entity_id) && task.completed_by !== p.user.id && !(await signOffProblems(tx, task)).length) {
       await reviewTask(tx, ctx, task.id, 'approve', 'Signed off with the flux analysis approval');
     }
     return analysis;

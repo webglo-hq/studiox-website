@@ -2,12 +2,14 @@
 
 export function money(minor: number | null | undefined, currency = 'USD', opts: { signed?: boolean; cents?: boolean; compact?: boolean } = {}): string {
   if (minor === null || minor === undefined || Number.isNaN(minor)) return '—';
-  const value = minor / 100;
+  const digits = opts.compact ? 1 : opts.cents === false ? 0 : 2;
+  // An amount that rounds to zero at the shown precision is zero: never "-$0" or "-$0.00".
+  const value = Math.abs(minor / 100) < 0.5 / 10 ** digits ? 0 : minor / 100;
   const fmt = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    minimumFractionDigits: opts.compact ? 0 : opts.cents === false ? 0 : 2,
-    maximumFractionDigits: opts.compact ? 1 : opts.cents === false ? 0 : 2,
+    minimumFractionDigits: opts.compact ? 0 : digits,
+    maximumFractionDigits: digits,
     notation: opts.compact ? 'compact' : 'standard',
     signDisplay: opts.signed ? 'exceptZero' : 'auto',
   });

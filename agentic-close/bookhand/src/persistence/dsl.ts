@@ -2,7 +2,7 @@
  * Schema DSL. One declarative description of every table drives:
  *   1. TypeScript row/insert types (inferred),
  *   2. the in-memory adapter's constraint engine (PK, unique, FK, enum, check),
- *   3. the generated Postgres DDL (db/migrations/0001_schema.sql), and
+ *   3. the generated Postgres DDL (db/migrations/0001_schema.sql, and later generated migrations), and
  *   4. the parity test that proves both adapters enforce the same rules.
  * Business invariants that need procedural logic (balanced posting, immutability, period locks,
  * audit hash chain) live in triggers (SQL) and guards (memory) - see invariants.ts.
@@ -151,6 +151,11 @@ export interface TableOptions {
   appendOnly?: boolean;
   /** Logical area for docs/ERD grouping. */
   area: string;
+  /**
+   * Version of the generated migration that creates the table (default "0001"). Applied migrations never
+   * change, so a table added later is generated into its own migration file (see ddl.ts GENERATED_MIGRATIONS).
+   */
+  migration?: string;
 }
 
 export interface TableSpec<Cols extends Columns = Columns> extends TableOptions {

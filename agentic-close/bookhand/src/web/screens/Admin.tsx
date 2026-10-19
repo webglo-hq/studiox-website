@@ -1,9 +1,16 @@
-import { Copy, KeyRound, Lock, Plus, ShieldCheck, UserX, Users } from 'lucide-react';
+import { KeyRound, Lock, Plus, ShieldCheck, UserX, Users } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { ago, date, money } from '../lib/format';
 import { useAction, useApi, useCan, useMe } from '../lib/hooks';
-import { Avatar, Badge, Empty, ErrorBox, Modal, Skeleton, Tabs, Term } from '../components/ui';
+import { Avatar, Badge, Empty, ErrorBox, Modal, ReasonDialog, Skeleton, Tabs, Term } from '../components/ui';
+
+interface Grant {
+  key: string | undefined;
+  name: string | undefined;
+  entityId: string | null;
+  entity: string | null;
+}
 
 interface AdminUser {
   id: string;
@@ -16,7 +23,9 @@ interface AdminUser {
   lastLoginAt: string | null;
   lockedUntil: string | null;
   provider: string | null;
-  roles: Array<{ key: string | undefined; name: string | undefined; entityId: string | null }>;
+  enrolled: boolean;
+  roles: Grant[];
+  pendingGrant: { id: string; summary: string } | null;
   activeSessions: number;
 }
 
@@ -27,13 +36,18 @@ interface RoleInfo {
   approvalLimit: number | null;
   readOnly: boolean;
   permissions: string[];
+  needsApproval: boolean;
+  entityScopable: boolean;
 }
 
 interface UsersData {
   users: AdminUser[];
   roles: RoleInfo[];
+  entities: Array<{ id: string; code: string; name: string }>;
   permissions: Array<{ key: string; description: string }>;
   canManage: boolean;
+  canApproveAccess: boolean;
+  pendingRequests: number;
 }
 
 interface SodRule {
@@ -47,6 +61,7 @@ interface SodRule {
   enabled: boolean;
   version: number;
   updatedAt: string;
+  pendingChange: { id: string; summary: string } | null;
 }
 
 interface SessionRow {
@@ -61,27 +76,46 @@ interface SessionRow {
   userAgent: string | null;
 }
 
-type Tab = 'people' | 'roles' | 'sod' | 'sessions';
+interface AccessRequest {
+  id: string;
+  kind: 'role_grant' | 'sod_rule_change';
+  summary: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'superseded';
+  requestedBy: string;
+  requestedAt: string;
+  target: { id: string; name: string; email: string; enrolled: boolean; enrolmentLinkOpenedAt: string | null } | null;
+  rule: { code: string; name: string } | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  canDecide: boolean;
+  blocks: string[];
+}
 
-export function AdminScreen() {
+type Tab = 'people' | 'access' | 'roles' | 'sod' | 'sessions';
+
+export function AdminScreen({ initialTab }: { initialTab?: string | null }) {
   const can = useCan();
-  const [tab, setTab] = useState<Tab>('people');
   const tabs: Array<{ id: Tab; label: string }> = [
-    { id: 'people', label: 'People' },
+    ...(can('admin.users') || can('audit.view') ? [{ id: 'people' as Tab, label: 'People' }] : []),
+    ...(can('admin.users') || can('access.approve') ? [{ id: 'access' as Tab, label: 'Access requests' }] : []),
     { id: 'roles', label: 'Roles and permissions' },
     { id: 'sod', label: 'Segregation of duties' },
     ...(can('admin.sessions') ? [{ id: 'sessions' as Tab, label: 'Sessions' }] : []),
   ];
+  const [tab, setTab] = useState<Tab>(tabs.find((t) => t.id === initialTab)?.id ?? tabs[0]!.id);
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div className="page-head">
         <div>
           <h1>Administration</h1>
-          <div className="sub">People, roles, controls and sessions. Admins manage access but hold no financial approval rights.</div>
+          <div className="sub">People, roles, controls and sessions. Admins manage access but hold no financial approval rights, and nobody grants approval authority or changes a control alone.</div>
         </div>
       </div>
       <Tabs<Tab> label="Administration sections" value={tab} onChange={setTab} tabs={tabs} />
       {tab === 'people' && <People />}
+      {tab === 'access' && <AccessRequests />}
       {tab === 'roles' && <Roles />}
       {tab === 'sod' && <SodRules />}
       {tab === 'sessions' && <Sessions />}
@@ -89,36 +123,61 @@ export function AdminScreen() {
   );
 }
 
-function SecretOnce({ title, email, secret, onClose }: { title: string; email?: string; secret: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
+/** Role and entity choices for one person: each chosen role covers every entity or just one. */
+function GrantPicker({ data, value, onChange }: { data: UsersData; value: Record<string, string>; onChange: (v: Record<string, string>) => void }) {
   return (
-    <Modal
-      title={title}
-      onClose={onClose}
-      footer={
-        <button type="button" className="btn btn-primary" onClick={onClose}>
-          Done
-        </button>
-      }
-    >
-      <p className="small text-2">Share this temporary password with {email ?? 'the person'} over a separate channel. It is shown once and is not stored in readable form; they should change it after signing in.</p>
-      <div className="row">
-        <code className="secret grow">{secret}</code>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => {
-            void navigator.clipboard?.writeText(secret).then(
-              () => setCopied(true),
-              () => setCopied(false),
-            );
-          }}
-        >
-          <Copy size={14} aria-hidden="true" /> {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-    </Modal>
+    <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend className="small text-2" style={{ marginBottom: 8 }}>
+        Roles marked <Badge tone="attention">needs approval</Badge> carry approval authority: they take effect only when a Controller or CFO other than you approves them. Conflicting combinations (SOD-005) are refused.
+      </legend>
+      {data.roles.map((r) => {
+        const on = r.key in value;
+        return (
+          <div key={r.key} className="row-wrap" style={{ alignItems: 'flex-start' }}>
+            <label className="chip-check grow">
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={(e) => {
+                  const next = { ...value };
+                  if (e.target.checked) next[r.key] = '';
+                  else delete next[r.key];
+                  onChange(next);
+                }}
+              />
+              <span>
+                <strong>{r.name}</strong> {r.needsApproval && <Badge tone="attention">needs approval</Badge>}
+                <span className="tiny muted" style={{ display: 'block' }}>
+                  {r.description}
+                </span>
+              </span>
+            </label>
+            {on && r.entityScopable && (
+              <select className="select" style={{ width: 'auto' }} aria-label={`${r.name}: which entities`} value={value[r.key]} onChange={(e) => onChange({ ...value, [r.key]: e.target.value })}>
+                <option value="">All entities</option>
+                {data.entities.map((e) => (
+                  <option key={e.id} value={e.code}>
+                    {e.code} only
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        );
+      })}
+    </fieldset>
   );
+}
+
+const grantsOf = (v: Record<string, string>) => Object.entries(v).map(([role, entity]) => (entity ? { role, entity } : role));
+
+interface RolesResult {
+  applied: number;
+  pending: { id: string; summary: string } | null;
+}
+
+function rolesToast(name: string, r: RolesResult): string {
+  return r.pending ? `${r.pending.summary}: waiting for a Controller or CFO to approve.${r.applied ? ` Other changes applied; ${name} was signed out.` : ''}` : `Roles updated; ${name} was signed out everywhere.`;
 }
 
 function People() {
@@ -127,13 +186,14 @@ function People() {
   const { data, error, reload } = useApi<UsersData>('/api/admin/users');
   const { run, busy } = useAction();
   const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [roles, setRoles] = useState<string[]>([]);
+  const [grants, setGrants] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState('');
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', title: '', roles: ['staff_accountant'] });
-  const [secret, setSecret] = useState<{ email?: string; value: string } | null>(null);
+  const [form, setForm] = useState({ name: '', email: '', title: '' });
+  const [newGrants, setNewGrants] = useState<Record<string, string>>({ staff_accountant: '' });
+  const [resetting, setResetting] = useState<AdminUser | null>(null);
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Skeleton rows={8} />;
-  const roleName = new Map(data.roles.map((r) => [r.key, r.name]));
   return (
     <section className="card" aria-label="People">
       <div className="card-head">
@@ -178,13 +238,21 @@ function People() {
                 <td>
                   <div className="row-wrap">
                     {u.roles.map((r, i) => (
-                      <Badge key={i}>{r.name ?? r.key}</Badge>
+                      <Badge key={i}>
+                        {r.name ?? r.key}
+                        {r.entity ? ` · ${r.entity} only` : ''}
+                      </Badge>
                     ))}
                     {u.roles.length === 0 && <span className="muted small">No roles</span>}
+                    {u.pendingGrant && (
+                      <Badge tone="attention" title={u.pendingGrant.summary}>
+                        Pending approval
+                      </Badge>
+                    )}
                   </div>
                 </td>
                 <td className="hide-sm small">
-                  <div>{u.lastLoginAt ? ago(u.lastLoginAt) : 'Never'}</div>
+                  <div>{!u.enrolled ? 'Invited, not enrolled yet' : u.lastLoginAt ? ago(u.lastLoginAt) : 'Never'}</div>
                   <div className="tiny muted">
                     {u.mfaEnabled ? 'Authenticator on' : 'Password only'} · {u.activeSessions} active session{u.activeSessions === 1 ? '' : 's'}
                     {u.provider ? ` · ${u.provider}` : ''}
@@ -202,7 +270,8 @@ function People() {
                           className="btn btn-sm"
                           onClick={() => {
                             setEditing(u);
-                            setRoles(u.roles.map((r) => r.key).filter((k): k is string => !!k));
+                            setReason('');
+                            setGrants(Object.fromEntries(u.roles.filter((r) => r.key).map((r) => [r.key!, r.entity ?? ''])));
                           }}
                         >
                           Roles
@@ -219,17 +288,11 @@ function People() {
                           )}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy}
-                        onClick={async () => {
-                          const r = await run(() => api.post<{ temporaryPassword: string }>(`/api/admin/users/${u.id}/reset-password`), `Password reset for ${u.name}; their sessions were signed out.`);
-                          if (r) setSecret({ email: u.email, value: r.temporaryPassword });
-                        }}
-                      >
-                        <KeyRound size={14} aria-hidden="true" /> Reset password
-                      </button>
+                      {u.provider === 'password' && u.status === 'active' && (
+                        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setResetting(u)}>
+                          <KeyRound size={14} aria-hidden="true" /> {u.enrolled ? 'Reset password' : 'Resend enrolment link'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 )}
@@ -252,7 +315,7 @@ function People() {
                 className="btn btn-primary"
                 disabled={busy}
                 onClick={async () => {
-                  const r = await run(() => api.put(`/api/admin/users/${editing.id}/roles`, { roles }), 'Roles updated; their sessions were signed out.');
+                  const r = await run(() => api.put<RolesResult>(`/api/admin/users/${editing.id}/roles`, { roles: grantsOf(grants), reason: reason.trim() || undefined }), (x) => rolesToast(editing.name, x));
                   if (r) setEditing(null);
                 }}
               >
@@ -261,22 +324,12 @@ function People() {
             </>
           }
         >
-          <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-            <legend className="small text-2" style={{ marginBottom: 8 }}>
-              Changing roles signs the person out everywhere. Conflicting combinations (SoD-005) are refused.
-            </legend>
-            {data.roles.map((r) => (
-              <label key={r.key} className="chip-check">
-                <input type="checkbox" checked={roles.includes(r.key)} onChange={(e) => setRoles(e.target.checked ? [...roles, r.key] : roles.filter((x) => x !== r.key))} />
-                <span>
-                  <strong>{r.name}</strong>
-                  <span className="tiny muted" style={{ display: 'block' }}>
-                    {r.description}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          <p className="small text-2">Removing a role, or adding one without approval authority, applies at once and signs the person out everywhere.</p>
+          <GrantPicker data={data} value={grants} onChange={setGrants} />
+          <div className="field">
+            <label htmlFor="roles-reason">Why does {editing.name.split(' ')[0]} need this? (shown to the approver)</label>
+            <textarea id="roles-reason" className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
         </Modal>
       )}
       {creating && (
@@ -291,21 +344,25 @@ function People() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={busy || form.name.trim().length < 2 || !form.email.includes('@') || form.roles.length === 0}
+                disabled={busy || form.name.trim().length < 2 || !form.email.includes('@') || Object.keys(newGrants).length === 0}
                 onClick={async () => {
-                  const r = await run(() => api.post<{ id: string; temporaryPassword: string }>('/api/admin/users', { name: form.name, email: form.email, title: form.title || undefined, roles: form.roles }), `${form.name} added.`);
+                  const r = await run(
+                    () => api.post<{ id: string; enrolment: { sentTo: string; expiresAt: string }; applied: number; pending: { summary: string } | null }>('/api/admin/users', { name: form.name, email: form.email, title: form.title || undefined, roles: grantsOf(newGrants) }),
+                    (x) => `${form.name} added. A single-use enrolment link went to ${x.enrolment.sentTo} (valid until ${date(x.enrolment.expiresAt, 'time')}).${x.pending ? ` ${x.pending.summary}: waiting for a Controller or CFO to approve.` : ''}`,
+                  );
                   if (r) {
                     setCreating(false);
-                    setSecret({ email: form.email, value: r.temporaryPassword });
-                    setForm({ name: '', email: '', title: '', roles: ['staff_accountant'] });
+                    setForm({ name: '', email: '', title: '' });
+                    setNewGrants({ staff_accountant: '' });
                   }
                 }}
               >
-                Add person
+                Add person and send link
               </button>
             </>
           }
         >
+          <p className="small text-2">Nobody is given a password: the person receives a single-use enrolment link at this address and chooses their own. You never see it.</p>
           <div className="field">
             <label htmlFor="nu-name">Name</label>
             <input id="nu-name" className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="off" />
@@ -318,19 +375,116 @@ function People() {
             <label htmlFor="nu-title">Title (optional)</label>
             <input id="nu-title" className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </div>
-          <div className="field">
-            <label htmlFor="nu-role">Role</label>
-            <select id="nu-role" className="select" value={form.roles[0]} onChange={(e) => setForm({ ...form, roles: [e.target.value] })}>
-              {data.roles.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {roleName.get(r.key)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <GrantPicker data={data} value={newGrants} onChange={setNewGrants} />
         </Modal>
       )}
-      {secret && <SecretOnce title="Temporary password" email={secret.email} secret={secret.value} onClose={() => setSecret(null)} />}
+      {resetting && (
+        <Modal
+          title={resetting.enrolled ? `Reset the password of ${resetting.name}?` : `Send ${resetting.name} a new enrolment link?`}
+          onClose={() => setResetting(null)}
+          footer={
+            <>
+              <button type="button" className="btn" onClick={() => setResetting(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={async () => {
+                  const r = await run(() => api.post<{ purpose: string; sentTo: string; expiresAt: string }>(`/api/admin/users/${resetting.id}/reset-password`), (x) => `A single-use ${x.purpose === 'password_reset' ? 'reset' : 'enrolment'} link went to ${x.sentTo} (valid until ${date(x.expiresAt, 'time')}).`);
+                  if (r) setResetting(null);
+                }}
+              >
+                {resetting.enrolled ? 'Reset and send link' : 'Send link'}
+              </button>
+            </>
+          }
+        >
+          <p className="small text-2">
+            {resetting.enrolled ? `Their current password stops working and they are signed out everywhere. ` : ''}A single-use link goes to {resetting.email}; earlier links stop working. You will not see the link or the new password.
+          </p>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+function AccessRequests() {
+  const { data, error, reload } = useApi<{ requests: AccessRequest[]; canApprove: boolean }>('/api/admin/access-requests', { pollMs: 20_000 });
+  const { run, busy } = useAction();
+  const [rejecting, setRejecting] = useState<AccessRequest | null>(null);
+  if (error) return <ErrorBox error={error} onRetry={reload} />;
+  if (!data) return <Skeleton rows={5} />;
+  const pending = data.requests.filter((r) => r.status === 'pending');
+  const decided = data.requests.filter((r) => r.status !== 'pending');
+  return (
+    <section className="card" aria-label="Access requests">
+      <div className="card-head">
+        <h2>
+          <ShieldCheck size={15} aria-hidden="true" /> {pending.length} access request{pending.length === 1 ? '' : 's'} waiting
+        </h2>
+        <span className="small muted">Dual control: requested by one person, approved by another</span>
+      </div>
+      <p className="card-pad small text-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        A role that carries approval authority, and any change to a <Term id="bh:SegregationOfDutiesRule">segregation-of-duties</Term> rule, takes effect only when a Controller or CFO approves it who neither asked for it nor receives it, and who holds at least that authority. Approve a grant only if you know the person and they need the access.
+      </p>
+      {pending.length === 0 ? (
+        <Empty title="Nothing waiting">Requests appear here when an administrator grants a role with approval authority or changes a control.</Empty>
+      ) : (
+        <ul className="list">
+          {pending.map((r) => (
+            <li key={r.id} className="stack" style={{ gap: 6 }}>
+              <div className="row-wrap">
+                <strong className="grow">{r.summary}</strong>
+                <span className="tiny muted">
+                  asked by {r.requestedBy} · {ago(r.requestedAt)}
+                </span>
+              </div>
+              <p className="small text-2">Reason: {r.reason}</p>
+              {r.target && (
+                <p className="tiny muted">
+                  {r.target.name} ({r.target.email}): {r.target.enrolled ? 'has chosen a password' : 'has not enrolled yet'}
+                  {r.target.enrolmentLinkOpenedAt ? `; their enrolment message was opened ${date(r.target.enrolmentLinkOpenedAt, 'time')}` : ''}. Their sessions end when this is decided.
+                </p>
+              )}
+              {r.blocks.length > 0 && (
+                <div className="callout small" role="note">
+                  You cannot decide this: {r.blocks.join(' ')}
+                </div>
+              )}
+              {r.canDecide && (
+                <div className="row-wrap">
+                  <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void run(() => api.post(`/api/admin/access-requests/${r.id}/decide`, { decision: 'approve' }), `Approved: ${r.summary}.`)}>
+                    Approve
+                  </button>
+                  <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setRejecting(r)}>
+                    Reject
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {decided.length > 0 && (
+        <details className="card-pad" style={{ borderTop: '1px solid var(--border)' }}>
+          <summary className="small">Decided recently ({decided.length})</summary>
+          <ul className="list">
+            {decided.map((r) => (
+              <li key={r.id} className="row-wrap small">
+                <Badge tone={r.status === 'approved' ? 'success' : r.status === 'rejected' ? 'danger' : ''}>{r.status}</Badge>
+                <span className="grow">{r.summary}</span>
+                <span className="tiny muted">
+                  asked by {r.requestedBy}
+                  {r.decidedBy ? `, ${r.status} by ${r.decidedBy}` : ''} {r.decidedAt ? ago(r.decidedAt) : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {rejecting && <ReasonDialog title={`Reject: ${rejecting.summary}`} prompt="Why are you rejecting it?" confirmLabel="Reject" danger onClose={() => setRejecting(null)} onSubmit={(reason) => run(() => api.post(`/api/admin/access-requests/${rejecting.id}/decide`, { decision: 'reject', reason }), 'Rejected; nothing changed.')} />}
     </section>
   );
 }
@@ -400,7 +554,7 @@ function SodRules() {
   const can = useCan();
   const { data, error, reload } = useApi<SodRule[]>('/api/admin/sod-rules');
   const { run, busy } = useAction();
-  const [editing, setEditing] = useState<{ rule: SodRule; enabled: boolean; severity: 'block' | 'warn'; limit: string } | null>(null);
+  const [editing, setEditing] = useState<{ rule: SodRule; enabled: boolean; severity: 'block' | 'warn' } | null>(null);
   const [reason, setReason] = useState('');
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Skeleton rows={6} />;
@@ -424,13 +578,19 @@ function SodRules() {
                 <strong className="grow">{r.name}</strong>
                 <Badge tone={!r.enabled ? '' : r.severity === 'block' ? 'success' : 'attention'}>{!r.enabled ? 'Off' : r.severity === 'block' ? 'Blocks' : 'Warns'}</Badge>
                 <span className="tiny muted">v{r.version}</span>
-                {editable && (
+                {r.pendingChange && (
+                  <Badge tone="attention" title={r.pendingChange.summary}>
+                    Change waiting for approval
+                  </Badge>
+                )}
+                {editable && r.kind === 'requester_limit' && <span className="tiny muted">Always on (enforced by the database)</span>}
+                {editable && r.kind !== 'requester_limit' && (
                   <button
                     type="button"
                     className="btn btn-sm"
                     onClick={() => {
                       setReason('');
-                      setEditing({ rule: r, enabled: r.enabled, severity: r.severity, limit: typeof r.params.limit_minor === 'number' ? String((r.params.limit_minor as number) / 100) : '' });
+                      setEditing({ rule: r, enabled: r.enabled, severity: r.severity });
                     }}
                   >
                     Change
@@ -449,7 +609,7 @@ function SodRules() {
       </p>
       {!editable && (
         <p className="card-pad small muted row">
-          <Lock size={13} aria-hidden="true" /> Only an Admin can change these rules; every change is versioned and audited.
+          <Lock size={13} aria-hidden="true" /> An Admin requests rule changes and a Controller or CFO approves them; every change is versioned and audited.
         </p>
       )}
       {editing && (
@@ -466,12 +626,11 @@ function SodRules() {
                 className="btn btn-primary"
                 disabled={busy || reason.trim().length < 5}
                 onClick={async () => {
-                  const params = editing.rule.kind === 'requester_limit' && editing.limit !== '' ? { ...editing.rule.params, limit_minor: Math.round(Number(editing.limit) * 100) } : undefined;
-                  const r = await run(() => api.patch(`/api/admin/sod-rules/${editing.rule.id}`, { enabled: editing.enabled, severity: editing.severity, ...(params ? { params } : {}), reason: reason.trim() }), 'Control updated.');
+                  const r = await run(() => api.patch(`/api/admin/sod-rules/${editing.rule.id}`, { enabled: editing.enabled, severity: editing.severity, reason: reason.trim() }), 'Change requested: it applies when a Controller or CFO other than you approves it.');
                   if (r) setEditing(null);
                 }}
               >
-                Save change
+                Request change
               </button>
             </>
           }
@@ -488,16 +647,10 @@ function SodRules() {
               <option value="warn">Allow it, but flag and audit it</option>
             </select>
           </div>
-          {editing.rule.kind === 'requester_limit' && (
-            <div className="field">
-              <label htmlFor="sod-limit">Self-review limit (USD)</label>
-              <input id="sod-limit" className="input num" inputMode="decimal" value={editing.limit} onChange={(e) => setEditing({ ...editing, limit: e.target.value })} />
-            </div>
-          )}
           <div className="field">
             <label htmlFor="sod-reason">Why are you changing a control?</label>
             <textarea id="sod-reason" className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} />
-            <span className="hint">Saved with the new version in the audit log.</span>
+            <span className="hint">A control never changes on one person's say-so: a Controller or CFO other than you must approve the change before it applies. Both steps are audited.</span>
           </div>
         </Modal>
       )}

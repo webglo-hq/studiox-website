@@ -1,13 +1,16 @@
-import { AgentRuntime } from '../agents/framework/runtime';
+import { AgentRuntime, isStale, STALE_MS } from '../agents/framework/runtime';
 import type { LlmClient } from '../agents/llm/types';
 import type { Db, Tx } from '../persistence/db';
+import type { Row } from '../persistence/schema';
 import { accountingPack, registerSkills } from '../packs/accounting/pack';
 import { buildAccountingScope, type AccountingScope } from '../packs/accounting/scope';
 import { LedgerLookups } from '../packs/accounting/domain/lookups';
+import { ROLES } from '../security/permissions';
 import type { Principal } from '../security/principal';
 import { SecretBox } from '../security/secretbox';
 import type { Actor, Clock, DomainContext } from '../shared/context';
 import { DomainError } from '../shared/errors';
+import { dispatchQueued, type OutboxTransport } from './outbox';
 import { RunQueue } from './runner';
 
 /**
@@ -26,6 +29,8 @@ export interface AppConfig {
   /** Cookie Secure flag (true behind HTTPS). */
   secureCookies: boolean;
   demoPassword?: string | null;
+  /** Message transport for real organizations (enrolment and reset links); demo organizations use their delivery log. */
+  outbox?: OutboxTransport | null;
 }
 
 export interface RequestMeta {
@@ -45,12 +50,12 @@ export class App {
   constructor(
     readonly db: Db,
     readonly config: AppConfig,
-    opts: { clock?: Partial<Clock>; llm?: LlmClient | null; businessDate?: string; log?: (m: string) => void } = {},
+    opts: { clock?: Partial<Clock>; llm?: LlmClient | null; businessDate?: string; log?: (m: string) => void; faultInjector?: (event: { runId: string; tool: string; callNumber: number }) => void } = {},
   ) {
     this.businessDate = opts.businessDate ?? new Date().toISOString().slice(0, 10);
     const now = opts.clock?.now ?? (() => new Date().toISOString());
     this.clock = { now, businessDate: () => this.businessDate };
-    this.runtime = new AgentRuntime<AccountingScope>({ db, pack: accountingPack(), clock: this.clock, llm: opts.llm ?? null, log: opts.log });
+    this.runtime = new AgentRuntime<AccountingScope>({ db, pack: accountingPack(), clock: this.clock, llm: opts.llm ?? null, log: opts.log, faultInjector: opts.faultInjector });
     this.queue = new RunQueue(this.runtime as unknown as AgentRuntime<unknown>, opts.log);
     this.secrets = new SecretBox(config.secretKey, 'mfa-totp');
   }
@@ -96,10 +101,40 @@ export class App {
     return this.runtime.llm?.model ?? null;
   }
 
+  /** Bring the system roles in line with their definitions in code (idempotent; runs at start-up). */
+  async ensureRoles(): Promise<void> {
+    await this.db.tx(async (tx) => {
+      for (const [i, r] of ROLES.entries()) {
+        const want = { name: r.name, description: r.description, permissions: r.permissions as string[], approval_limit_minor: r.approvalLimitMinor, is_read_only: !!r.readOnly, sort_order: i };
+        const row = await tx.findOne('roles', { key: r.key });
+        if (!row) await tx.insert('roles', { key: r.key, ...want });
+        else if (row.name !== want.name || row.description !== want.description || JSON.stringify(row.permissions) !== JSON.stringify(want.permissions) || row.approval_limit_minor !== want.approval_limit_minor || row.is_read_only !== want.is_read_only) {
+          await tx.update('roles', row.id, want);
+        }
+      }
+    });
+  }
+
   /** Publish skills and install default policies for every tenant (idempotent; runs at start-up). */
   async ensureSkills(): Promise<void> {
     const tenants = await this.db.read((tx) => tx.find('tenants', {}));
     for (const t of tenants) await this.db.tx((tx) => registerSkills(tx, t.id, this.runtime.listSkills(), this.clock.now()));
+  }
+
+  /** Whether a run lost its worker and this process does not have it queued or running. */
+  isAbandoned(run: Row<'agent_runs'>): boolean {
+    return !this.queue.isActive(run.id) && isStale(run, this.clock.now());
+  }
+
+  /**
+   * Take over agent runs whose worker died (no heartbeat for STALE_MS), through this process's queue, and send
+   * queued messages. The server calls it at start-up and then periodically, so an interrupted run never waits for
+   * another restart; any process may call it (each run is resumed from its journal, without repeating work).
+   */
+  async maintain(): Promise<{ resumed: string[]; sent: number }> {
+    const resumed = await this.runtime.recover(STALE_MS, (id) => void this.queue.enqueue(id), (id) => this.queue.isActive(id));
+    const sent = await dispatchQueued((fn) => this.db.tx(fn), this.config.outbox ?? null, () => this.clock.now());
+    return { resumed, sent };
   }
 
   notFound(what: string): never {

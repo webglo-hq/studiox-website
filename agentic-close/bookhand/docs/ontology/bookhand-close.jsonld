@@ -14,8 +14,8 @@
   },
   "@id": "https://bookhand.example/ontology/close",
   "@type": "owl:Ontology",
-  "owl:versionInfo": "1.3.0",
-  "contentHash": "b934a4c85274c17da014b726726f9b9860e22b8d297f0603b227323caa210296",
+  "owl:versionInfo": "1.6.0",
+  "contentHash": "6d1c6ca08031d0aa62323c5d1fcda6200aafd791ed0ec0694f357f28492aa43b",
   "@graph": [
     {
       "@id": "bh:Thing",
@@ -2976,6 +2976,32 @@
       "table": "sod_rules"
     },
     {
+      "@id": "bh:AccessRequest",
+      "@type": "owl:Class",
+      "label": "Access request",
+      "subClassOf": [
+        "bh:MakerChecker"
+      ],
+      "definition": "A change to who may approve, or to a segregation-of-duties rule, that waits until a second person with enough authority approves it.",
+      "whyItMatters": "Whoever administers access must not be able to give themselves, or someone they control, the power to approve.",
+      "example": "Tom (admin) asks to make Dana a CFO; only Marcus, a CFO, can approve it, and Tom never sees her password.",
+      "module": "controls",
+      "table": "access_requests"
+    },
+    {
+      "@id": "bh:CredentialLink",
+      "@type": "owl:Class",
+      "label": "Enrolment or reset link",
+      "subClassOf": [
+        "bh:PreventiveControl"
+      ],
+      "definition": "A single-use, expiring link that lets a person set their own password; only its hash is stored and only the person receives it.",
+      "whyItMatters": "An administrator who knew a temporary password could sign in as the person they had just created.",
+      "example": "Dana receives a link valid for 72 hours; once used, it stops working.",
+      "module": "controls",
+      "table": "credential_tokens"
+    },
+    {
       "@id": "bh:Evidence",
       "@type": "owl:Class",
       "label": "Evidence",
@@ -3327,6 +3353,19 @@
       "example": "FY2026 budget v1, approved in December 2025.",
       "module": "flux",
       "table": "budgets"
+    },
+    {
+      "@id": "bh:OutboxMessage",
+      "@type": "owl:Class",
+      "label": "Outbox message",
+      "subClassOf": [
+        "bh:Thing"
+      ],
+      "definition": "A message Bookhand sends a person (an enrolment or reset link, a lockout notice), queued for the configured transport.",
+      "whyItMatters": "Credentials reach the person they belong to, never whoever asked for them.",
+      "example": "The enrolment link for dana.example@brambleway.example.",
+      "module": "integration",
+      "table": "outbox_messages"
     },
     {
       "@id": "bh:Connector",
@@ -4571,6 +4610,15 @@
       "definition": "Balance sheet line in \"Equity\", mapped to us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax."
     },
     {
+      "@id": "bh:FS_BS_EQ_CYE",
+      "@type": [
+        "owl:NamedIndividual",
+        "bh:FinancialStatementLine"
+      ],
+      "label": "Current-year earnings",
+      "definition": "Balance sheet line in \"Equity\"."
+    },
+    {
       "@id": "bh:FS_IS_REV_SUBSCRIPTION",
       "@type": [
         "owl:NamedIndividual",
@@ -4874,8 +4922,8 @@
       "@type": "bh:Axiom",
       "label": "Reconciliation equation",
       "appliesTo": "bh:Reconciliation",
-      "formal": "unexplained = gl - external - sum(reconciling_items); certify -> |unexplained| <= clearly_trivial",
-      "definition": "GL balance minus the external balance minus reconciling items is the unexplained difference; it must be within the clearly-trivial threshold to certify.",
+      "formal": "unexplained = gl - external - sum(explained reconciling items); certify -> |unexplained| <= clearly_trivial and note(r) != null",
+      "definition": "GL balance minus the external balance minus the explained reconciling items is the unexplained difference (an item listed as \"unexplained\" explains nothing). To certify, it must be within the clearly-trivial threshold and the preparer must explain it in a note.",
       "severity": "error",
       "assertions": [
         "existence_occurrence",
@@ -4931,6 +4979,30 @@
       "formal": "approver(f) != preparer(f)",
       "definition": "The person approving the flux review did not prepare it.",
       "severity": "error"
+    },
+    {
+      "@id": "bh:AX-FLX-04",
+      "@type": "bh:Axiom",
+      "label": "Drivers add up to the variance",
+      "appliesTo": "bh:FluxExplanation",
+      "formal": "sum(amount(d) for d in drivers(x)) = variance(line(x))",
+      "definition": "The drivers an explanation names add up exactly to the variance it explains, so nothing is double-counted or left out.",
+      "severity": "warning",
+      "assertions": [
+        "accuracy_valuation"
+      ]
+    },
+    {
+      "@id": "bh:AX-FLX-05",
+      "@type": "bh:Axiom",
+      "label": "Drivers explain most of the variance",
+      "appliesTo": "bh:FluxExplanation",
+      "formal": "coverage(x) >= 0.8",
+      "definition": "The named drivers account for at least 80% of the variance; otherwise the explanation is not specific enough to accept as is.",
+      "severity": "warning",
+      "assertions": [
+        "completeness"
+      ]
     },
     {
       "@id": "bh:AX-MAT-01",

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderErd } from '../../scripts/gen-erd';
 import { renderOntologyExports } from '../../scripts/export-ontology';
-import { generateSchemaSql } from '../../src/persistence/ddl';
+import { GENERATED_MIGRATIONS, generateSchemaSql } from '../../src/persistence/ddl';
 
 /** Generated artifacts that are committed must match the code that generates them. */
 describe('generated documentation', () => {
@@ -17,7 +17,7 @@ describe('generated documentation', () => {
     }
   });
 
-  it('db/migrations/0001_schema.sql matches the schema DSL (npm run db:generate)', () => {
-    expect(readFileSync(join(process.cwd(), 'db', 'migrations', '0001_schema.sql'), 'utf8')).toBe(generateSchemaSql());
+  it('the generated migrations match the schema DSL (npm run db:generate)', () => {
+    for (const m of GENERATED_MIGRATIONS) expect(readFileSync(join(process.cwd(), 'db', 'migrations', `${m.version}_${m.name}.sql`), 'utf8'), m.name).toBe(generateSchemaSql(m.version));
   });
 });

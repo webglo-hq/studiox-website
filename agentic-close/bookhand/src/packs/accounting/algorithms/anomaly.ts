@@ -1,4 +1,5 @@
 import { dayOfWeek, type BusinessCalendar } from '../../../shared/dates';
+import { formatMoney } from '../../../shared/money';
 import { normalizeDocNumber } from './text';
 
 /**
@@ -43,6 +44,8 @@ export interface ReviewEntry {
   externalPreparedBy: string | null;
   externalApprovedBy: string | null;
   preparedByRunId: string | null;
+  /** The entity's functional currency (amounts are in it). */
+  currency?: string;
 }
 
 export interface ReviewPayment {
@@ -52,6 +55,7 @@ export interface ReviewPayment {
   date: string;
   amount: number;
   reference: string;
+  currency?: string;
   bills: Array<{ id: string; billNumber: string; amount: number; billDate: string; accountNumber?: string; departmentCode?: string | null; entity?: string }>;
 }
 
@@ -68,7 +72,7 @@ export interface AnomalyFinding {
   flags: AnomalyKind[];
 }
 
-const fmt = (m: number) => `$${(Math.abs(m) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = (m: number, currency = 'USD') => formatMoney(Math.abs(m), { currency });
 
 const isManual = (e: ReviewEntry) => (e.source === 'manual' || e.source === 'import') && !['depreciation', 'amortization', 'revaluation', 'elimination', 'reversing'].includes(e.type);
 
@@ -99,8 +103,8 @@ export function detectDuplicatePayments(payments: ReviewPayment[]): AnomalyFindi
           kind: 'duplicate_payment',
           severity: 'high',
           score: sharedInvoice ? 0.95 : 0.7,
-          title: `Possible duplicate payment to ${a.vendorName}: ${fmt(a.amount)}`,
-          why: `Two payments of ${fmt(a.amount)} to ${a.vendorName} on ${a.date} and ${b.date}; ${invoiceNote}.`,
+          title: `Possible duplicate payment to ${a.vendorName}: ${fmt(a.amount, a.currency)}`,
+          why: `Two payments of ${fmt(a.amount, a.currency)} to ${a.vendorName} on ${a.date} and ${b.date}; ${invoiceNote}.`,
           subjectIds: [a.id, b.id],
           amount: a.amount,
           evidence: [
@@ -118,7 +122,13 @@ export function detectDuplicatePayments(payments: ReviewPayment[]): AnomalyFindi
   return findings;
 }
 
-/** Benford first-digit test (Nigrini 2012 MAD thresholds). */
+/**
+ * Below this many amounts a first-digit test says nothing (Nigrini 2012 recommends at least a few hundred records;
+ * the MAD thresholds are calibrated on large populations), so the result is "insufficient".
+ */
+export const BENFORD_MIN_SAMPLE = 300;
+
+/** Benford first-digit test (Nigrini 2012 MAD thresholds) over individual amounts in minor units. */
 export function benford(amounts: number[]): { n: number; mad: number; conformity: 'close' | 'acceptable' | 'marginal' | 'nonconformity' | 'insufficient'; observed: number[]; expected: number[] } {
   const counts = new Array(9).fill(0) as number[];
   let n = 0;
@@ -134,7 +144,7 @@ export function benford(amounts: number[]): { n: number; mad: number; conformity
   const expected = counts.map((_, i) => Math.log10(1 + 1 / (i + 1)));
   const observed = counts.map((c) => (n ? c / n : 0));
   const mad = n ? observed.reduce((s, o, i) => s + Math.abs(o - expected[i]!), 0) / 9 : 0;
-  const conformity = n < 50 ? 'insufficient' : mad <= 0.006 ? 'close' : mad <= 0.012 ? 'acceptable' : mad <= 0.015 ? 'marginal' : 'nonconformity';
+  const conformity = n < BENFORD_MIN_SAMPLE ? 'insufficient' : mad <= 0.006 ? 'close' : mad <= 0.012 ? 'acceptable' : mad <= 0.015 ? 'marginal' : 'nonconformity';
   return { n, mad: Number(mad.toFixed(5)), conformity, observed, expected };
 }
 
@@ -160,11 +170,11 @@ export function reviewEntries(entries: ReviewEntry[], options: ReviewOptions): A
       const dow = dayOfWeek(e.date);
       if (dow === 0 || dow === 6) flags.push({ kind: 'weekend_posting', weight: 0.2, text: `dated on a ${dow === 0 ? 'Sunday' : 'Saturday'}` });
       else if (!options.calendar.isBusinessDay(e.date)) flags.push({ kind: 'holiday_posting', weight: 0.2, text: `dated on a bank holiday (${options.calendar.holidayName(e.date)})` });
-      if (e.total >= options.roundAmountMinMinor && e.total % 100_000 === 0) flags.push({ kind: 'round_amount', weight: 0.15, text: `round amount ${fmt(e.total)}` });
+      if (e.total >= options.roundAmountMinMinor && e.total % 100_000 === 0) flags.push({ kind: 'round_amount', weight: 0.15, text: `round amount ${fmt(e.total, e.currency)}` });
       if (e.lines.some((l) => l.isControlAccount)) flags.push({ kind: 'control_account_manual', weight: 0.25, text: 'manual posting to a subledger control account' });
       if (e.lines.some((l) => l.accountClass === 'revenue' && l.credit > 0)) flags.push({ kind: 'revenue_manual', weight: 0.25, text: 'manual entry crediting revenue' });
       for (const limit of options.approvalLimits) {
-        if (e.total < limit && e.total >= limit * 0.95) flags.push({ kind: 'just_below_limit', weight: 0.2, text: `${fmt(e.total)} is just below the ${fmt(limit)} approval limit` });
+        if (e.total < limit && e.total >= limit * 0.95) flags.push({ kind: 'just_below_limit', weight: 0.2, text: `${fmt(e.total, e.currency)} is just below the ${fmt(limit)} approval limit` });
       }
       const key = `${e.entityId}|${e.total}|${e.lines.map((l) => `${l.accountNumber}:${l.debit}:${l.credit}`).sort().join(',')}`;
       const prior = seen.get(key);
@@ -183,7 +193,7 @@ export function reviewEntries(entries: ReviewEntry[], options: ReviewOptions): A
       severity,
       score: Number(score.toFixed(3)),
       title: `${e.entryNumber}: ${flags.map((f) => f.kind.replace(/_/g, ' ')).join(', ')}`,
-      why: `Entry ${e.entryNumber} (${fmt(e.total)}, "${e.description}") is ${flags.map((f) => f.text).join('; ')}.`,
+      why: `Entry ${e.entryNumber} (${fmt(e.total, e.currency)}, "${e.description}") is ${flags.map((f) => f.text).join('; ')}.`,
       subjectIds: [e.id],
       amount: e.total,
       evidence: [{ type: 'journal_entry', id: e.id, label: `${e.entryNumber} on ${e.date}` }],

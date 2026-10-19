@@ -99,6 +99,7 @@ export async function bootApp(cfg: ServerConfig, env: Record<string, string | un
     if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || Number.isNaN(Date.parse(businessDate))) throw new Error(`BOOKHAND_BUSINESS_DATE must be YYYY-MM-DD, got "${businessDate}"`);
     app.setBusinessDate(businessDate);
   }
+  await app.ensureRoles();
   await app.ensureSkills();
   const kernel = new ApiKernel(app, ROUTES, { allowedOrigins: cfg.publicOrigin ? [cfg.publicOrigin] : [], log: env.BOOKHAND_LOG_REQUESTS === 'true' ? cfg.log : undefined });
   return { app, kernel, db, driver, seed };

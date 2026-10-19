@@ -75,6 +75,8 @@ export interface RouteDef {
   rateOnFailure?: keyof typeof RATE_LIMITS;
   /** Scope an access token needs. Default: "read" for GET, "write" for anything else. */
   tokenScope?: 'read' | 'write';
+  /** Browser session only, never an access token (controls such as agent autonomy and policies). */
+  sessionOnly?: boolean;
   body?: z.ZodType;
   handler(ctx: RouteContext & PublicRouteContext): Promise<unknown> | unknown;
 }
@@ -169,7 +171,7 @@ export class ApiKernel {
         // Access token (API clients and the MCP server): no cookies, so no CSRF; the owner's roles apply in full.
         const bearer = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(authorization)?.[1];
         if (!bearer) throw new DomainError('UNAUTHENTICATED', 'Malformed Authorization header; send "Bearer <access token>".');
-        if (SESSION_ONLY.test(route.path)) throw new DomainError('FORBIDDEN', 'Access tokens cannot be used for sign-in, account or administration endpoints; use the web app.');
+        if (SESSION_ONLY.test(route.path) || route.sessionOnly) throw new DomainError('FORBIDDEN', 'Access tokens cannot be used for sign-in, account, administration or control changes (agent autonomy and policies); use the web app.');
         const gate = this.limiter.peek(`tokenfail:${req.ip}`, RATE_LIMITS.login);
         if (!gate.allowed) throw new DomainError('RATE_LIMITED', `Too many invalid tokens; try again in ${gate.retryAfterSeconds} s.`, { retryAfterSeconds: gate.retryAfterSeconds });
         apiToken = await this.app.tx((tx) => resolveApiToken(tx, bearer, this.app.clock.now()));

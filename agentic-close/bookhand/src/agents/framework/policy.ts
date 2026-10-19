@@ -1,4 +1,5 @@
 import { appendAudit } from '../../audit/audit';
+import { formatMoney } from '../../shared/money';
 import type { Tx } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
 import type { DomainContext } from '../../shared/context';
@@ -156,8 +157,9 @@ export function decideDisposition(args: {
     limit = Math.round(materiality.performanceMinor * share);
   }
   limit = Math.min(limit, hardCap);
-  if (draft.amountMinor > limit) return queue(`$${(draft.amountMinor / 100).toFixed(2)} is above the auto-apply limit of $${(limit / 100).toFixed(2)}`);
+  const money = (minor: number) => formatMoney(minor, { currency: draft.currency });
+  if (draft.amountMinor > limit) return queue(`${money(draft.amountMinor)} is above the auto-apply limit of ${money(limit)}`);
   const sampleRate = Number(policy.rules.find((r) => r.kind === 'sample_rate')?.value ?? policy.thresholds.sampleRate ?? (policy.autonomy === 'L3' ? 0.25 : 0.1));
   const sampled = unitHash(args.idForSampling) < sampleRate || (policy.autonomy === 'L3' && draft.amountMinor > materiality.trivialMinor);
-  return { disposition: 'auto_apply', status: 'auto_applied', reasons: [`Within ${policy.autonomy} policy (limit $${(limit / 100).toFixed(2)}, confidence ${(draft.confidence * 100).toFixed(0)}%)`], sampledForReview: sampled };
+  return { disposition: 'auto_apply', status: 'auto_applied', reasons: [`Within ${policy.autonomy} policy (limit ${money(limit)}, confidence ${(draft.confidence * 100).toFixed(0)}%)`], sampledForReview: sampled };
 }

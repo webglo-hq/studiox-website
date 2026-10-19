@@ -118,7 +118,7 @@ export const bankTools: Tool[] = [
       const bankItems: MatchItem[] = ws.bankLines.map((b) => ({ id: b.id, date: b.date, amount: b.amount, description: b.description, reference: b.reference }));
       const ledgerItems: MatchItem[] = ws.ledgerLines.map((l) => ({ id: l.id, date: l.date, amount: l.amount, description: `${l.description} ${l.memo ?? ''}`, reference: null }));
       const next: MatchItem[] = ws.nextPeriodBankLines.map((b) => ({ id: b.id, date: b.date, amount: b.amount, description: b.description, reference: b.reference }));
-      const result = matchBankToLedger(bankItems, ledgerItems, { periodEnd: ws.period.end, dateWindowDays: input.dateWindowDays ?? thresholds.dateWindowDays ?? 5, fuzzyToleranceMinor: thresholds.fuzzyToleranceMinor ?? 5_000 }, next);
+      const result = matchBankToLedger(bankItems, ledgerItems, { currency: bank.currency, periodEnd: ws.period.end, dateWindowDays: input.dateWindowDays ?? thresholds.dateWindowDays ?? 5, fuzzyToleranceMinor: thresholds.fuzzyToleranceMinor ?? 5_000 }, next);
       const accounts = { bankFees: x.pack.lookups.accountsBySubtype('bh:BankFees')[0]?.number ?? '', interestIncome: x.pack.lookups.accountsBySubtype('bh:InterestIncome')[0]?.number ?? '' };
       return { bankAccountId: bank.id, reconciliationId: ws.reconciliationId, period: ws.period, statement: ws.statement, gl: ws.gl, ...result, ledgerLines: ws.ledgerLines, bankLines: ws.bankLines, accounts };
     },

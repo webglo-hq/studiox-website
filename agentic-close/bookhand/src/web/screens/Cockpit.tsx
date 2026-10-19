@@ -62,8 +62,9 @@ export function CockpitScreen({ closeId }: { closeId: string | null }) {
   const { close } = data;
   const open = (id: string | null) => navigate(`/close/${close.id}${id ? `?task=${id}` : ''}`);
   const runAgents = async (mode?: 'offline' | 'live') => {
-    const r = await run(() => api.post<{ runId: string; alreadyRunning: boolean }>(`/api/closes/${close.id}/run`, mode ? { mode } : {}), (x) => (x.alreadyRunning ? 'The close agents are already running.' : 'Close agents started.'));
-    if (r?.runId) navigate(`/runs/${r.runId}`);
+    const r = await run(() => api.post<{ runId: string; alreadyRunning: boolean }>(`/api/closes/${close.id}/run`, mode ? { mode } : {}), (x) => (x.alreadyRunning ? 'The close agents are already running.' : 'Close agents started. Their results land on My close and in the inbox.'));
+    // Land on My close: it shows the agents working, then what they left for people to review.
+    if (r?.runId) navigate('/');
   };
   const reviewable = data.tasks.filter((t) => t.canReview).length;
   const lockBlockers = data.blockers.filter((b) => !b.message.startsWith('Lock the period'));

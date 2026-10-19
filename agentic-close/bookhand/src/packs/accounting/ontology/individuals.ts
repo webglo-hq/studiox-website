@@ -20,6 +20,8 @@ export const FS_LINES: Array<{ key: string; label: string; statement: 'BS' | 'IS
   { key: 'BS.EQ.CAPITAL', label: 'Common stock and paid-in capital', statement: 'BS', section: 'Equity', xbrl: 'us-gaap:CommonStocksIncludingAdditionalPaidInCapital', order: 210 },
   { key: 'BS.EQ.RE', label: 'Retained earnings', statement: 'BS', section: 'Equity', xbrl: 'us-gaap:RetainedEarningsAccumulatedDeficit', order: 220 },
   { key: 'BS.EQ.AOCI', label: 'Accumulated other comprehensive income', statement: 'BS', section: 'Equity', xbrl: 'us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax', order: 230 },
+  // Computed, not mapped from accounts: year-to-date profit, presented in equity until the year-end close.
+  { key: 'BS.EQ.CYE', label: 'Current-year earnings', statement: 'BS', section: 'Equity', order: 240 },
   { key: 'IS.REV.SUBSCRIPTION', label: 'Subscription revenue', statement: 'IS', section: 'Revenue', xbrl: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax', order: 310 },
   { key: 'IS.REV.SERVICES', label: 'Services revenue', statement: 'IS', section: 'Revenue', xbrl: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax', order: 320 },
   { key: 'IS.COGS', label: 'Cost of revenue', statement: 'IS', section: 'Cost of revenue', xbrl: 'us-gaap:CostOfRevenue', order: 410 },

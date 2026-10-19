@@ -37,16 +37,19 @@ test('desktop: agents prepare, people review', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible();
   await shot(page, 'desktop-01-sign-in');
 
+  // Running the close agents keeps Maya on My close, which then offers the review (B-7); the trace is one click away.
   await signInAs(page, 'maya');
   await page.getByRole('button', { name: 'Run close agents' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Close agents (are working|finished)$/ })).toBeVisible();
   await waitForAgents(page);
-  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible();
-  await shot(page, 'desktop-06-agent-run-trace');
-
-  await go(page, '#/');
+  await expect(page.getByRole('link', { name: /^Review \d+ items?$/ })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('heading', { name: "What's next for you" })).toBeVisible();
   await shot(page, 'desktop-02-my-close');
+
+  await page.getByRole('link', { name: 'Open the agent trace' }).click();
+  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
+  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible();
+  await shot(page, 'desktop-06-agent-run-trace');
 
   await signInAs(page, 'daniel');
   const close = (await (await page.request.get('/api/closes/current')).json()) as { close: { id: string } };
