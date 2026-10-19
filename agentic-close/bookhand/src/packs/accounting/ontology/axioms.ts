@@ -191,6 +191,8 @@ export const journalEntryAxioms: JeAxiom[] = [
         if (l.txnCurrency === e.functionalCurrency) {
           return functional !== l.txnAmount ? [v('AX-FX-01', 'error', `Line ${i + 1}: transaction and functional amounts differ although both are ${e.functionalCurrency}.`)] : [];
         }
+        // Remeasurement (ASC 830-10-45-17) adjusts only the functional amount; the transaction amount is zero.
+        if (e.entryType === 'revaluation' && l.txnAmount === 0) return [];
         const expected = Math.round(l.txnAmount * e.fxRate);
         return Math.abs(expected - functional) > 1
           ? [v('AX-FX-01', 'error', `Line ${i + 1}: ${l.txnCurrency} ${(l.txnAmount / 100).toFixed(2)} at ${e.fxRate} should be ${fmt(expected)} in ${e.functionalCurrency}, not ${fmt(functional)}.`)]
