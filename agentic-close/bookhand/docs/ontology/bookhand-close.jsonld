@@ -14,8 +14,8 @@
   },
   "@id": "https://bookhand.example/ontology/close",
   "@type": "owl:Ontology",
-  "owl:versionInfo": "1.3.0",
-  "contentHash": "b934a4c85274c17da014b726726f9b9860e22b8d297f0603b227323caa210296",
+  "owl:versionInfo": "1.4.0",
+  "contentHash": "dfdd39c6fc7522a5d8167f600332c1e5fb6b44289c94bc2705acc0b208e2415a",
   "@graph": [
     {
       "@id": "bh:Thing",
@@ -4569,6 +4569,15 @@
       ],
       "label": "Accumulated other comprehensive income",
       "definition": "Balance sheet line in \"Equity\", mapped to us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax."
+    },
+    {
+      "@id": "bh:FS_BS_EQ_CYE",
+      "@type": [
+        "owl:NamedIndividual",
+        "bh:FinancialStatementLine"
+      ],
+      "label": "Current-year earnings",
+      "definition": "Balance sheet line in \"Equity\"."
     },
     {
       "@id": "bh:FS_IS_REV_SUBSCRIPTION",

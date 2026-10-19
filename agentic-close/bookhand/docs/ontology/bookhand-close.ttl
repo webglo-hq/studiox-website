@@ -8,8 +8,8 @@
 <https://bookhand.example/ontology/close> a owl:Ontology ;
   dcterms:title "Bookhand Financial Close Ontology"@en ;
   dcterms:description "A formal, versioned ontology of the month-end financial close: REA backbone, double-entry axioms, general ledger, subledgers, reconciliation, accruals and deferrals, flux, intercompany, FX, controls (COSO / SOX 404), audit assertions, materiality, the close calendar and the agent layer. Grounded in McCarthy (1982), XBRL GL, the US-GAAP taxonomy, FIBO, COSO 2013 and PCAOB/ISA standards."@en ;
-  owl:versionInfo "1.3.0" ;
-  owl:versionIRI <https://bookhand.example/ontology/close/1.3.0> .
+  owl:versionInfo "1.4.0" ;
+  owl:versionIRI <https://bookhand.example/ontology/close/1.4.0> .
 
 bh:whyItMatters a owl:AnnotationProperty ; rdfs:label "why it matters"@en .
 bh:formalStatement a owl:AnnotationProperty ; rdfs:label "formal statement"@en .
@@ -2785,6 +2785,12 @@ bh:FS_BS_EQ_AOCI a owl:NamedIndividual, bh:FinancialStatementLine ;
   skos:definition "Balance sheet line in \"Equity\", mapped to us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax."@en ;
   bh:whyItMatters "Accounts roll up to statement lines; the mapping makes statements reproducible."@en ;
   skos:example "BS.EQ.AOCI"@en .
+
+bh:FS_BS_EQ_CYE a owl:NamedIndividual, bh:FinancialStatementLine ;
+  rdfs:label "Current-year earnings"@en ;
+  skos:definition "Balance sheet line in \"Equity\"."@en ;
+  bh:whyItMatters "Accounts roll up to statement lines; the mapping makes statements reproducible."@en ;
+  skos:example "BS.EQ.CYE"@en .
 
 bh:FS_IS_REV_SUBSCRIPTION a owl:NamedIndividual, bh:FinancialStatementLine ;
   rdfs:label "Subscription revenue"@en ;

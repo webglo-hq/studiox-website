@@ -39,6 +39,7 @@ export const closeOntologySpec: OntologySpec = {
     { version: '1.1.0', date: '2026-10-19', notes: 'Bucketing profiles on account types; capitalization policy; untrusted text.' },
     { version: '1.2.0', date: '2026-10-19', notes: 'Executable axioms for reconciliations, flux, schedules, intercompany and proposals.' },
     { version: '1.3.0', date: '2026-10-19', notes: 'Bank account, corporate card, flux line, agent step and run budget classes; every database table now maps to an ontology class.' },
+    { version: '1.4.0', date: '2026-10-19', notes: 'Current-year earnings is an equity statement line, so a balance sheet foots as printed.' },
   ],
   classes: [...coreClasses, ...accountClasses, ...closeClasses],
   relations,

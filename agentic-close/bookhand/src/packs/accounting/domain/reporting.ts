@@ -4,6 +4,7 @@ import { DomainError } from '../../../shared/errors';
 import { convertMinor } from '../../../shared/money';
 import { closeOntology, FS_LINES } from '../ontology';
 import type { TrialBalanceSubject } from '../ontology/subjects';
+import { footBalanceSheet } from './footing';
 import { FxTable } from './fx';
 import type { LedgerLookups } from './lookups';
 
@@ -37,6 +38,9 @@ export interface TrialBalance {
   totalDebit: number;
   totalCredit: number;
 }
+
+/** The statement line that carries current-year earnings inside equity (no account maps to it). */
+export const CURRENT_EARNINGS_LINE = 'BS.EQ.CYE';
 
 function isBalanceSheet(cls: string): boolean {
   return cls === 'asset' || cls === 'liability' || cls === 'equity';
@@ -246,9 +250,12 @@ export interface BalanceSheet {
   sections: Array<{ name: string; lines: StatementLine[]; total: number }>;
   totalAssets: number;
   totalLiabilities: number;
+  /** Equity including current-year earnings (its own line in the Equity section). */
   totalEquity: number;
-  /** Current-year earnings shown inside equity. */
+  /** Current-year earnings: this year's profit, part of equity until the year-end close moves it to retained earnings. */
   currentEarnings: number;
+  totalLiabilitiesAndEquity: number;
+  /** Assets equal liabilities plus equity, computed from the presented lines (see footing.ts). */
   balances: boolean;
 }
 
@@ -303,23 +310,24 @@ function sections(lines: StatementLine[]) {
 
 export function balanceSheet(tb: TrialBalance): BalanceSheet {
   const lines = groupLines(tb, 'BS');
-  const sec = sections(lines);
-  const sum = (names: string[]) => sec.filter((s) => names.includes(s.name)).reduce((t, s) => t + s.total, 0);
-  const totalAssets = sum(['Current assets', 'Non-current assets']);
-  const totalLiabilities = sum(['Current liabilities']);
+  // Year-to-date profit belongs to equity until the year-end close: it is presented as an equity line, so the
+  // Equity section, its total and the statement foot as printed.
   const currentEarnings = tb.rows.filter((r) => r.accountClass === 'revenue' || r.accountClass === 'expense').reduce((s, r) => s - r.net, 0);
-  const equityLines = sum(['Equity']);
-  const totalEquity = equityLines + currentEarnings;
+  const cye = lines.find((l) => l.key === CURRENT_EARNINGS_LINE);
+  if (cye) cye.amount = currentEarnings;
+  const sec = sections(lines);
+  const footing = footBalanceSheet(sec);
   return {
     currency: tb.currency,
     label: tb.label,
     periodName: tb.periodName,
     sections: sec,
-    totalAssets,
-    totalLiabilities,
-    totalEquity,
+    totalAssets: footing.assets,
+    totalLiabilities: footing.liabilities,
+    totalEquity: footing.equity,
     currentEarnings,
-    balances: totalAssets === totalLiabilities + totalEquity,
+    totalLiabilitiesAndEquity: footing.liabilitiesAndEquity,
+    balances: footing.foots,
   };
 }
 

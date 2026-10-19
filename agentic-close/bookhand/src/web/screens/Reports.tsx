@@ -1,10 +1,12 @@
 import { ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { Fragment, useState } from 'react';
+import { footBalanceSheet } from '../../packs/accounting/domain/footing';
 import { closeOntology } from '../../packs/accounting/ontology';
 import { qs } from '../lib/api';
 import { date, label, money } from '../lib/format';
 import { navigate, useApi } from '../lib/hooks';
 import { periodLabel, periodOptions, useReference } from '../lib/reference';
+import { BalanceSheetTable } from '../components/BalanceSheet';
 import { Badge, Drawer, Empty, ErrorBox, Skeleton, Tabs, Term } from '../components/ui';
 
 interface TbRow {
@@ -47,7 +49,7 @@ interface Statement {
 }
 
 interface Statements {
-  balanceSheet: Statement & { totalAssets: number; totalLiabilities: number; totalEquity: number; currentEarnings: number; balances: boolean };
+  balanceSheet: Statement & { totalAssets: number; totalLiabilities: number; totalEquity: number; currentEarnings: number; totalLiabilitiesAndEquity: number; balances: boolean };
   incomeStatement: Statement & { revenue: number; grossProfit: number; operatingIncome: number; netIncome: number };
   incomeStatementYtd: Statement & { revenue: number; grossProfit: number; operatingIncome: number; netIncome: number };
   currency: string;
@@ -230,6 +232,7 @@ function StatementsView({ view, entity, period, onDrill }: { view: 'bs' | 'is'; 
   const cur = data.currency;
   if (view === 'bs') {
     const bs = data.balanceSheet;
+    const footing = footBalanceSheet(bs.sections);
     return (
       <div className="stack">
         <div className="grid grid-4">
@@ -243,17 +246,17 @@ function StatementsView({ view, entity, period, onDrill }: { view: 'bs' | 'is'; 
           </div>
           <div className="card stat">
             <div className="label">Total equity</div>
-            <div className="value">{money(bs.totalEquity, cur, { compact: true })}</div>
+            <div className="value">{money(footing.equity, cur, { compact: true })}</div>
             <div className="delta">incl. current-year earnings {money(bs.currentEarnings, cur, { compact: true })}</div>
           </div>
           <div className="card stat">
             <div className="label">Check</div>
             <div className="value" style={{ fontSize: 18, marginTop: 10 }}>
-              <Badge tone={bs.balances ? 'success' : 'danger'}>{bs.balances ? 'Assets = liabilities + equity' : 'Does not balance'}</Badge>
+              <Badge tone={footing.foots ? 'success' : 'danger'}>{footing.foots ? 'Assets = liabilities + equity' : 'Does not foot'}</Badge>
             </div>
           </div>
         </div>
-        <StatementTable title={`${data.label} balance sheet · ${periodLabel(data.period)}`} statement={bs} currency={cur} onDrill={onDrill} extra={[{ label: 'Current-year earnings (in equity)', amount: bs.currentEarnings }]} />
+        <BalanceSheetTable title={`${data.label} balance sheet · ${periodLabel(data.period)}`} sections={bs.sections} currency={cur} onDrill={onDrill} />
       </div>
     );
   }

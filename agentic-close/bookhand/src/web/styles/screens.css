@@ -506,6 +506,10 @@
   font-weight: 650;
   border-top: 1px solid var(--border-strong);
 }
+.table .grand-row td {
+  font-weight: 700;
+  border-top: 2px solid var(--border-strong);
+}
 .table .sub-row td {
   background: var(--surface-2);
 }

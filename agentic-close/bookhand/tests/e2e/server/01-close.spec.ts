@@ -59,6 +59,17 @@ test('a staff accountant, a senior, the controller and the CFO close September e
     expect(titles).toMatch(re);
   }
 
+  // The approved close package: the balance sheet foots with current-year earnings in equity (B-1), and the
+  // income statement ends in net income.
+  await signInAs(page, 'hannah');
+  await go(page, `#/close/${closeId}/package`);
+  const bs = page.getByRole('region', { name: 'Consolidated balance sheet' });
+  await expect(bs.getByRole('cell', { name: 'Current-year earnings' })).toBeVisible();
+  await expect(bs.getByRole('cell', { name: 'Total liabilities and equity' })).toBeVisible();
+  await expect(bs.getByTestId('bs-footing')).toHaveText('Foots: assets = liabilities + equity');
+  await expect(page.getByRole('cell', { name: 'Net income', exact: true })).toBeVisible();
+  await expect(page.getByText(/-\$0(?![\d.,])/)).toHaveCount(0);
+
   // 5. Lock the period.
   await signInAs(page, 'hannah');
   await go(page, `#/close/${closeId}`);
