@@ -1,18 +1,25 @@
 import { AppError } from '../../../framework/util/errors';
 import { audit, verifyAuditChain } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { requireAllEntities, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { loadActor, PERMISSIONS, roleConflicts } from '../domain/rbac';
+import { entities } from '../domain/refdata';
 import { settings } from './common';
 
 /** Users, roles, segregation-of-duties rules, close settings and the audit log. */
+
+/** Entity codes a person's grants cover, or 'all' when any grant is tenant-wide (as loadActor reads them). */
+export type EntityAccess = 'all' | string[];
 
 export async function listUsers(ctx: ServiceContext) {
   requirePermission(ctx, 'admin.users');
   const users = await ctx.db.find('app_user', { tenant_id: ctx.tenantId }, { orderBy: [['display_name', 'asc']] });
   const grants = await ctx.db.find('user_role', { tenant_id: ctx.tenantId });
   const roles = new Map((await ctx.db.find('role', {})).map((r) => [r.id, r]));
+  const ents = await entities(ctx);
   const out = [];
   for (const u of users) {
+    const mine = grants.filter((g) => g.user_id === u.id);
+    const access: EntityAccess = mine.some((g) => g.entity_id === null) ? 'all' : [...new Set(mine.map((g) => ents.get(g.entity_id!)?.code ?? ''))].sort();
     out.push({
       id: u.id,
       name: u.display_name,
@@ -23,7 +30,8 @@ export async function listUsers(ctx: ServiceContext) {
       idp: u.idp,
       lastLoginAt: u.last_login_at,
       lockedUntil: u.locked_until,
-      roles: grants.filter((g) => g.user_id === u.id).map((g) => roles.get(g.role_id)?.code ?? ''),
+      roles: [...new Set(mine.map((g) => roles.get(g.role_id)?.code ?? ''))],
+      entities: access,
       conflicts: await roleConflicts(ctx.db, ctx.tenantId, u.id),
     });
   }
@@ -40,14 +48,23 @@ export async function listRoles(ctx: ServiceContext) {
   };
 }
 
-/** Replace a user's roles. Blocking SoD permission pairs are refused; warnings are audited. */
-export async function setUserRoles(ctx: ServiceContext, input: { userId: string; roles: string[] }) {
+/**
+ * Replace a user's roles and the entities they apply to: 'all' (tenant-wide) or a list of entity
+ * codes. Leaving entities out keeps the user's current scope. Blocking SoD permission pairs are
+ * refused; warnings are audited.
+ */
+export async function setUserRoles(ctx: ServiceContext, input: { userId: string; roles: string[]; entities?: EntityAccess }) {
   requirePermission(ctx, 'admin.users');
   const user = await ctx.db.get('app_user', input.userId);
   if (!user || user.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'User not found');
   if (input.userId === ctx.actor.userId) throw new AppError('SOD_VIOLATION', 'You cannot change your own roles.');
   const roles = await ctx.db.find('role', { code: { in: input.roles } });
   if (roles.length !== new Set(input.roles).size) throw new AppError('VALIDATION', 'Unknown role.');
+  const ents = [...(await entities(ctx)).values()];
+  const access = input.entities ?? (await listUsers(ctx)).find((u) => u.id === user.id)!.entities;
+  if (access !== 'all' && !access.length) throw new AppError('VALIDATION', 'Choose at least one entity, or all entities.');
+  const scope = access === 'all' ? [null] : access.map((code) => ents.find((e) => e.code === code)?.id);
+  if (scope.some((id) => id === undefined)) throw new AppError('VALIDATION', 'Unknown entity.');
   const perms = new Set((await ctx.db.find('role_permission', { role_id: { in: roles.map((r) => r.id) } })).map((p) => p.permission));
   const rules = await ctx.db.find('sod_rule', { tenant_id: ctx.tenantId, enabled: true, kind: 'permission_pair' });
   const hits = rules.filter((r) => r.permission_a && r.permission_b && perms.has(r.permission_a) && perms.has(r.permission_b));
@@ -56,8 +73,9 @@ export async function setUserRoles(ctx: ServiceContext, input: { userId: string;
   await ctx.db.tx(async (db) => {
     const existing = await db.find('user_role', { user_id: user.id });
     for (const g of existing) await db.delete('user_role', g.id);
-    for (const r of roles) await db.insert('user_role', { tenant_id: ctx.tenantId, user_id: user.id, role_id: r.id, entity_id: null, granted_by: ctx.actor.userId });
-    await audit(withDb(ctx, db), { action: 'admin.roles.changed', subjectType: 'app_user', subjectId: user.id, data: { roles: input.roles, warnings: hits.map((h) => h.code) } });
+    // One grant per role and entity; a tenant-wide grant has no entity (rbac.ts loadActor).
+    for (const r of roles) for (const entityId of new Set(scope)) await db.insert('user_role', { tenant_id: ctx.tenantId, user_id: user.id, role_id: r.id, entity_id: entityId ?? null, granted_by: ctx.actor.userId });
+    await audit(withDb(ctx, db), { action: 'admin.roles.changed', subjectType: 'app_user', subjectId: user.id, data: { roles: input.roles, entities: access, warnings: hits.map((h) => h.code) } });
   });
   // Revoke sessions so new permissions apply immediately.
   await ctx.db.updateWhere('session', { user_id: user.id, revoked_at: { isNull: true } }, { revoked_at: ctx.clock.nowIso() });
@@ -96,6 +114,7 @@ export async function closeSettings(ctx: ServiceContext) {
 
 export async function updateCloseSettings(ctx: ServiceContext, input: { materiality?: { overall: number; performance: number; clearlyTrivial: number }; capitalizationThreshold?: number; prepaidThreshold?: number; autoContinue?: boolean; note: string }) {
   requirePermission(ctx, 'period.lock');
+  requireAllEntities(ctx, 'Close settings');
   if (!input.note || input.note.trim().length < 5) throw new AppError('VALIDATION', 'Explain the change (at least 5 characters).');
   if (input.materiality) {
     const m = input.materiality;
@@ -111,6 +130,7 @@ export async function updateCloseSettings(ctx: ServiceContext, input: { material
 
 export async function listAudit(ctx: ServiceContext, f: { action?: string; subjectId?: string; actorType?: string; q?: string; beforeSeq?: number; limit?: number }) {
   requirePermission(ctx, 'audit.view');
+  requireAllEntities(ctx, 'The audit log');
   const where: Record<string, unknown> = { tenant_id: ctx.tenantId };
   if (f.action) where.action = { contains: f.action };
   if (f.subjectId) where.subject_id = f.subjectId;
@@ -127,6 +147,7 @@ export async function listAudit(ctx: ServiceContext, f: { action?: string; subje
 
 export async function verifyAudit(ctx: ServiceContext) {
   requirePermission(ctx, 'audit.view');
+  requireAllEntities(ctx, 'The audit log');
   return verifyAuditChain(ctx.db, ctx.tenantId);
 }
 

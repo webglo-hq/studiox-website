@@ -90,16 +90,18 @@ export function SignIn({ info, onSignedIn }: { info: SessionInfo; onSignedIn: ()
             {error && <Notice tone="bad">{error}</Notice>}
             <div className="stack" style={{ gap: 8 }} role="list" aria-label="Demo people">
               {personas.map((p) => (
-                <button key={p.email} type="button" role="listitem" className="persona" onClick={() => void signIn(p.email, '')} disabled={!!busy} data-testid={`persona-${p.email.split('@')[0]}`}>
-                  <Avatar name={p.name} />
-                  <span className="grow stack" style={{ gap: 0 }}>
-                    <strong>
-                      {p.name} <span className="muted small">· {p.title}</span>
-                    </strong>
-                    <span className="small muted">{hintFor(p.email)}</span>
-                  </span>
-                  {busy === p.email ? <span className="spinner" aria-label="Signing in" /> : <ArrowRight size={16} aria-hidden />}
-                </button>
+                <div key={p.email} role="listitem">
+                  <button type="button" className="persona" onClick={() => void signIn(p.email, '')} disabled={!!busy} data-testid={`persona-${p.email.split('@')[0]}`}>
+                    <Avatar name={p.name} />
+                    <span className="grow stack" style={{ gap: 0 }}>
+                      <strong>
+                        {p.name} <span className="muted small">· {p.title}</span>
+                      </strong>
+                      <span className="small muted">{hintFor(p.email)}</span>
+                    </span>
+                    {busy === p.email ? <span className="spinner" aria-label="Signing in" /> : <ArrowRight size={16} aria-hidden />}
+                  </button>
+                </div>
               ))}
             </div>
             <Notice tone="info">In the full product people sign in with a password (scrypt-hashed) and an optional two-step code; sessions expire and rotate.</Notice>

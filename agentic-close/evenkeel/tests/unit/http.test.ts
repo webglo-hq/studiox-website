@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hashPassword, verifyPassword } from '../../src/server/auth/password';
 import { SecretBox } from '../../src/server/auth/secrets';
 import { base32Decode, totp } from '../../src/server/auth/totp';
 import { loadConfig } from '../../src/server/config';
@@ -108,6 +109,31 @@ describe('HTTP surface', () => {
     const unknown = await call(c, '/api/auth/login', { email: 'nobody@kitewell.example', password: 'whatever-123456' });
     expect(unknown.status).toBe(401);
     expect(unknown.json!.error.message).toBe('Email or password is incorrect.');
+  });
+
+  it('EK-m2: a locked account answers the same whatever the password (no password oracle)', async () => {
+    const c: Client = { cookie: null, csrf: null };
+    const sam = (await s.db.findOne('app_user', { email: 'sam@kitewell.example' }))!;
+    const until = new Date(Date.parse(s.clock.nowIso()) + 10 * 60_000).toISOString();
+    await s.db.update('app_user', sam.id, { failed_logins: 5, locked_until: until });
+    const wrong = await call(c, '/api/auth/login', { email: 'sam@kitewell.example', password: 'definitely-not-it-123' });
+    const right = await call(c, '/api/auth/login', { email: 'sam@kitewell.example', password: TEST_PASSWORD });
+    expect([wrong.status, right.status]).toEqual([423, 423]);
+    expect(wrong.json!.error).toEqual(right.json!.error);
+    // Attempts while locked neither count nor extend the lock.
+    const after = (await s.db.get('app_user', sam.id))!;
+    expect(after.failed_logins).toBe(5);
+    expect(after.locked_until).toBe(until);
+    await s.db.update('app_user', sam.id, { failed_logins: 0, locked_until: null });
+  });
+
+  it('EK-m3: upgrades a hash with below-OWASP scrypt parameters at the next sign-in', async () => {
+    const taylor = (await s.db.findOne('app_user', { email: 'taylor@kitewell.example' }))!;
+    await s.db.update('app_user', taylor.id, { password_hash: await hashPassword(TEST_PASSWORD, { N: 1 << 15, r: 8, p: 1, keylen: 64 }) });
+    await signIn('taylor@kitewell.example');
+    const upgraded = (await s.db.get('app_user', taylor.id))!.password_hash!;
+    expect(upgraded).toMatch(/^scrypt\$32768\$8\$3\$/);
+    expect(await verifyPassword(TEST_PASSWORD, upgraded)).toBe(true);
   });
 
   it('requires a session for the API and the CSRF token for changes', async () => {

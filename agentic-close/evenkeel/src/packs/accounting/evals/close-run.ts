@@ -10,7 +10,7 @@ import { loadScenario, type ScenarioInfo } from '../seed/load';
 import { SCENARIO, type UserKey } from '../seed/scenario';
 import { completionReadiness, updateTask } from '../services/close';
 import { listIssues, updateIssue } from '../services/issues';
-import { approvePackage, listPackages } from '../services/package';
+import { approvePackage, getPackage, listPackages, refreshPackage } from '../services/package';
 import { lockPeriod, lockReadiness } from '../services/periods';
 import { certifyRec, listRecs, reviewRec } from '../services/recs';
 import { createMemoryDb, type EkDb, type EkSchema } from '../store';
@@ -35,7 +35,8 @@ export interface CloseRunResult {
   auditChecked: number;
 }
 
-export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; through?: 'proposals' | 'lock'; log?: (s: string) => void }): Promise<CloseRunResult> {
+/** `through`: stop once the proposals are decided, once every review is done (before signing), or after locking. */
+export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; through?: 'proposals' | 'reviews' | 'lock'; log?: (s: string) => void }): Promise<CloseRunResult> {
   const log = opts.log ?? (() => undefined);
   const db = opts.db ?? createMemoryDb();
   const info = await loadScenario(db, { skills: opts.skills });
@@ -54,6 +55,11 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
     for (const who of ['casey', 'priya', 'jordan'] as const) {
       if (!remaining.length) break;
       const r = await engine.decide({ proposalIds: remaining, decision: 'approve', userId: info.users[who] });
+      // Flagged and low-confidence items are opened and approved one at a time.
+      for (const one of r.results.filter((x) => x.code === 'REVIEW_INDIVIDUALLY')) {
+        const single = await engine.decide({ proposalIds: [one.proposalId], decision: 'approve', userId: info.users[who] });
+        Object.assign(one, single.results[0]);
+      }
       remaining = r.results.filter((x) => !x.ok && x.code !== 'CONFLICT').map((x) => x.proposalId);
     }
     log(`round ${rounds + 1}: ${pending.length} pending, ${remaining.length} left undecided`);
@@ -63,11 +69,10 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
 
   let locked = false;
   let lockFailures: string[] = [];
-  if (opts.through === 'lock') {
+  if (opts.through === 'lock' || opts.through === 'reviews') {
     const sam = await as('sam');
     const priya = await as('priya');
     const casey = await as('casey');
-    const jordan = await as('jordan');
     for (const r of await listRecs(sam, SCENARIO.openPeriod)) if (r.status === 'in_progress' || r.status === 'not_started') await certifyRec(sam, r.id).catch((e: Error) => log(`certify ${r.title}: ${e.message}`));
     for (const r of await listRecs(priya, SCENARIO.openPeriod)) if (r.status === 'prepared') await reviewRec(priya, r.id, { approve: true });
     for (const i of await listIssues(casey, { periodKey: SCENARIO.openPeriod, status: ['open', 'acknowledged'] })) {
@@ -81,7 +86,13 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
         if ((await completionReadiness(who, t.id)).ok) await updateTask(who, { taskId: t.id, action: 'complete' });
       }
     }
-    const draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft');
+  }
+  if (opts.through === 'lock') {
+    const casey = await as('casey');
+    const jordan = await as('jordan');
+    // The draft was generated before the reviews finished: refresh it to the current close, then sign.
+    let draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft');
+    if (draft && (await getPackage(jordan, draft.id)).stale) draft = await refreshPackage(jordan, draft.id);
     if (draft) await approvePackage(jordan, draft.id);
     const ready = await lockReadiness(casey, SCENARIO.openPeriod);
     lockFailures = ready.checks.filter((c) => !c.ok).map((c) => `${c.label}: ${c.detail}`);

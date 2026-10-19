@@ -4,7 +4,7 @@ import { AppError } from '../../../framework/util/errors';
 import { workdayLabel } from '../../../framework/util/workdays';
 import { blockers, satisfied, type OrchTask } from '../../../framework/runtime/orchestrator';
 import { audit } from '../domain/audit';
-import { hasPermission, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, hasPermission, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { entities } from '../domain/refdata';
 import { REC_TEMPLATE } from '../close/template';
 import type { EkSchema } from '../store';
@@ -115,7 +115,9 @@ export async function closeCalendar(ctx: ServiceContext, periodKey: string): Pro
     const r = t.row;
     const tr = runs.filter((x) => x.close_task_id === t.id);
     const last = tr[0];
-    const taskRecs = recs.filter((rc) => REC_TEMPLATE.some((tpl) => tpl.task === r.code && tpl.account === accts.get(rc.account_id)?.code && ents.get(rc.entity_id)?.code === tpl.entity && tpl.type === rc.rec_type));
+    // The calendar is shared; what a run found, and other entities' reconciliations, are not.
+    const visible = canSeeEntity(ctx, r.entity_id);
+    const taskRecs = recs.filter((rc) => canSeeEntity(ctx, rc.entity_id) && REC_TEMPLATE.some((tpl) => tpl.task === r.code && tpl.account === accts.get(rc.account_id)?.code && ents.get(rc.entity_id)?.code === tpl.entity && tpl.type === rc.rec_type));
     const depRows = t.deps.map((d) => byId.get(d)).filter((x): x is NonNullable<typeof x> => !!x);
     return {
       id: r.id,
@@ -143,7 +145,7 @@ export async function closeCalendar(ctx: ServiceContext, periodKey: string): Pro
       blockedBy: (bl.find((b) => b.taskId === t.id)?.waitingOn ?? []).map((w) => ({ code: byId.get(w.taskId)?.code ?? '', title: w.title, reason: w.reason })),
       pendingProposals: t.pendingProposals,
       autoApplied: autoCounts.filter((a) => tr.some((x) => x.id === a.run_id)).length,
-      lastRun: last ? { id: last.id, status: last.status, summary: last.summary, engine: last.engine, at: last.finished_at ?? last.started_at } : null,
+      lastRun: last ? { id: last.id, status: last.status, summary: visible ? last.summary : null, engine: last.engine, at: last.finished_at ?? last.started_at } : null,
       runs: tr.length,
       recs: taskRecs.map((rc) => ({ id: rc.id, title: rc.notes ?? '', status: rc.status, unexplained: rc.unexplained })),
       notes: r.notes,
@@ -232,6 +234,11 @@ export async function completionReadiness(ctx: ServiceContext, taskId: string): 
     if (pending) reasons.push(`${pending} agent proposal${pending === 1 ? '' : 's'} still need a decision.`);
   }
   for (const rc of await recsForTask(ctx, t)) if (rc.status !== 'reviewed') reasons.push(`Reconciliation “${rc.notes}” is ${rc.status.replace('_', ' ')}, not reviewed.`);
+  // The reporting task's review is the signature on the close package (approvePackage completes it).
+  if (t.category === 'reporting') {
+    const cycle = await ctx.db.get('close_cycle', t.close_cycle_id);
+    if (!cycle || !(await ctx.db.count('close_package', { tenant_id: ctx.tenantId, period_key: cycle.period_key, status: 'final' }))) reasons.push('Sign the close package first; signing it completes this task.');
+  }
   const preparer = t.prepared_by ?? t.owner_id;
   if (preparer && preparer === ctx.actor.userId) reasons.push('You prepared this task, so someone else must review and complete it.');
   if (!hasPermission(ctx.actor, 'close.task.review')) reasons.push('Your role cannot complete tasks.');
@@ -242,6 +249,7 @@ export async function completionReadiness(ctx: ServiceContext, taskId: string): 
 export async function updateTask(ctx: ServiceContext, input: { taskId: string; action: 'start' | 'block' | 'prepare' | 'complete' | 'reopen'; note?: string }): Promise<void> {
   const t = await ctx.db.get('close_task', input.taskId);
   if (!t || t.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Task not found');
+  requireEntity(ctx, t.entity_id);
   const cycle = (await ctx.db.get('close_cycle', t.close_cycle_id))!;
   if (cycle.status === 'closed') throw new AppError('PERIOD_LOCKED', 'This close is finished; tasks cannot change.');
   const now = ctx.clock.nowIso();
@@ -287,6 +295,7 @@ export async function assignTask(ctx: ServiceContext, input: { taskId: string; o
   requirePermission(ctx, 'close.task.assign');
   const t = await ctx.db.get('close_task', input.taskId);
   if (!t || t.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Task not found');
+  requireEntity(ctx, t.entity_id);
   const owner = input.ownerId ?? t.owner_id;
   const reviewer = input.reviewerId ?? t.reviewer_id;
   if (owner && reviewer && owner === reviewer) throw new AppError('SOD_VIOLATION', 'The owner and the reviewer must be different people.');

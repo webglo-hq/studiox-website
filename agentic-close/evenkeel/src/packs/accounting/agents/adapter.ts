@@ -7,16 +7,14 @@ import { hasPermission, makeContext, requireEntity } from '../domain/context';
 import { assertSod, loadActor } from '../domain/rbac';
 import { ONTOLOGY_VERSION, PROPOSAL_CLASS, type ProposalKind } from '../ontology';
 import { syncTaskFromRuns } from '../services/close';
-import { currentPeriodKey, materialityBand, toReporting } from '../services/common';
+import { currentPeriodKey } from '../services/common';
 import { refreshRec } from '../services/recs';
 import { currentPolicy } from '../services/skills';
 import type { EkDb } from '../store';
+import { assessProposal } from './assess';
 import { agentServiceContext, type AgentCtx } from './context';
 import { applyProposal } from './effectors';
-import { entityCurrencyOf, verifyProposal } from './verify';
-
-/** Proposal kinds that move money or balances (gated by amount); the rest gate on confidence only. */
-const MONETARY: ReadonlySet<string> = new Set(['journal_entry', 'coding', 'rec_match', 'reconciling_item', 'prepaid_schedule', 'fixed_asset']);
+import { verifyProposal } from './verify';
 
 /** Permission a person needs (in addition to proposal.approve) to approve each kind. */
 const APPROVE_PERMISSION: Record<ProposalKind, string> = {
@@ -29,7 +27,7 @@ const APPROVE_PERMISSION: Record<ProposalKind, string> = {
   flux_explanation: 'flux.approve',
   issue: 'issue.resolve',
   task_update: 'close.task.review',
-  close_package: 'package.generate',
+  close_package: 'package.approve',
 };
 
 export interface AdapterDeps {
@@ -54,27 +52,21 @@ export function createAdapter(deps: AdapterDeps): DomainAdapter<AgentCtx> {
       decider = { ...(await loadActor(db, tenantId, actor.userId)), label: actor.label };
       svc = makeContext(db, tenantId, decider, clock);
     } else {
-      svc = agentServiceContext(db, tenantId, clock, run, actor, requester);
+      const owner = actor.userId && actor.userId !== run.requestedBy ? await loadActor(db, tenantId, actor.userId).catch(() => null) : null;
+      svc = agentServiceContext(db, tenantId, clock, run, actor, requester, owner);
     }
     const policy = await currentPolicy(svc, skill);
     const periodKey = run.periodKey ?? (await currentPeriodKey(svc));
     return { svc, run, skill, policy, periodKey, requester, decider, dispatch: deps.dispatch };
   };
 
-  const assess = async (draft: ProposalDraft, ctx: AgentCtx): Promise<Assessment> => {
-    const currency = draft.currency ?? (await entityCurrencyOf(ctx, draft.entityId ?? ctx.run.entityId));
-    const amount = Math.abs(draft.amount ?? 0);
-    const reporting = await toReporting(ctx.svc, amount, currency, draft.periodKey ?? ctx.periodKey);
-    const { band, performance } = await materialityBand(ctx.svc, reporting);
-    const gating = MONETARY.has(draft.kind) ? reporting : 0;
-    const materiality = MONETARY.has(draft.kind) ? band : 'trivial';
-    return { amountReporting: gating, materiality, performanceMateriality: performance, requiresRole: materiality === 'material' ? 'controller' : null };
-  };
+  // Amount, materiality and holds come from the payload and its records, never the agent's claims.
+  const assess = (draft: ProposalDraft, ctx: AgentCtx): Promise<Assessment> => assessProposal(ctx, draft);
 
   const authorize = async (p: ProposalRecord, ctx: AgentCtx, decision: 'approve' | 'reject' | 'review'): Promise<void> => {
     const actor = ctx.decider ?? ctx.svc.actor;
     if (!actor.userId) throw new AppError('FORBIDDEN', 'Only a signed-in person can decide on proposals.');
-    if (p.entityId) requireEntity(ctx.svc, p.entityId);
+    requireEntity(ctx.svc, p.entityId);
     if (decision === 'review') {
       if (!hasPermission(actor, 'proposal.review')) throw new AppError('FORBIDDEN', 'Your role cannot complete post-hoc reviews.');
       if (ctx.run.requestedBy === actor.userId) throw new AppError('SOD_VIOLATION', 'SOD-02: you started the run that posted this; someone else must review it.');

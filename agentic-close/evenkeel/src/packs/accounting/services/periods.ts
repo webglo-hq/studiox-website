@@ -1,7 +1,7 @@
 import { addMonths } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { requireAllEntities, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { entities } from '../domain/refdata';
 import { closeOntology } from '../ontology';
 import { contentHash, buildPackageContent, type PackageContent } from './package';
@@ -74,6 +74,7 @@ export async function lockReadiness(ctx: ServiceContext, periodKey: string): Pro
 
 export async function softClose(ctx: ServiceContext, periodKey: string): Promise<void> {
   requirePermission(ctx, 'period.soft_close');
+  requireAllEntities(ctx, 'Closing a period');
   const periods = await ctx.db.find('fiscal_period', { tenant_id: ctx.tenantId, period_key: periodKey, status: 'open' });
   if (!periods.length) throw new AppError('CONFLICT', `${periodKey} is not open.`);
   const now = ctx.clock.nowIso();
@@ -86,6 +87,7 @@ export async function softClose(ctx: ServiceContext, periodKey: string): Promise
 /** Lock (hard-close) the period for every entity. Soft-closes first if needed. */
 export async function lockPeriod(ctx: ServiceContext, periodKey: string, statement?: string): Promise<LockReadiness> {
   requirePermission(ctx, 'period.lock');
+  requireAllEntities(ctx, 'Locking a period');
   const ready = await lockReadiness(ctx, periodKey);
   if (!ready.ok) throw new AppError('CONFLICT', `Not ready to lock: ${ready.checks.filter((c) => !c.ok).map((c) => `${c.label} (${c.detail})`).join('; ')}`, { checks: ready.checks });
   const now = ctx.clock.nowIso();
@@ -110,6 +112,7 @@ export async function lockPeriod(ctx: ServiceContext, periodKey: string, stateme
 
 export async function reopenPeriod(ctx: ServiceContext, periodKey: string, reason: string): Promise<void> {
   requirePermission(ctx, 'period.reopen');
+  requireAllEntities(ctx, 'Reopening a period');
   if (!reason || reason.trim().length < 10) throw new AppError('VALIDATION', 'Reopening a locked period needs a documented reason (at least 10 characters).');
   const periods = await ctx.db.find('fiscal_period', { tenant_id: ctx.tenantId, period_key: periodKey, status: 'hard_close' });
   if (!periods.length) throw new AppError('CONFLICT', `${periodKey} is not locked.`);

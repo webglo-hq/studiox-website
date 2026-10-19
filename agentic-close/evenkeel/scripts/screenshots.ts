@@ -59,12 +59,21 @@ async function startClose(browser: Browser, url: string, viewport: { width: numb
   return page;
 }
 
-async function signIn(page: Page): Promise<void> {
-  await page.getByTestId('persona-casey').click();
-  await expect(page.getByTestId('sign-out')).toBeVisible({ timeout: 60_000 });
+async function signIn(page: Page, who = 'casey'): Promise<void> {
+  await page.getByTestId(`persona-${who}`).click();
   await go(page, '#/');
   await expect(page.getByTestId('next-action')).toBeVisible({ timeout: 60_000 });
   await idle(page);
+}
+
+/** Sign out (from the navigation drawer on a phone) and sign in as someone else; the demo's data stays. */
+async function switchTo(page: Page, who: string): Promise<void> {
+  if (await page.locator('.drawer').isVisible()) await page.keyboard.press('Escape');
+  const menu = page.getByRole('button', { name: 'Open navigation' });
+  if ((await menu.isVisible()) && !(await page.locator('.shell[data-nav-open="true"]').count())) await menu.click();
+  await page.getByTestId('sign-out').click();
+  await expect(page.getByTestId(`persona-${who}`)).toBeVisible({ timeout: 60_000 });
+  await signIn(page, who);
 }
 
 async function runAgents(page: Page): Promise<void> {
@@ -93,6 +102,8 @@ async function desktop(browser: Browser, url: string): Promise<void> {
   await go(page, '#/cockpit');
   await expect(page.getByTestId('task-table')).toBeVisible();
   await shot(page, 'desktop-04-cockpit');
+  // Casey started the agents, so their proposals wait for others: the inbox as Priya sees it.
+  await switchTo(page, 'priya');
   await go(page, '#/inbox?tab=mine');
   await expect(page.getByTestId('inbox-table')).toBeVisible();
   await shot(page, 'desktop-05-inbox');
@@ -102,6 +113,7 @@ async function desktop(browser: Browser, url: string): Promise<void> {
   await expect(page.getByTestId('inbox-table')).toBeVisible();
   await openRow(page, 'inbox-table', /Suspicious outgoing wire/);
   await shot(page, 'desktop-07-guardrail-injection');
+  await switchTo(page, 'casey');
   await go(page, '#/recs');
   await openRow(page, 'rec-table', /Operating|Checking|Cash/i);
   await shot(page, 'desktop-08-reconciliation-workbench');
@@ -130,6 +142,7 @@ async function desktop(browser: Browser, url: string): Promise<void> {
   await go(page, '#/cockpit');
   await expect(page.getByTestId('task-table')).toBeVisible();
   await shot(page, 'desktop-16-cockpit-dark');
+  await switchTo(page, 'priya');
   await go(page, '#/inbox?tab=mine');
   await expect(page.getByTestId('inbox-table')).toBeVisible();
   await shot(page, 'desktop-17-inbox-dark');
@@ -147,11 +160,13 @@ async function phone(browser: Browser, url: string): Promise<void> {
   await page.waitForTimeout(300);
   await shot(page, 'phone-03-navigation');
   await page.keyboard.press('Escape');
+  await switchTo(page, 'priya');
   await go(page, '#/inbox?tab=mine');
   await expect(page.getByTestId('inbox-table')).toBeVisible();
   await shot(page, 'phone-04-inbox');
   await openRow(page, 'inbox-table', /Accrue Northgate/);
   await shot(page, 'phone-05-proposal');
+  await switchTo(page, 'casey');
   await go(page, '#/recs');
   await openRow(page, 'rec-table', /Operating|Checking|Cash/i);
   await shot(page, 'phone-06-reconciliation');

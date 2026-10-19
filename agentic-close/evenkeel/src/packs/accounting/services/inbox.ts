@@ -1,8 +1,10 @@
+import type { GateExplanation } from '../../../framework/runtime/types';
 import type { Row } from '../../../framework/store/schema';
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { hasPermission, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, hasPermission, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { reverseEntry } from '../domain/ledger';
+import { loadActor } from '../domain/rbac';
 import { accounts, dimensionById, entities } from '../domain/refdata';
 import { formatMoney } from '../../../framework/util/money';
 import { closeOntology } from '../ontology';
@@ -32,7 +34,9 @@ const KIND_PERMISSION: Record<string, string> = {
   flux_explanation: 'flux.approve',
   issue: 'issue.resolve',
   task_update: 'close.task.review',
-  close_package: 'package.generate',
+  // The agent's draft package goes to the people who sign packages (the CFO, or a controller
+  // who neither owns the task nor started the run).
+  close_package: 'package.approve',
 };
 
 export const KIND_LABEL: Record<string, string> = {
@@ -61,10 +65,50 @@ export function approveGuard(ctx: ServiceContext, p: ProposalRow, requestedBy: s
   if (p.materiality === 'material' && !hasPermission(a, 'proposal.approve.material')) reasons.push('At or above performance materiality — needs a controller or CFO.');
   const extra = KIND_PERMISSION[p.kind];
   if (extra && !hasPermission(a, extra)) reasons.push(`Needs the ${extra} permission.`);
-  if (a.userId && requestedBy === a.userId) reasons.push('SOD-02: the agent prepared this on your behalf, so someone else must approve it.');
+  if (a.userId && requestedBy === a.userId) reasons.push('SOD-02: you started the agent run that prepared this, so someone else must approve it.');
   else if (a.userId && taskOwner === a.userId) reasons.push('SOD-01: you own the task this was prepared for, so someone else must approve it.');
-  if (p.entity_id && a.entityScope !== 'all' && !a.entityScope.includes(p.entity_id)) reasons.push('Outside your entities.');
+  if (!canSeeEntity(ctx, p.entity_id)) reasons.push('Outside your entities.');
   return { ok: reasons.length === 0, reasons };
+}
+
+/** Holds that mean "open this one and decide it on its own, with the evidence in view". */
+const INDIVIDUAL_REVIEW: Record<string, string> = {
+  untrusted_text: 'Flagged: its sources contain instruction-like text.',
+  low_confidence: 'Its confidence is below the policy floor.',
+  policy_rule: 'A policy rule asks for a person to look at it.',
+  review_requested: 'The agent or a policy rule asked for a person to look at it.',
+  amount_unknown: 'Its amount could not be computed.',
+};
+
+/**
+ * Whether an item may be approved in bulk. Items flagged for instruction-like text, below the
+ * policy's confidence floor, or held by a policy rule or at the agent's request are approved
+ * one at a time, never swept up by "select all".
+ */
+export function bulkGuard(p: ProposalRow): Guard {
+  const gate = (p.verification as { gate?: GateExplanation }).gate;
+  const codes = new Set(gate?.codes ?? []);
+  if (p.injection_flag) codes.add('untrusted_text');
+  if (gate && p.confidence < gate.minConfidence) codes.add('low_confidence');
+  const reasons = [...codes].filter((c) => c in INDIVIDUAL_REVIEW).map((c) => INDIVIDUAL_REVIEW[c]!);
+  if (reasons.length) reasons.push('Open it and approve it on its own.');
+  return { ok: reasons.length === 0, reasons };
+}
+
+/** Everyone who could approve each open proposal: role, materiality, segregation of duties, scope. */
+export async function approversFor(ctx: ServiceContext, rows: ProposalRow[]): Promise<Map<string, PersonRef[]>> {
+  const users = await ctx.db.find('app_user', { tenant_id: ctx.tenantId, status: 'active' }, { orderBy: [['display_name', 'asc']] });
+  const actors = await Promise.all(users.map((u) => loadActor(ctx.db, ctx.tenantId, u.id)));
+  const runs = new Map((rows.length ? await ctx.db.find('agent_run', { id: { in: [...new Set(rows.map((r) => r.run_id))] } }) : []).map((r) => [r.id, r]));
+  const taskIds = [...new Set([...runs.values()].map((r) => r.close_task_id).filter((x): x is string => !!x))];
+  const owners = new Map((taskIds.length ? await ctx.db.find('close_task', { id: { in: taskIds } }) : []).map((t) => [t.id, t.owner_id]));
+  const out = new Map<string, PersonRef[]>();
+  for (const r of rows) {
+    const run = runs.get(r.run_id);
+    const owner = run?.close_task_id ? (owners.get(run.close_task_id) ?? null) : null;
+    out.set(r.id, actors.filter((a) => approveGuard({ ...ctx, actor: a }, r, run?.requested_by ?? null, owner).ok).map((a) => ({ id: a.userId!, name: a.label, title: users.find((u) => u.id === a.userId)?.title ?? null })));
+  }
+  return out;
 }
 
 export interface ProposalView {
@@ -86,7 +130,7 @@ export interface ProposalView {
   checks: { id: string; label: string; ok: boolean; severity: string; detail?: string }[];
   evidence: { kind: string; label: string; detail?: string; ref?: { type: string; id: string; label?: string }; untrusted?: boolean }[];
   injectionFlag: boolean;
-  run: { id: string; taskCode: string | null; taskTitle: string | null; requestedBy: PersonRef | null; engine: string; model: string | null };
+  run: { id: string; taskCode: string | null; taskTitle: string | null; requestedBy: PersonRef | null; owner: PersonRef | null; engine: string; model: string | null };
   decidedBy: PersonRef | null;
   decidedAt: string | null;
   decisionReason: string | null;
@@ -94,6 +138,8 @@ export interface ProposalView {
   appliedRef: Record<string, unknown> | null;
   createdAt: string;
   canApprove: Guard;
+  /** May be approved with others ("select all"); otherwise it must be opened and approved alone. */
+  canBulkApprove: Guard;
   canReject: Guard;
   canReview: Guard;
   canUndo: Guard;
@@ -224,7 +270,7 @@ async function toViews(ctx: ServiceContext, rows: ProposalRow[]): Promise<Propos
       checks: v.checks ?? [],
       evidence: r.evidence as ProposalView['evidence'],
       injectionFlag: r.injection_flag,
-      run: { id: r.run_id, taskCode: task?.code ?? null, taskTitle: task?.title ?? null, requestedBy: p(run?.requested_by ?? null), engine: run?.engine ?? 'offline', model: run?.model ?? null },
+      run: { id: r.run_id, taskCode: task?.code ?? null, taskTitle: task?.title ?? null, requestedBy: p(run?.requested_by ?? null), owner: p(task?.owner_id ?? null), engine: run?.engine ?? 'offline', model: run?.model ?? null },
       decidedBy: p(r.decided_by),
       decidedAt: r.decided_at,
       decisionReason: r.decision_reason,
@@ -232,6 +278,7 @@ async function toViews(ctx: ServiceContext, rows: ProposalRow[]): Promise<Propos
       appliedRef: r.applied_ref,
       createdAt: r.created_at,
       canApprove: approve,
+      canBulkApprove: approve.ok ? bulkGuard(r) : approve,
       canReject: reject,
       canReview: { ok: reviewReasons.length === 0, reasons: reviewReasons },
       canUndo: { ok: undoReasons.length === 0, reasons: undoReasons },
@@ -249,7 +296,7 @@ export async function listProposals(ctx: ServiceContext, f: { tab?: InboxTab; ki
   if (f.periodKey) base.period_key = f.periodKey;
   if (f.kind) base.kind = f.kind;
   if (f.skillId) base.skill_id = f.skillId;
-  const all = await ctx.db.find('proposal', base as never, { orderBy: [['created_at', 'desc']] });
+  const all = (await ctx.db.find('proposal', base as never, { orderBy: [['created_at', 'desc']] })).filter((p) => canSeeEntity(ctx, p.entity_id));
   const waiting = all.filter((p) => p.status === 'pending' || p.status === 'suggested');
   const review = all.filter((p) => p.status === 'auto_applied' && (p.review_status === 'sampled' || p.review_status === 'pending_review'));
   const auto = all.filter((p) => p.status === 'auto_applied');
@@ -281,6 +328,7 @@ export async function getProposal(ctx: ServiceContext, id: string): Promise<Prop
   requirePermission(ctx, 'close.view');
   const p = await ctx.db.get('proposal', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Proposal not found');
+  requireEntity(ctx, p.entity_id);
   return (await toViews(ctx, [p]))[0]!;
 }
 

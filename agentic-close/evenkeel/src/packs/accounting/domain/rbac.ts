@@ -56,7 +56,9 @@ export const ROLE_DEFS: RoleDef[] = [
   { code: 'fpa_analyst', name: 'FP&A Analyst', description: 'Explains variances against budget and prior periods.', rank: 9, permissions: ['close.view', 'close.task.update', 'agent.run', 'flux.explain', 'report.view', 'ontology.view'] },
   { code: 'senior_accountant', name: 'Senior Accountant', description: 'Reviews and approves routine close work; tunes skill policies.', rank: 20, permissions: SENIOR },
   { code: 'controller', name: 'Controller', description: 'Owns the close: approves material items, sets agent autonomy, locks the period.', rank: 30, permissions: [...SENIOR, 'proposal.approve.material', 'period.lock', 'skill.autonomy.set', 'package.approve', 'close.task.assign', 'payment.approve'] },
-  { code: 'cfo', name: 'CFO', description: 'Final sign-off on the close package; reopens locked periods.', rank: 40, permissions: ['close.view', 'report.view', 'proposal.approve', 'proposal.approve.material', 'package.approve', 'period.lock', 'period.reopen', 'audit.view', 'flux.approve', 'ontology.view', 'close.task.review', 'issue.resolve'] },
+  // The CFO approves material items whatever their kind (entries, reconciliation items), which also
+  // gives a third approver when the controller started a run for a task the senior accountant owns.
+  { code: 'cfo', name: 'CFO', description: 'Final sign-off on the close package and approval of material items; reopens locked periods.', rank: 40, permissions: ['close.view', 'report.view', 'proposal.approve', 'proposal.approve.material', 'je.approve', 'rec.review', 'package.approve', 'period.lock', 'period.reopen', 'audit.view', 'flux.approve', 'ontology.view', 'close.task.review', 'issue.resolve'] },
   { code: 'auditor', name: 'Auditor (read-only)', description: 'Read-only access to the ledger, evidence, traces and audit log.', rank: 5, permissions: ['close.view', 'report.view', 'audit.view', 'ontology.view'] },
   { code: 'admin', name: 'Administrator', description: 'Manages users, roles and SoD rules. Cannot approve accounting work.', rank: 15, permissions: ['admin.users', 'admin.sod', 'audit.view', 'close.view', 'ontology.view', 'report.view'] },
 ];

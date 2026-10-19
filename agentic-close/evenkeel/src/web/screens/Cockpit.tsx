@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, CircleAlert, Lock, Play, RotateCcw, Unlock } from 'lucide-react';
+import { Bot, CheckCircle2, CircleAlert, Lock, Play, RotateCcw, Signature, Unlock } from 'lucide-react';
 import { useState } from 'react';
 import type { MethodOutput } from '../../app/methods';
 import { useAgents } from '../lib/agents';
@@ -6,7 +6,7 @@ import { useAction, useApi } from '../lib/api';
 import { date, humanize, period, plural } from '../lib/format';
 import { href } from '../lib/router';
 import { useSession } from '../lib/session';
-import { Badge, Button, Card, Dialog, Field, Notice, PageHead, Person, Progress, Query, Status } from '../ui/kit';
+import { Badge, Button, Card, Dialog, Field, LinkButton, Notice, PageHead, Person, Progress, Query, Status } from '../ui/kit';
 import { Term } from '../ui/term';
 
 type Calendar = MethodOutput<'close.calendar'>;
@@ -19,7 +19,9 @@ function TaskActions({ t }: { t: Task }) {
   const update = useAction('close.updateTask', { success: (_o, i) => (i.action === 'complete' ? `${t.code} completed.` : i.action === 'prepare' ? `${t.code} marked prepared.` : i.action === 'reopen' ? `${t.code} reopened.` : 'Task updated.') });
   const canRun = !!t.skillId && t.status !== 'complete' && can('agent.run') && (t.owner?.id === me || can('agent.orchestrate'));
   const canPrepare = (t.status === 'in_progress' || t.status === 'not_started') && t.owner?.id === me && !t.skillId;
-  const canComplete = t.status === 'ready_for_review' && can('close.task.review') && (t.preparedBy?.id ?? t.owner?.id) !== me;
+  // The reporting task is reviewed by signing the close package, which completes it.
+  const signsPackage = t.category === 'reporting' && t.status === 'ready_for_review';
+  const canComplete = !signsPackage && t.status === 'ready_for_review' && can('close.task.review') && (t.preparedBy?.id ?? t.owner?.id) !== me;
   const canReopen = t.status === 'complete' && can('close.task.review');
   return (
     <div className="row-wrap" style={{ justifyContent: 'flex-end' }}>
@@ -37,6 +39,11 @@ function TaskActions({ t }: { t: Task }) {
         <Button size="s" variant="good" icon={<CheckCircle2 size={14} aria-hidden />} busy={update.isPending} onClick={() => update.mutate({ taskId: t.id, action: 'complete' })} data-testid={`complete-${t.code}`}>
           Complete review
         </Button>
+      )}
+      {signsPackage && can('package.approve') && (
+        <LinkButton size="s" href={href('/package')} icon={<Signature size={14} aria-hidden />}>
+          Sign the package
+        </LinkButton>
       )}
       {canReopen && (
         <Button size="s" variant="quiet" icon={<RotateCcw size={14} aria-hidden />} busy={update.isPending} onClick={() => update.mutate({ taskId: t.id, action: 'reopen', note: 'Reopened from the cockpit' })}>

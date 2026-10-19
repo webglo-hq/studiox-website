@@ -1,11 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { agentsIdle, approveAllMine, go, open, signInAs } from './helpers';
+import { agentsIdle, approveAllMine, continueClose, go, open, signInAs } from './helpers';
 
 /**
  * The demo script, end to end, as the people who would do it:
  * log in → see what's next → run agents → review and approve (and reject one, with a reason)
  * → certify reconciliations → review them → explain flux → disposition exceptions
- * → complete task reviews → approve the close package → lock the period → verify the audit chain.
+ * → complete task reviews → refresh and sign the close package → lock the period → verify the
+ * audit chain.
  */
 
 async function certifyAll(page: Page): Promise<number> {
@@ -79,7 +80,10 @@ test('the September close, end to end', async ({ page }, info) => {
   await page.getByTestId('run-agents').first().click();
   await expect(page.getByTestId('next-action')).not.toHaveText('Run the close agents', { timeout: 240_000 });
   await agentsIdle(page);
+  // Casey started every run, so nothing waits for her approval; she sees the whole queue.
   await go(page, '#/inbox');
+  await expect(page.getByText('Nothing is waiting for you')).toBeVisible();
+  await go(page, '#/inbox?tab=waiting');
   await expect(page.getByTestId('proposal-row').first()).toBeVisible();
   await shots('inbox');
 
@@ -93,14 +97,18 @@ test('the September close, end to end', async ({ page }, info) => {
   await page.keyboard.press('Escape');
   await page.getByRole('searchbox', { name: 'Search proposals' }).fill('');
 
-  // 4. Approve, as the controller and the senior accountant (maker-checker), until nothing waits.
+  // 4. Approve until nothing waits. Nobody approves a run they started or work prepared for them,
+  // so the controller, the senior accountant and the CFO share the approvals; the controller
+  // continues the close when approvals unblock the next tasks.
   let rounds = 0;
   for (; rounds < 10; rounds++) {
-    const a = await approveAllMine(page);
-    await signInAs(page, 'priya');
-    const b = await approveAllMine(page);
-    await signInAs(page, 'casey');
-    if (a + b === 0) break;
+    let progress = 0;
+    for (const who of ['casey', 'priya', 'jordan'] as const) {
+      if (who !== 'casey' || rounds > 0) await signInAs(page, who);
+      progress += await approveAllMine(page);
+      if (who === 'casey') progress += await continueClose(page);
+    }
+    if (!progress) break;
   }
   await go(page, '#/inbox?tab=waiting');
   await expect(page.getByText('Nothing here').or(page.getByText('Nothing is waiting for you'))).toBeVisible();
@@ -145,9 +153,15 @@ test('the September close, end to end', async ({ page }, info) => {
   completed += await completeReviews(page);
   expect(completed).toBeGreaterThan(0);
 
-  // 9. The CFO approves the close package.
+  // 9. The CFO signs the close package. The agent drafted it before the reviews finished, so
+  // the draft no longer shows the close as it stands: refresh it, then sign the current version.
   await signInAs(page, 'jordan');
+  await expect(page.getByTestId('next-action')).toHaveText('Refresh and sign the close package');
   await go(page, '#/package');
+  await expect(page.getByText('The close changed since this version was generated')).toBeVisible();
+  await expect(page.getByTestId('approve-package')).toBeDisabled();
+  await page.getByTestId('refresh-package').click();
+  await expect(page.getByTestId('approve-package')).toBeEnabled();
   await page.getByTestId('approve-package').click();
   await page.getByTestId('confirm-package').click();
   await expect(page.getByText(/Package approved and signed/)).toBeVisible();

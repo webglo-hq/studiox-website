@@ -164,8 +164,11 @@ export interface PayrollFact {
 }
 
 /**
- * Wages earned after the last pay period that ended inside the month, through month end,
- * based on the most recent payroll's daily run-rate (business days).
+ * Wages earned but unpaid at month end, on a pay-period basis. Salaried staff earn a fixed
+ * amount per pay period whatever its number of working days, so the accrual is the most
+ * recent run's pay times the share of each later pay period that falls inside the month
+ * (business days of that period up to month end ÷ business days in the period). A
+ * semi-monthly run for the 1st–15th leaves exactly one period, the 16th–month end, unpaid.
  */
 export function payrollAccrual(payrolls: PayrollFact[], periodKey: string, cal: BusinessCalendar): { amountWages: number; amountTaxes: number; byDepartment: { departmentId: string; amount: number }[]; days: number; basis: string; ref: PayrollFact } | null {
   const pe = periodEnd(periodKey);
@@ -175,18 +178,44 @@ export function payrollAccrual(payrolls: PayrollFact[], periodKey: string, cal: 
   const covered = payrolls.some((p) => p.periodStart <= pe && p.periodEnd >= pe && p.payDate <= pe);
   if (covered) return null;
   const unpaidDays = cal.businessDaysBetween(last.periodEnd, pe);
-  const periodDays = Math.max(1, cal.businessDaysBetween(addDaysSafe(last.periodStart, -1), last.periodEnd));
   if (unpaidDays <= 0) return null;
-  const ratio = unpaidDays / periodDays;
+  const businessDays = (from: string, to: string) => cal.businessDaysBetween(addDaysSafe(from, -1), to);
+  let ratio = 0;
+  const shares: string[] = [];
+  for (let p = nextPayPeriod(last); p.start <= pe; p = nextPayPeriod(p)) {
+    const inPeriod = Math.max(1, businessDays(p.start, p.end));
+    const earned = businessDays(p.start, p.end < pe ? p.end : pe);
+    ratio += earned / inPeriod;
+    shares.push(`${p.start} – ${p.end}: ${earned} of ${inPeriod} business days`);
+  }
+  if (ratio <= 0) return null;
   const byDepartment = last.byDepartment.map((d) => ({ departmentId: d.departmentId, amount: roundHalfAwayFromZero((d.gross + d.taxes) * ratio) }));
+  const share = Math.round(ratio * 1000) / 10;
   return {
     amountWages: roundHalfAwayFromZero(last.grossWages * ratio),
     amountTaxes: roundHalfAwayFromZero(last.employerTaxes * ratio),
     byDepartment,
     days: unpaidDays,
-    basis: `Last payroll covered ${last.periodStart} – ${last.periodEnd} (${periodDays} business days). ${unpaidDays} business days from ${last.periodEnd} to ${pe} are earned but unpaid.`,
+    basis: `Last payroll covered ${last.periodStart} – ${last.periodEnd}. Unpaid at ${pe}: ${shares.join('; ')}, so ${share}% of one pay period's wages and employer taxes are accrued.`,
     ref: last,
   };
+}
+
+/**
+ * The pay period after `p`, by its cadence: semi-monthly (1st–15th, 16th–month end), monthly,
+ * or a fixed length (weekly, bi-weekly) repeated from the day after it ended.
+ */
+export function nextPayPeriod(p: { periodStart: string; periodEnd: string } | { start: string; end: string }): { start: string; end: string } {
+  const start = 'start' in p ? p.start : p.periodStart;
+  const end = 'end' in p ? p.end : p.periodEnd;
+  const day = (d: string) => Number(d.slice(8, 10));
+  const monthEnd = (d: string) => periodEnd(d.slice(0, 7));
+  const next = addDaysSafe(end, 1);
+  if (day(start) === 1 && end === monthEnd(start)) return { start: next, end: monthEnd(next) };
+  if (day(start) === 1 && day(end) === 15) return { start: next, end: monthEnd(end) };
+  if (day(start) === 16 && end === monthEnd(start)) return { start: next, end: addDaysSafe(next, 14) };
+  const length = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
+  return { start: next, end: addDaysSafe(next, length - 1) };
 }
 
 function addDaysSafe(date: string, n: number): string {

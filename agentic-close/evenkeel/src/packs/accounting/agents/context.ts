@@ -12,7 +12,7 @@ export interface AgentCtx {
   skill: SkillPackage;
   policy: SkillPolicy;
   periodKey: string;
-  /** The human the agent acts for (run requester) — null for system runs. */
+  /** The person who started the run (the requester) — null for system runs. */
   requester: Actor | null;
   /** Set when a person is deciding on a proposal (approve/reject/review). */
   decider: Actor | null;
@@ -42,16 +42,26 @@ export async function humanDelegate(db: EkDb, tenantId: string, userId: string, 
   return { kind: 'user', userId, label: label || user.label, permissions: user.permissions };
 }
 
-export function agentServiceContext(db: EkDb, tenantId: string, clock: Clock, run: RunRecord, actor: DelegatedActor, requester: Actor | null): ServiceContext {
+/**
+ * The agent's own service context. It sees only entities that both the person it works for
+ * (the task owner, `actor`) and the person who started it (the requester) may see.
+ */
+export function agentServiceContext(db: EkDb, tenantId: string, clock: Clock, run: RunRecord, actor: DelegatedActor, requester: Actor | null, owner: Actor | null = null): ServiceContext {
   const a: Actor = {
     type: 'agent',
     userId: actor.userId,
     label: actor.label,
     roles: [],
     permissions: actor.permissions,
-    entityScope: requester?.entityScope ?? 'all',
+    entityScope: intersectScopes(requester?.entityScope ?? 'all', owner?.entityScope ?? 'all'),
     agentRunId: run.id,
     skillId: run.skillId,
   };
   return makeContext(db, tenantId, a, clock);
+}
+
+function intersectScopes(a: Actor['entityScope'], b: Actor['entityScope']): Actor['entityScope'] {
+  if (a === 'all') return b;
+  if (b === 'all') return a;
+  return a.filter((id) => b.includes(id));
 }

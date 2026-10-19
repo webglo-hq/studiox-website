@@ -104,7 +104,7 @@ The brief was built without anyone to ask, so every judgment call is recorded he
 
 **D-14 · Agents act on behalf of the task owner, with least privilege.**
 - *Permissions:* An agent's permissions are the intersection of its owner's permissions and the skill manifest's declared tools and permissions. Tools outside the manifest are denied and the denial is recorded.
-- *SoD:* Neither the task owner nor the requester can approve the agent's proposals (SOD-01 and SOD-02). The rule is enforced in the app and by a CHECK constraint.
+- *SoD:* Neither the task owner nor the requester can approve the agent's proposals (SOD-01 and SOD-02). The requester is whoever started the run, directly or by running the close, not the owner it works for. The rule is enforced in the app and by a CHECK constraint.
 - *Fixed rules:* SOD-01, SOD-02 and SOD-05 cannot be disabled by an admin.
 
 **D-15 · External text is data, never instructions.**
@@ -133,7 +133,7 @@ The brief was built without anyone to ask, so every judgment call is recorded he
 ## Security
 
 **D-19 · Authentication and sessions.**
-- *Passwords:* scrypt (N=2¹⁵, r=8, p=1, 64-byte key), with parameters stored per hash.
+- *Passwords:* scrypt (N=2¹⁵, r=8, p=3, 64-byte key, an OWASP setting), with parameters stored per hash; weaker hashes are upgraded at the next sign-in.
 - *Sessions:*
   - random 256-bit tokens, stored only as SHA-256;
   - `HttpOnly`, `SameSite=Lax` cookies, with the `__Host-` prefix and `Secure` over HTTPS;

@@ -389,10 +389,11 @@ function ShellInner() {
                 <span className="spinner" style={{ width: 12, height: 12 }} aria-hidden /> Agents working
               </span>
             )}
-            <button type="button" className="search-btn" onClick={() => setPalette(true)} aria-label="Search pages and terms">
+            {/* The visible label is the accessible name (WCAG 2.5.3); the shortcut is announced separately. */}
+            <button type="button" className="search-btn" onClick={() => setPalette(true)} aria-keyshortcuts="/">
               <Search size={16} aria-hidden />
               <span className="label small">Go to or look up…</span>
-              <Kbd>/</Kbd>
+              <Kbd decorative>/</Kbd>
             </button>
           </header>
           <main id="main" ref={main} tabIndex={-1} style={{ outline: 'none' }}>

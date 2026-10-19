@@ -60,7 +60,8 @@ describe('MCP server', () => {
   });
 
   it('answers as the token owner and records the channel in the audit trail', async () => {
-    const { token } = await createToken(await as('casey'), { name: 'Close copilot', write: true, days: 30 });
+    // Casey started the close, so its proposals are for someone else to approve (SOD-02): Priya.
+    const { token } = await createToken(await as('priya'), { name: 'Close copilot', write: true, days: 30 });
     const m = mcp(token);
     const next = await rpc(m, 'tools/call', { name: 'whats_next', arguments: {} });
     expect(isError(next)).toBe(false);
@@ -72,21 +73,23 @@ describe('MCP server', () => {
     expect(isError(decided)).toBe(false);
     expect(JSON.parse(text(decided)).results[0]).toMatchObject({ ok: true });
     const events = await s.db.find('audit_log', { tenant_id: s.info.tenantId, action: 'agent.proposal.approved', subject_id: approvable.id });
-    expect(events.map((e) => e.actor_label)).toEqual(['Casey Morgan via API token "Close copilot"']);
+    expect(events.map((e) => e.actor_label)).toEqual(['Priya Natarajan via API token "Close copilot"']);
   });
 
   it('enforces read-only tokens, maker-checker and the methods tokens may never call', async () => {
     const { token: readOnly } = await createToken(await as('casey'), { name: 'Read only', write: false, days: 30 });
     const ro = mcp(readOnly);
-    const waiting = JSON.parse(text(await rpc(ro, 'tools/call', { name: 'list_proposals', arguments: { tab: 'mine', limit: 5 } }))) as { items: { id: string }[] };
+    const waiting = JSON.parse(text(await rpc(ro, 'tools/call', { name: 'list_proposals', arguments: { tab: 'waiting', limit: 5 } }))) as { items: { id: string }[] };
     const refused = await rpc(ro, 'tools/call', { name: 'decide_proposals', arguments: { ids: [waiting.items[0]!.id], decision: 'approve' } });
     expect(isError(refused)).toBe(true);
     expect(text(refused)).toMatch(/read-only/);
 
-    // Sam prepared the bank work; his token cannot approve it (SOD-01), whatever the channel.
+    // Sam owns the bank work the agent prepared; his token cannot approve it (SOD-01), whatever the channel.
     const { token: samToken } = await createToken(await as('sam'), { name: 'Sam laptop', write: true, days: 30 });
     const sam = mcp(samToken);
-    const samsOwn = (await s.db.find('proposal', { tenant_id: s.info.tenantId, status: 'pending', requested_by: s.user('sam') }))[0]!;
+    const samsTasks = await s.db.find('close_task', { tenant_id: s.info.tenantId, owner_id: s.user('sam') });
+    const samsRuns = await s.db.find('agent_run', { close_task_id: { in: samsTasks.map((t) => t.id) } });
+    const samsOwn = (await s.db.find('proposal', { tenant_id: s.info.tenantId, status: 'pending', run_id: { in: samsRuns.map((r) => r.id) } }))[0]!;
     const sod = await rpc(sam, 'tools/call', { name: 'decide_proposals', arguments: { ids: [samsOwn.id], decision: 'approve' } });
     expect(JSON.parse(text(sod)).results[0]).toMatchObject({ ok: false });
 

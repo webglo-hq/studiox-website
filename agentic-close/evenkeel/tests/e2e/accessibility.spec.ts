@@ -25,7 +25,8 @@ async function openFirst(page: Page, table: string): Promise<void> {
 const SCREENS: [string, string, string | null][] = [
   ['my close', '#/', null],
   ['cockpit', '#/cockpit', 'task-table'],
-  ['inbox', '#/inbox?tab=mine', 'inbox-table'],
+  // Casey started every run, so the proposals wait for others: the shared queue has the rows.
+  ['inbox', '#/inbox?tab=waiting', 'inbox-table'],
   ['reconciliations', '#/recs', 'rec-table'],
   ['flux', '#/flux', 'flux-table'],
   ['exceptions', '#/issues', null],
@@ -64,7 +65,7 @@ test('every screen passes automated WCAG 2.2 AA checks in light and dark themes'
       problems.push(...(await audit(page, `${name} (${scheme})`)));
     }
     // Detail views and dialogs.
-    await go(page, '#/inbox?tab=mine');
+    await go(page, '#/inbox?tab=waiting');
     await openFirst(page, 'inbox-table');
     problems.push(...(await audit(page, `proposal drawer (${scheme})`)));
     await page.keyboard.press('Escape');
@@ -88,10 +89,61 @@ test('every screen passes automated WCAG 2.2 AA checks in light and dark themes'
   await page.getByRole('button', { name: 'Open navigation' }).click();
   problems.push(...(await audit(page, 'navigation drawer (phone)')));
   await page.keyboard.press('Escape');
-  await go(page, '#/inbox?tab=mine');
+  await go(page, '#/inbox?tab=waiting');
   await expect(page.getByTestId('inbox-table')).toBeVisible();
   problems.push(...(await audit(page, 'inbox (phone)')));
 
   console.log(`[a11y] ${SCREENS.length * 2 + 8 + 4} views checked against ${TAGS.join(', ')}; ${problems.length} violation group(s).`);
   expect(problems, problems.join('\n')).toEqual([]);
+});
+
+async function runAgents(page: Page): Promise<void> {
+  await open(page);
+  await signInAs(page, 'casey');
+  await page.getByTestId('run-agents').first().click();
+  await expect(page.getByTestId('next-action')).not.toHaveText('Run the close agents', { timeout: 240_000 });
+  await agentsIdle(page);
+}
+
+test('E-4: no screen scrolls sideways at phone width, the inbox with its rows included', async ({ page }, info) => {
+  test.skip(info.project.name !== 'demo', 'runs once, against the demo build');
+  test.setTimeout(6 * 60_000);
+  await runAgents(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const wide: string[] = [];
+  for (const [name, hash, table] of SCREENS) {
+    await go(page, hash);
+    if (table) await expect(page.getByTestId(table)).toBeVisible({ timeout: 60_000 });
+    else await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.skeleton')).toHaveCount(0, { timeout: 60_000 });
+    const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    if (scroll > client) wide.push(`${name}: the page is ${scroll}px wide in a ${client}px viewport`);
+  }
+  expect(wide, wide.join('\n')).toEqual([]);
+});
+
+test('E-7: people, search and inbox rows have accessible names and keyboard access', async ({ page }, info) => {
+  test.skip(info.project.name !== 'demo', 'runs once, against the demo build');
+  test.setTimeout(6 * 60_000);
+  await open(page);
+  // Each person is a button inside a list item (a button cannot itself be the list item).
+  const people = page.getByRole('list', { name: 'Demo people' }).getByRole('listitem');
+  await expect(people.first()).toBeVisible();
+  for (const item of await people.all()) await expect(item.getByRole('button')).toHaveCount(1);
+  await runAgents(page);
+  // The search button is named by its visible label (WCAG 2.5.3, label in name).
+  await expect(page.getByRole('button', { name: 'Go to or look up…' })).toBeVisible();
+  // Every proposal row is reachable with Tab and opens with Enter.
+  await go(page, '#/inbox?tab=waiting');
+  await expect(page.getByTestId('proposal-link').first()).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search proposals' }).focus();
+  let reached = false;
+  for (let i = 0; i < 6 && !reached; i++) {
+    await page.keyboard.press('Tab');
+    reached = await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'proposal-link');
+  }
+  expect(reached).toBe(true);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Proposal' })).toBeVisible();
+  await expect(page).toHaveURL(/#\/inbox\/[0-9a-f-]{36}/);
 });

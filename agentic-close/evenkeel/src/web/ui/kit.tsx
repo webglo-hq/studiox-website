@@ -420,8 +420,9 @@ export function Status({ value, label }: { value: string; label?: string }) {
   return <Badge tone={STATUS_TONE[value] ?? 'neutral'}>{text}</Badge>;
 }
 
-export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd>{children}</kbd>;
+/** A key cap. `decorative` hides it from assistive technology when the control announces the shortcut itself. */
+export function Kbd({ children, decorative }: { children: ReactNode; decorative?: boolean }) {
+  return <kbd aria-hidden={decorative || undefined}>{children}</kbd>;
 }
 
 export function Progress({ done, review, work, total, label }: { done: number; review?: number; work?: number; total: number; label: string }) {

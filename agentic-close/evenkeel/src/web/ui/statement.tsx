@@ -88,12 +88,17 @@ export function StatementTable({ st, scope, comparisonLabel, drill = true }: { s
           ))}
         </tbody>
       </table>
-      <p className="small row" style={{ padding: '10px 20px', gap: 6 }}>
-        {st.check.ok ? <CircleCheck size={15} color="var(--good)" aria-hidden /> : <CircleAlert size={15} color="var(--bad)" aria-hidden />}
-        <span>
-          <strong>{st.check.label}:</strong> {st.check.detail}
-        </span>
-      </p>
+      <div className="small row-wrap" style={{ padding: '10px 20px', gap: 14 }} data-testid="statement-checks">
+        <strong>{st.check.label}</strong>
+        {st.checks.map((c) => (
+          <span key={c.column} className="row" style={{ gap: 6 }} data-column={c.column} data-ok={c.ok}>
+            {c.ok ? <CircleCheck size={15} color="var(--good)" aria-hidden /> : <CircleAlert size={15} color="var(--bad)" aria-hidden />}
+            <span>
+              {c.column === 'current' ? 'Current' : (comparisonLabel ?? 'Prior')}: {c.ok ? 'ties' : `off by ${money(c.difference, cur)}`}
+            </span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

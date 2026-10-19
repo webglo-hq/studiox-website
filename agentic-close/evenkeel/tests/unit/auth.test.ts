@@ -12,12 +12,24 @@ describe('passwords (scrypt)', () => {
   it('hashes with a per-password salt and verifies only the right password', async () => {
     const a = await hashPassword('correct horse battery');
     const b = await hashPassword('correct horse battery');
-    expect(a).toMatch(/^scrypt\$32768\$8\$1\$/);
+    expect(a).toMatch(/^scrypt\$32768\$8\$3\$/);
     expect(a).not.toBe(b);
     expect(await verifyPassword('correct horse battery', a)).toBe(true);
     expect(await verifyPassword('correct horse batterz', a)).toBe(false);
     expect(await verifyPassword('anything at all', null)).toBe(false);
     expect(await verifyPassword('anything at all', 'plaintext')).toBe(false);
+  });
+  it('EK-m3: uses OWASP scrypt parameters and flags weaker hashes for rehash', async () => {
+    // OWASP Password Storage Cheat Sheet: these settings are equivalent; meet at least one of them.
+    const OWASP = [[1 << 17, 1], [1 << 16, 2], [1 << 15, 3], [1 << 14, 5], [1 << 13, 10]] as const;
+    const h = await hashPassword('a long and unremarkable passphrase');
+    const [, n, r, p] = h.split('$').map(Number);
+    expect(r).toBeGreaterThanOrEqual(8);
+    expect(OWASP.some(([minN, minP]) => n! >= minN && p! >= minP)).toBe(true);
+    expect(needsRehash(h)).toBe(false);
+    expect(needsRehash('scrypt$32768$8$1$a$b')).toBe(true);
+    expect(needsRehash('scrypt$131072$8$1$a$b')).toBe(false);
+    expect(needsRehash('scrypt$131072$4$2$a$b')).toBe(true);
   });
   it('enforces length and flags weak parameters for rehash', async () => {
     await expect(hashPassword('short')).rejects.toThrow(/12 characters/);

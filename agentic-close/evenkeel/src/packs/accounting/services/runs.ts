@@ -1,5 +1,5 @@
 import { AppError } from '../../../framework/util/errors';
-import { requirePermission, type ServiceContext } from '../domain/context';
+import { canSeeEntity, requireEntity, requirePermission, type ServiceContext } from '../domain/context';
 import { peopleMap, type PersonRef } from './common';
 
 /** Agent run history and full traces (steps, tool calls, proposals, cost). */
@@ -37,7 +37,8 @@ export async function listRuns(ctx: ServiceContext, f: { id?: string; periodKey?
   if (f.skillId) where.skill_id = f.skillId;
   if (f.status) where.status = f.status;
   if (f.parentRunId) where.parent_run_id = f.parentRunId;
-  const runs = await ctx.db.find('agent_run', where as never, { orderBy: [['created_at', 'desc']], limit: Math.min(500, f.limit ?? 100) });
+  // Runs for one entity's task are that entity's; cross-entity runs are for tenant-wide roles.
+  const runs = (await ctx.db.find('agent_run', where as never, { orderBy: [['created_at', 'desc']], limit: Math.min(500, f.limit ?? 100) })).filter((r) => canSeeEntity(ctx, r.entity_id));
   const tasks = new Map((await ctx.db.find('close_task', { id: { in: runs.map((r) => r.close_task_id).filter((x): x is string => !!x) } })).map((t) => [t.id, t]));
   const props = runs.length ? await ctx.db.find('proposal', { run_id: { in: runs.map((r) => r.id) } }) : [];
   const people = await peopleMap(ctx);
@@ -88,6 +89,7 @@ export async function runTrace(ctx: ServiceContext, id: string) {
   requirePermission(ctx, 'close.view');
   const run = await ctx.db.get('agent_run', id);
   if (!run || run.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Run not found');
+  requireEntity(ctx, run.entity_id);
   const [summary] = await listRuns(ctx, { id, limit: 1 });
   const steps = await ctx.db.find('agent_step', { run_id: id }, { orderBy: [['seq', 'asc']] });
   const calls = await ctx.db.find('tool_call', { run_id: id }, { orderBy: [['created_at', 'asc']] });

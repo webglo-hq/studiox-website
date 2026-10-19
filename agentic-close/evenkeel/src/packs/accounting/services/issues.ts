@@ -1,6 +1,6 @@
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { entities } from '../domain/refdata';
 import { person, type PersonRef } from './common';
 
@@ -28,7 +28,7 @@ export interface IssueView {
 
 export async function listIssues(ctx: ServiceContext, filter: { periodKey?: string; status?: IssueView['status'][] } = {}): Promise<IssueView[]> {
   requirePermission(ctx, 'close.view');
-  const rows = await ctx.db.find('issue', { tenant_id: ctx.tenantId, ...(filter.periodKey ? { period_key: filter.periodKey } : {}), ...(filter.status ? { status: { in: filter.status } } : {}) }, { orderBy: [['created_at', 'desc']] });
+  const rows = (await ctx.db.find('issue', { tenant_id: ctx.tenantId, ...(filter.periodKey ? { period_key: filter.periodKey } : {}), ...(filter.status ? { status: { in: filter.status } } : {}) }, { orderBy: [['created_at', 'desc']] })).filter((r) => canSeeEntity(ctx, r.entity_id));
   const ents = await entities(ctx);
   const rank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
   const out: IssueView[] = [];
@@ -60,6 +60,7 @@ export async function updateIssue(ctx: ServiceContext, input: { issueId: string;
   requirePermission(ctx, 'issue.resolve');
   const i = await ctx.db.get('issue', input.issueId);
   if (!i || i.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Exception not found');
+  requireEntity(ctx, i.entity_id);
   const note = input.note?.trim() ?? '';
   const now = ctx.clock.nowIso();
   if ((input.action === 'resolve' || input.action === 'dismiss') && note.length < 5) throw new AppError('VALIDATION', 'Explain how this was resolved (at least 5 characters).');

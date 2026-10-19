@@ -56,7 +56,7 @@ Each account gets a strong random password at seed time. It is printed once in t
 | miguel@kitewell.example | FP&A Analyst | Explains variances |
 | dana@kitewell.example | AP Specialist | Accounts payable |
 | alex@auditfirm.example | External Auditor | Read-only, everything |
-| taylor@kitewell.example | IT Administrator | Users, roles, segregation of duties |
+| taylor@kitewell.example | IT Administrator | Users, roles and the entities they cover, segregation of duties |
 
 ### The five-minute demo script
 
@@ -70,13 +70,15 @@ Each account gets a strong random password at seed time. It is printed once in t
    - an intercompany mismatch;
    - a bank memo that tries to instruct the agent.
 3. **Review and approve.** Each proposal in the Inbox shows the reason, confidence, evidence, deterministic checks and the exact lines.
-   - Bulk-approve the routine items, and reject one with a reason.
-   - Nobody approves work an agent prepared on their behalf: the reversal drafted for Priya waits for Casey. Material items need a controller or CFO.
+   - Bulk-approve the routine items, and reject one with a reason. *Select all* leaves out flagged and low-confidence items: open each one and approve it on its own.
+   - Nobody approves a run they started or work an agent prepared for them. Casey started the agents, so their proposals wait for Priya, or for Jordan where Priya owns the task. Material items need a controller or CFO.
+   - When approvals unblock the next tasks, Casey's My close says *Continue the close*.
 4. **Certify and review the reconciliations.**
    - Sam certifies the reconciliations that tie to zero; Priya reviews them.
    - In Flux review, the agent drafts explanations; someone other than the author approves them.
 5. **Disposition the exceptions, then sign and lock.**
-   - Generate the close package; Jordan approves it (its numbers are hashed).
+   - Jordan approves the close-package agent's draft from his Inbox.
+   - When the reviews are done, his My close says *Refresh and sign the close package*. The draft shows the close as it was when the agent prepared it, so he refreshes it and signs the current version. Its figures and the close status (reconciliation sign-offs, the checklist, exceptions) are hashed.
    - Casey locks September. The ledger now refuses any posting dated in it.
    - The Audit log verifies the hash chain end to end.
 
@@ -174,7 +176,7 @@ sequenceDiagram
   - HMAC CSRF tokens plus Origin checks; token-bucket rate limits.
   - TOTP two-step with replay protection; AES-GCM-sealed secrets.
   - A strict CSP.
-  - RBAC with eight roles and entity scoping.
+  - RBAC with eight roles and entity scoping, set per person in Admin and enforced on every read and change.
   - An OIDC/SAML provider seam.
   - Every mutation audited.
 - **Web:**
@@ -209,10 +211,10 @@ Create a token in **Account → API tokens**: read-only or allowed to make chang
 |---|---|---|
 | Typecheck | `npm run typecheck` | clean (TypeScript 6.0, strict) |
 | Lint | `npm run lint` | 0 problems (typescript-eslint, React hooks, module boundaries) |
-| Unit tests | `npm test` | **146 passed** in 12 files: invariants on memory + PGlite, runtime, skills, auth, HTTP, MCP, connectors, close math, … |
-| Integration (real DB) | `npm run test:integration` | **27 passed** on PostgreSQL 16.15: invariant suite, schema contract, concurrency, full close through lock |
+| Unit tests | `npm test` | **176 passed** in 17 files: invariants on memory + PGlite, runtime, skills, auth, HTTP, MCP, connectors, close math, statements, agent controls, entity scope, … |
+| Integration (real DB) | `npm run test:integration` | **28 passed** on PostgreSQL 16.15: invariant suite, schema contract, concurrency, full close through lock |
 | Skill evals | `npm run evals` | **64/64** cases across 12 skills (offline engine) |
-| End to end | `npm run e2e` | **6 passed**: demo script on the server and on the static demo, three static-demo properties, accessibility (50 views, 0 violations) |
+| End to end | `npm run e2e` | **9 passed**: demo script on the server and on the static demo, three static-demo properties, accessibility (50 views, 0 violations), no sideways scrolling at phone width, accessible names and keyboard access, bulk approval |
 | Dependencies | `npm audit --audit-level=high` | 0 vulnerabilities |
 
 Integration tests start a throwaway PostgreSQL 16 cluster on a random free port under `.data/`. It runs as an unprivileged user when invoked as root, and is stopped and deleted afterwards. Set `DATABASE_URL` to use your own server instead.

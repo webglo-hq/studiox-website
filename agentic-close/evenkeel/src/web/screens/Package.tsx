@@ -14,7 +14,7 @@ function ApproveDialog({ id, version, periodKey, onClose }: { id: string; versio
   return (
     <Dialog
       title="Approve the close package"
-      description="Your approval signs this exact version (by content hash). If any number changes later, a new version is needed."
+      description="Your approval signs this exact version (by content hash): its figures and the close status shown — reconciliation sign-offs, the checklist and exceptions. If any of them changes later, a new version is needed."
       onClose={onClose}
       footer={
         <>
@@ -32,14 +32,15 @@ function ApproveDialog({ id, version, periodKey, onClose }: { id: string; versio
   );
 }
 
-function PackageView({ id }: { id: string }) {
+function PackageView({ id, onRefreshed }: { id: string; onRefreshed: (id: string) => void }) {
   const { info, can } = useSession();
   const q = useApi('package.get', { id });
   const [view, setView] = useState<'is' | 'bs'>('is');
   const [approving, setApproving] = useState(false);
+  const refresh = useAction('package.refresh', { success: (o) => `Version ${o.version} reflects the close as it stands now. Review it, then sign.`, onSuccess: (o) => onRefreshed(o.id) });
   return (
     <Query q={q} rows={12}>
-      {({ summary: s, content: c, stale }) => (
+      {({ summary: s, content: c, stale, changes }) => (
         <>
           <Card
             title={
@@ -53,8 +54,13 @@ function PackageView({ id }: { id: string }) {
                 <Button size="s" variant="quiet" icon={<Printer size={14} aria-hidden />} onClick={() => window.print()}>
                   Print / PDF
                 </Button>
+                {s.status === 'draft' && stale && (can('package.approve') || can('package.generate')) && (
+                  <Button size="s" icon={<RefreshCw size={14} aria-hidden />} busy={refresh.isPending} onClick={() => refresh.mutate({ id: s.id })} data-testid="refresh-package">
+                    Refresh to the current close
+                  </Button>
+                )}
                 {s.status === 'draft' && can('package.approve') && (
-                  <Button variant="primary" size="s" icon={<Signature size={14} aria-hidden />} disabled={stale || s.generatedBy?.id === info.user.id} title={s.generatedBy?.id === info.user.id ? 'You generated this version; someone else approves it.' : stale ? 'Numbers changed; generate a new version.' : undefined} onClick={() => setApproving(true)} data-testid="approve-package">
+                  <Button variant="primary" size="s" icon={<Signature size={14} aria-hidden />} disabled={stale || s.generatedBy?.id === info.user.id} title={s.generatedBy?.id === info.user.id ? 'You generated this version; someone else approves it.' : stale ? 'The close changed since this version was generated; refresh it first.' : undefined} onClick={() => setApproving(true)} data-testid="approve-package">
                     Approve and sign
                   </Button>
                 )}
@@ -62,8 +68,8 @@ function PackageView({ id }: { id: string }) {
             }
           >
             {stale && s.status === 'draft' && (
-              <Notice tone="warn" title="Numbers changed since this version was generated">
-                Generate a new version so the package matches the ledger.
+              <Notice tone="warn" title="The close changed since this version was generated">
+                {changes.length ? `Changed: ${changes.join(', ')}. ` : ''}Refresh it so the version you sign shows the current figures and close status.
               </Notice>
             )}
             {c.fictional && <p className="xs muted">Fictional company; all figures invented for the demo.</p>}
@@ -304,7 +310,7 @@ export function ClosePackage() {
                 ))}
                 {versions.some((p) => p.status === 'final') && <Badge tone="good">Signed</Badge>}
               </div>
-              <PackageView key={current} id={current} />
+              <PackageView key={current} id={current} onRefreshed={setSelected} />
             </>
           );
         }}

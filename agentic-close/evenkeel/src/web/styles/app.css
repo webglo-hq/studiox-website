@@ -450,9 +450,17 @@ code,
   .search-btn {
     min-width: 0;
   }
-  .search-btn .label,
   .search-btn kbd {
     display: none;
+  }
+  /* Icon only; the label stays the button's accessible name. */
+  .search-btn .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
   .page {
     padding: var(--space-4) var(--space-4) var(--space-7);
@@ -826,7 +834,10 @@ code,
 }
 
 /* ------------------------------------------------------------------ tables */
+/* Positioned, so absolutely positioned content inside (screen-reader text) scrolls with the
+   table instead of widening the page at phone width. */
 .table-wrap {
+  position: relative;
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -977,6 +988,7 @@ table.table {
 
 /* ------------------------------------------------------------------ tabs / segmented */
 .tabs {
+  position: relative;
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--line);

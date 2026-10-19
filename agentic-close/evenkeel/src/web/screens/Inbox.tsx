@@ -287,7 +287,8 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <Kv
               items={[
                 ['Prepared by', `${p.skillId} agent (${p.run.engine === 'live' ? `Claude ${p.run.model ?? ''}` : 'offline engine'})`],
-                ['On behalf of', <Person key="rb" name={p.run.requestedBy?.name} />],
+                ['Prepared for', <Person key="ow" name={p.run.owner?.name ?? p.run.requestedBy?.name} />],
+                ['Run started by', <Person key="rb" name={p.run.requestedBy?.name} />],
                 ['Task', p.run.taskCode ? `${p.run.taskCode} ${p.run.taskTitle}` : '—'],
                 ['Created', when(p.createdAt)],
                 ...(p.decidedBy ? ([['Decided by', `${p.decidedBy.name} · ${when(p.decidedAt)}`]] as [string, string][]) : []),
@@ -329,7 +330,10 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
     },
   });
   const items = useMemo(() => list.data?.items ?? [], [list.data]);
-  const approvable = items.filter((p) => p.canApprove.ok);
+  // Flagged, low-confidence and rule-held items are approved one at a time, from their own page.
+  const bulkable = items.filter((p) => p.canBulkApprove.ok);
+  const selectedApprovable = [...selected].filter((id) => bulkable.some((p) => p.id === id));
+  const selectedIndividually = items.filter((p) => selected.has(p.id) && p.canApprove.ok && !p.canBulkApprove.ok).length;
 
   // A different view starts with nothing selected (adjusting state while rendering, not in an effect).
   const view = `${tab}|${kind ?? ''}`;
@@ -356,14 +360,14 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
           return n;
         });
       } else if (e.key === 'Enter' && cur) navigate(href(`/inbox/${cur.id}`, Object.fromEntries(route.query)));
-      else if (e.key === 'a' && selected.size) decide.mutate({ ids: [...selected], decision: 'approve' });
+      else if (e.key === 'a' && selectedApprovable.length) decide.mutate({ ids: selectedApprovable, decision: 'approve' });
       else if (e.key === 'r' && selected.size) setRejectIds([...selected]);
       else return;
       e.preventDefault();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [items, cursor, selected, openId, rejectIds, decide, route.query]);
+  }, [items, cursor, selected, selectedApprovable, openId, rejectIds, decide, route.query]);
 
   const counts = list.data?.counts;
   const toggle = (id: string) =>
@@ -374,7 +378,6 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
       return n;
     });
   const decidable = tab === 'mine' || tab === 'waiting';
-  const selectedApprovable = [...selected].filter((id) => approvable.some((p) => p.id === id));
   const closeDetail = () => navigate(href('/inbox', Object.fromEntries(route.query)));
 
   return (
@@ -415,9 +418,9 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
         </label>
         <input className="input" style={{ maxWidth: 280, minHeight: 34 }} type="search" placeholder="Search titles and reasons" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search proposals" />
         <span className="grow" />
-        {decidable && approvable.length > 0 && can('proposal.approve') && (
-          <Button size="s" variant="quiet" onClick={() => setSelected(new Set(approvable.map((p) => p.id)))}>
-            Select all I can approve ({approvable.length})
+        {decidable && bulkable.length > 0 && can('proposal.approve') && (
+          <Button size="s" variant="quiet" onClick={() => setSelected(new Set(bulkable.map((p) => p.id)))}>
+            Select all I can approve ({bulkable.length})
           </Button>
         )}
       </div>
@@ -433,7 +436,7 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
           </div>
         ) : items.length === 0 ? (
           <Empty icon={<InboxIcon size={22} />} title={tab === 'mine' ? 'Nothing is waiting for you' : 'Nothing here'}>
-            {tab === 'mine' && counts?.waiting ? `${plural(counts.waiting, 'proposal')} wait for someone else, because you prepared them or they need a different role.` : tab === 'mine' ? 'When agents need a decision, it appears here.' : 'Try another view.'}
+            {tab === 'mine' && counts?.waiting ? `${plural(counts.waiting, 'proposal')} ${counts.waiting === 1 ? 'waits' : 'wait'} for someone else, because you started or own the work or ${counts.waiting === 1 ? 'it needs' : 'they need'} a different role.` : tab === 'mine' ? 'When agents need a decision, it appears here.' : 'Try another view.'}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -469,7 +472,10 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
                     <td className={decidable ? '' : 'first'} style={{ minWidth: 280 }}>
                       <div className="strong">
                         {p.injectionFlag && <AlertTriangle size={14} color="var(--bad)" aria-label="Flagged" style={{ marginRight: 4 }} />}
-                        {p.title}
+                        {/* A real link, so every row is reachable with Tab and opens with Enter. */}
+                        <a href={href(`/inbox/${p.id}`, Object.fromEntries(route.query))} style={{ color: 'var(--ink)', textDecoration: 'none' }} onFocus={() => setCursor(i)} onClick={(e) => e.stopPropagation()} data-testid="proposal-link">
+                          {p.title}
+                        </a>
                       </div>
                       <div className="xs muted" style={{ maxWidth: 560 }}>
                         {p.why.length > 160 ? `${p.why.slice(0, 157)}…` : p.why}
@@ -478,6 +484,7 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
                         <Bot size={12} aria-hidden /> {p.run.taskCode ?? p.skillId}
                         {p.entityCode ? ` · ${p.entityCode}` : ''}
                         {!p.canApprove.ok && decidable && p.canApprove.reasons[0] ? ` · ${p.canApprove.reasons[0]}` : ''}
+                        {p.canApprove.ok && !p.canBulkApprove.ok && decidable ? ` · ${p.canBulkApprove.reasons[0]} ${p.canBulkApprove.reasons.at(-1)}` : ''}
                       </div>
                     </td>
                     <td>
@@ -505,6 +512,7 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
       {selected.size > 0 && (
         <div className="sticky-actions" role="region" aria-label="Bulk actions">
           <span className="small strong">{selected.size} selected</span>
+          {selectedIndividually > 0 && <span className="xs muted">{selectedIndividually === 1 ? '1 flagged item to open and approve on its own' : `${selectedIndividually} flagged items to open and approve on their own`}</span>}
           <span className="grow" />
           <Button variant="good" icon={<Check size={16} aria-hidden />} busy={decide.isPending} disabled={!selectedApprovable.length} onClick={() => decide.mutate({ ids: selectedApprovable, decision: 'approve' })} data-testid="bulk-approve">
             Approve {selectedApprovable.length || ''}

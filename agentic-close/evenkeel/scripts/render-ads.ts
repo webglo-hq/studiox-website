@@ -1,7 +1,8 @@
 /*
  * `npm run ads`: render the social ad creatives (1080×1350, 4:5) into docs/ads/ with Playwright.
  * Original copy and artwork in Evenkeel's own brand; the product details shown are the
- * fictional Kitewell Labs demo. Uses the Playwright Chromium already installed.
+ * fictional Kitewell Labs demo, as it behaves (figures from the demo's September close).
+ * Uses the Playwright Chromium already installed.
  */
 import { readFileSync, mkdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,6 +32,8 @@ h1 { font: 500 92px/1.02 News; letter-spacing: -.02em; margin-top: 22px; }
 .foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 16px; font: 600 40px/1 News; }
 .fine { font: 400 19px/1.3 Inter; color: #6a675f; text-align: right; }
+.cta-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.cta { background: #2a49c4; color: #fff; font: 600 28px/1 Inter; padding: 20px 30px; border-radius: 14px; }
 .badge { display: inline-block; font: 600 20px/1 Inter; padding: 9px 16px; border-radius: 99px; }
 .b-warn { background: #fbefd6; color: #8a5300; } .b-good { background: #e2f0e8; color: #1c6a4a; } .b-acc { background: #e6eafa; color: #2a49c4; } .b-bad { background: #fae8e6; color: #b3261e; } .b-mute { background: #efece3; color: #45433d; }
 .mono { font-family: Mono, monospace; }
@@ -38,7 +41,8 @@ h1 { font: 500 92px/1.02 News; letter-spacing: -.02em; margin-top: 22px; }
 
 const page = (body: string, extra = '') => `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${BASE_CSS}${extra}</style></head><body>${body}</body></html>`;
 
-const FOOT = (fine: string) => `<div class="foot"><div class="brand">${MARK}<span>Evenkeel</span></div><div class="fine">${fine}</div></div>`;
+/** Brand, call to action and fine print. */
+const FOOT = (fine: string) => `<div class="foot"><div class="brand">${MARK}<span>Evenkeel</span></div><div class="cta-wrap"><span class="cta">Try the demo →</span><div class="fine">${fine}</div></div></div>`;
 
 const ADS: { file: string; html: string }[] = [
   {
@@ -59,7 +63,7 @@ const ADS: { file: string; html: string }[] = [
             <span style="border:1.5px solid #dedad0;color:#b3261e;font:600 26px/1 Inter;padding:20px 30px;border-radius:14px">Reject with a reason</span>
           </div>
         </div>
-        ${FOOT('Agents prepare. People decide.<br/>Demo data: fictional company.')}
+        ${FOOT('Runs in your browser; nothing to install.<br/>Demo data: fictional company.')}
       </div>`,
       'body{background: radial-gradient(120% 90% at 100% 0%, #e6eafa 0%, #f4f2eb 55%);}',
     ),
@@ -73,10 +77,10 @@ const ADS: { file: string; html: string }[] = [
         <p class="sub" style="color:#d0cdc4">Material variances get an explanation that someone other than its author approves, before the month can lock.</p>
         <div class="card" style="margin-top:56px;background:#1a1b18;border-color:#2f302b;color:#f0eee8;padding:16px 0">
           ${[
-            ['5000 Cloud hosting', '−92.7%', 'Explained', 'b-good', 'September bill not in yet; the agent proposed a $161,402 accrual.'],
-            ['6000 Salaries &amp; wages', '−49.7%', 'Explained', 'b-good', 'Second September payroll unpaid at month end; accrual proposed.'],
-            ['6400 Marketing', '+137.2%', 'Needs approval', 'b-warn', 'Summit 2026 sponsorship ($95,000) and a larger ads campaign.'],
-            ['4000 Subscription revenue', '+3.7%', 'Not required', 'b-mute', 'Below the $25,000 and 10% threshold.'],
+            ['6400 Marketing', '+230.5%', 'Approved', 'b-good', 'Brightstage Events sponsorship ($95,000, one-time) and an ads accrual explain 99% of the $116,706 rise.'],
+            ['5000 Cloud hosting', '+9.4%', 'Not required', 'b-mute', 'The September bill had not arrived; the agent accrued $161,402 first.'],
+            ['6000 Salaries &amp; wages', '+0.5%', 'Not required', 'b-mute', 'Payroll earned but unpaid at month end was accrued ($620,727).'],
+            ['4000 Subscription revenue', '+0.8%', 'Not required', 'b-mute', 'Below the $25,000 and 10% threshold.'],
           ]
             .map(
               ([acct, pct, status, tone, why], i) => `<div style="padding:26px 44px;${i ? 'border-top:1.5px solid #2f302b;' : ''}">
@@ -97,8 +101,8 @@ const ADS: { file: string; html: string }[] = [
       `<div class="pad">
         <div class="eyebrow">Autonomy with ceilings</div>
         <h1>Nothing posts above your policy without a person.</h1>
-        <p class="sub">Set each skill from “suggest only” to “post and review after”. Material items always wait for a controller.</p>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:52px">
+        <p class="sub">Set each skill from “suggest only” to “post and review after”. Your rules and materiality still hold items for a person.</p>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px">
           ${[
             ['L0', 'Suggest only', false],
             ['L1', 'Approve each', false],
@@ -108,10 +112,13 @@ const ADS: { file: string; html: string }[] = [
             .map(([lvl, label, on]) => `<div class="card" style="padding:26px 24px;${on ? 'border:3px solid #2a49c4;background:#fcfbf8' : 'box-shadow:none'}"><div style="font:500 44px/1 News;color:${on ? '#2a49c4' : '#6a675f'}">${lvl}</div><div style="font:600 22px/1.3 Inter;margin-top:12px;color:${on ? '#1b1a17' : '#45433d'}">${label}</div></div>`)
             .join('')}
         </div>
-        <div class="card" style="margin-top:28px;display:flex;flex-direction:column;gap:18px">
-          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 27px/1.2 Inter">Coding · Office supplies $450.00</span><span class="badge b-good">Posted automatically</span></div>
+        <div class="card" style="margin-top:24px;display:flex;flex-direction:column;gap:13px;padding:32px 44px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 27px/1.2 Inter">Coding · Office supplies $167.83</span><span class="badge b-good">Posted automatically</span></div>
           <div style="height:1.5px;background:#dedad0"></div>
-          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 27px/1.2 Inter">Payroll accrual · $682,799.93</span><span class="badge b-bad">Held: material</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 27px/1.2 Inter">Coding · Gift cards $450.00</span><span class="badge b-warn">Held: your rule</span></div>
+          <div style="font:400 23px/1.4 Inter;color:#45433d">Your policy, in plain English: “Never auto-post when memo contains ‘gift’.”</div>
+          <div style="height:1.5px;background:#dedad0"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 27px/1.2 Inter">Payroll accrual · $620,727.20</span><span class="badge b-bad">Held: material</span></div>
           <div style="font:400 23px/1.4 Inter;color:#45433d">At or above performance materiality: needs a controller or CFO, whatever the autonomy level.</div>
         </div>
         ${FOOT('Every decision in a hash-chained audit trail.<br/>Demo data: fictional company.')}

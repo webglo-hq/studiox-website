@@ -1,12 +1,13 @@
 import type { Row } from '../../../framework/store/schema';
 import { addMonths, formatPeriod, periodEnd, periodStart } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
+import { allocateByWeights } from '../../../framework/util/money';
 import { normalize } from '../../../framework/util/text';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { analyzeDrivers, computeVariance, fluxNarrative, isMaterialVariance, naturalSign, type ActivityLine, type DriverAnalysis, type FluxThreshold } from '../domain/flux-math';
 import { ledgerLines } from '../domain/queries';
-import { accounts, entities, entityByCode } from '../domain/refdata';
+import { accounts, dimensionById, entities, entityByCode } from '../domain/refdata';
 import { periodActivity } from '../domain/reporting';
 import { assertSod } from '../domain/rbac';
 import { FluxExplanationDraft, type VarianceDriver } from '../ontology/shapes';
@@ -110,6 +111,7 @@ function totalsOf(lines: { accountClass?: string; current: number; comparison: n
 export async function fluxView(ctx: ServiceContext, input: { entityCode: string; periodKey: string; comparison: Comparison; threshold?: FluxThreshold }): Promise<FluxView> {
   requirePermission(ctx, 'report.view');
   const ent = await entityByCode(ctx, input.entityCode);
+  requireEntity(ctx, ent.id);
   const analysis = await ctx.db.findOne('flux_analysis', { tenant_id: ctx.tenantId, entity_id: ent.id, period_key: input.periodKey, comparison: input.comparison });
   const threshold: FluxThreshold = analysis ? { abs: analysis.threshold_abs, pct: analysis.threshold_pct, mode: 'and' } : (input.threshold ?? DEFAULT_THRESHOLD);
   const computed = await computeFluxLines(ctx, ent.id, input.periodKey, input.comparison, threshold);
@@ -190,59 +192,71 @@ export async function ensureAnalysis(ctx: ServiceContext, entityId: string, peri
 }
 
 /**
- * Group an account's activity by counterparty for driver analysis. Against budget, the
- * comparison side is the average of the prior three months by counterparty (the run-rate the
- * budget was built from), so unbudgeted one-time items surface as drivers.
+ * Group an account's activity by counterparty for driver analysis. Against the prior month,
+ * both sides are ledger activity. Against budget, the comparison side is the approved budget
+ * itself: each department's budget is spread over the counterparties of its recent spend
+ * (the trailing three months), so the drivers add up to actual − budget and unbudgeted
+ * one-time items surface as drivers.
  */
 export async function activityLines(ctx: ServiceContext, entityId: string, accountId: string, periodKey: string, comparison: Comparison): Promise<ActivityLine[]> {
   const a = (await accounts(ctx)).get(accountId)!;
   const vendors = new Map((await ctx.db.find('vendor', { tenant_id: ctx.tenantId })).map((v) => [v.id, v.name]));
-  const out: ActivityLine[] = [];
-  const periods: [string, 'current' | 'comparison', number][] =
-    comparison === 'prior_month'
-      ? [[periodKey, 'current', 1], [addMonths(periodKey, -1), 'comparison', 1]]
-      : [[periodKey, 'current', 1], [addMonths(periodKey, -1), 'comparison', 1 / 3], [addMonths(periodKey, -2), 'comparison', 1 / 3], [addMonths(periodKey, -3), 'comparison', 1 / 3]];
-  for (const [p, which, weight] of periods) {
-    const rows = await ctx.db.query(ledgerLines, { tenantId: ctx.tenantId, entityIds: [entityId], accountIds: [accountId], periodFrom: p, periodTo: p });
-    for (const r of rows) {
-      const amount = Math.round(naturalSign(r.debit - r.credit, a.normal_balance) * weight);
-      let key: string;
-      let label: string;
-      if (r.sourceType === 'bill' && r.sourceId) {
-        const b = await ctx.db.get('bill', r.sourceId);
-        label = vendors.get(b?.vendor_id ?? '') ?? 'Vendor';
-        key = `v:${b?.vendor_id}`;
-      } else if (r.sourceType === 'card_transaction' && r.sourceId) {
-        const c = await ctx.db.get('card_transaction', r.sourceId);
-        label = c?.merchant_name ?? 'Card spend';
-        key = `m:${normalize(label)}`;
-      } else if (r.sourceType === 'payroll_run') {
-        label = 'Payroll';
-        key = 'payroll';
-      } else {
-        const je = await ctx.db.get('journal_entry', r.entryId);
-        const vid = (je?.source_ref as Record<string, unknown> | null)?.vendor;
-        if (typeof vid === 'string' && vendors.has(vid)) {
-          label = vendors.get(vid)!;
-          key = `v:${vid}`;
-        } else {
-          const vendorInMemo = [...vendors.entries()].find(([, n]) => r.memo.includes(n));
-          if (vendorInMemo) {
-            label = vendorInMemo[1];
-            key = `v:${vendorInMemo[0]}`;
-          } else {
-            label = r.memo.replace(/\s*[—-]\s*\d{4}-\d{2}.*$/, '').replace(/\[[^\]]+\]/g, '').trim().slice(0, 60) || r.entryType;
-            key = `memo:${normalize(label).replace(/\d+/g, '#')}`;
-          }
-        }
-      }
-      out.push({ key, label, period: which, amount, ref: which === 'current' ? { type: 'journal_entry', id: r.entryId, label: r.entryNumber } : undefined, entryType: r.entryType });
+  const linesOf = (p: string) => ctx.db.query(ledgerLines, { tenantId: ctx.tenantId, entityIds: [entityId], accountIds: [accountId], periodFrom: p, periodTo: p });
+  const counterparty = async (r: Awaited<ReturnType<typeof linesOf>>[number]): Promise<{ key: string; label: string }> => {
+    if (r.sourceType === 'bill' && r.sourceId) {
+      const b = await ctx.db.get('bill', r.sourceId);
+      return { label: vendors.get(b?.vendor_id ?? '') ?? 'Vendor', key: `v:${b?.vendor_id}` };
     }
+    if (r.sourceType === 'card_transaction' && r.sourceId) {
+      const label = (await ctx.db.get('card_transaction', r.sourceId))?.merchant_name ?? 'Card spend';
+      return { label, key: `m:${normalize(label)}` };
+    }
+    if (r.sourceType === 'payroll_run') return { label: 'Payroll', key: 'payroll' };
+    const je = await ctx.db.get('journal_entry', r.entryId);
+    const vid = (je?.source_ref as Record<string, unknown> | null)?.vendor;
+    if (typeof vid === 'string' && vendors.has(vid)) return { label: vendors.get(vid)!, key: `v:${vid}` };
+    const vendorInMemo = [...vendors.entries()].find(([, n]) => r.memo.includes(n));
+    if (vendorInMemo) return { label: vendorInMemo[1], key: `v:${vendorInMemo[0]}` };
+    const label = r.memo.replace(/\s*[—-]\s*\d{4}-\d{2}.*$/, '').replace(/\[[^\]]+\]/g, '').trim().slice(0, 60) || r.entryType;
+    return { label, key: `memo:${normalize(label).replace(/\d+/g, '#')}` };
+  };
+  const natural = (r: { debit: number; credit: number }) => naturalSign(r.debit - r.credit, a.normal_balance);
+  const out: ActivityLine[] = [];
+  for (const r of await linesOf(periodKey)) out.push({ ...(await counterparty(r)), period: 'current', amount: natural(r), ref: { type: 'journal_entry', id: r.entryId, label: r.entryNumber }, entryType: r.entryType });
+  if (comparison === 'prior_month') {
+    for (const r of await linesOf(addMonths(periodKey, -1))) out.push({ ...(await counterparty(r)), period: 'comparison', amount: natural(r), entryType: r.entryType });
+    return out;
+  }
+  // Budget side: the department budgets, each spread by its trailing counterparty mix.
+  const mix = new Map<string, Map<string, { label: string; amount: number }>>();
+  for (let back = 1; back <= 3; back++) {
+    for (const r of await linesOf(addMonths(periodKey, -back))) {
+      const cp = await counterparty(r);
+      const byKey = mix.get(r.departmentId ?? '') ?? new Map<string, { label: string; amount: number }>();
+      const cur = byKey.get(cp.key) ?? { label: cp.label, amount: 0 };
+      cur.amount += natural(r);
+      byKey.set(cp.key, cur);
+      mix.set(r.departmentId ?? '', byKey);
+    }
+  }
+  const depts = await dimensionById(ctx);
+  for (const [k, net] of await budgetActivity(ctx, entityId, periodKey, true)) {
+    const [acct, dept = ''] = k.split('|');
+    const planned = naturalSign(net, a.normal_balance);
+    if (acct !== accountId || planned === 0) continue;
+    const parts = [...(mix.get(dept)?.entries() ?? [])].filter(([, v]) => Math.sign(v.amount) === Math.sign(planned));
+    if (!parts.length) {
+      out.push({ key: `budget:${dept}`, label: `${dept ? (depts.get(dept)?.name ?? 'Department') : a.name} budget (no recent spend)`, period: 'comparison', amount: planned });
+      continue;
+    }
+    const shares = allocateByWeights(planned, parts.map(([, v]) => Math.abs(v.amount)));
+    parts.forEach(([key, v], i) => out.push({ key, label: v.label, period: 'comparison', amount: shares[i]! }));
   }
   return out;
 }
 
 export async function varianceDrivers(ctx: ServiceContext, input: { entityId: string; accountId: string; periodKey: string; comparison: Comparison }): Promise<DriverAnalysis & { variance: number; narrative: string; current: number; comparisonAmount: number }> {
+  requireEntity(ctx, input.entityId);
   const a = (await accounts(ctx)).get(input.accountId)!;
   const ent = (await entities(ctx)).get(input.entityId)!;
   const lines = await computeFluxLines(ctx, input.entityId, input.periodKey, input.comparison, DEFAULT_THRESHOLD);
@@ -266,6 +280,7 @@ export async function varianceDrivers(ctx: ServiceContext, input: { entityId: st
 export async function submitExplanation(ctx: ServiceContext, input: unknown): Promise<string> {
   requirePermission(ctx, 'flux.explain');
   const d = FluxExplanationDraft.parse(input);
+  requireEntity(ctx, d.entityId);
   const ensured = await ensureAnalysis(ctx, d.entityId, d.periodKey, d.comparison as Comparison, DEFAULT_THRESHOLD, null);
   const lineId = d.fluxLineId ?? ensured.lines.get(d.accountId);
   if (!lineId) throw new AppError('NOT_FOUND', 'No variance line for this account.');
@@ -282,10 +297,17 @@ async function refreshAnalysisStatus(ctx: ServiceContext, analysisId: string): P
   if (lines.length && lines.every((l) => l.status === 'approved')) await ctx.db.update('flux_analysis', analysisId, { status: 'approved', approved_by: ctx.actor.userId, approved_at: ctx.clock.nowIso() });
 }
 
+/** The entity whose variance an explanation explains. */
+async function explanationEntity(ctx: ServiceContext, lineId: string): Promise<string | null> {
+  const line = await ctx.db.get('flux_line', lineId);
+  return line ? ((await ctx.db.get('flux_analysis', line.flux_analysis_id))?.entity_id ?? null) : null;
+}
+
 export async function approveExplanation(ctx: ServiceContext, explanationId: string): Promise<void> {
   requirePermission(ctx, 'flux.approve');
   const e = await ctx.db.get('flux_explanation', explanationId);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Explanation not found');
+  requireEntity(ctx, await explanationEntity(ctx, e.flux_line_id));
   if (e.status === 'approved') return;
   let requestedBy: string | null = null;
   if (e.run_id) requestedBy = (await ctx.db.get('agent_run', e.run_id))?.requested_by ?? null;
@@ -304,6 +326,7 @@ export async function rejectExplanation(ctx: ServiceContext, explanationId: stri
   if (!reason || reason.trim().length < 3) throw new AppError('VALIDATION', 'Say what is missing from the explanation.');
   const e = await ctx.db.get('flux_explanation', explanationId);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Explanation not found');
+  requireEntity(ctx, await explanationEntity(ctx, e.flux_line_id));
   await ctx.db.tx(async (db) => {
     await db.update('flux_explanation', e.id, { status: 'rejected', rejection_reason: reason.trim() });
     await db.update('flux_line', e.flux_line_id, { status: 'unexplained' });
