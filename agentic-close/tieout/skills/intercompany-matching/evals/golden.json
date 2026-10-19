@@ -1,0 +1,14 @@
+[
+  {
+    "id": "group-september",
+    "title": "Group September: a one-sided £18,500 tooling recharge, then eliminations",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": null, "as": "jordan" },
+    "expect": [
+      { "description": "BWL-US books the missing £18,500 recharge", "where": { "kind": "journal_entry", "payload.lines.0.account": "6950", "payload.lines.0.txn_amount_minor": 1850000, "payload.lines.1.account": "2400" }, "count": 1 },
+      { "description": "Two pro forma eliminations (P&L and balances)", "where": { "payload.entryType": "elimination" }, "count": 2 },
+      { "description": "Eliminations wait for the true-up", "where": { "payload.entryType": "elimination", "flags": "~depends_on_pending" }, "count": 2 },
+      { "description": "The balance elimination reverses next month", "where": { "payload.entryType": "elimination", "payload.autoReverseOn": "2026-10-01" }, "count": 1 }
+    ]
+  }
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: GBP intercompany payable at the closing rate",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-US", "as": "jordan" },
+    "expect": [
+      { "description": "An unrealized FX loss of $3,840 on the GBP payable", "where": { "payload.entryType": "fx_revaluation", "payload.lines.0.account": "7110", "payload.lines.0.debit": 384000, "payload.lines.1.account": "2400" }, "count": 1 },
+      { "description": "The remeasurement is recomputed by the verifier", "where": { "payload.fx.currency": "GBP" }, "count": 1 }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: no foreign-currency monetary items",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-UK", "as": "jordan" },
+    "expect": [{ "description": "Nothing to remeasure", "count": 0 }]
+  }
+]

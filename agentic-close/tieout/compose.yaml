@@ -1,0 +1,38 @@
+# Local production-like stack: PostgreSQL 16 + Tieout. Set the two passwords and an
+# encryption key in your shell or an .env file (never committed) before `docker compose up`.
+#   POSTGRES_PASSWORD, APP_DB_PASSWORD, APP_ENCRYPTION_KEY (32 random bytes, base64)
+# The application connects as `tieout_app`, an ordinary role, so row-level security applies.
+services:
+  db:
+    image: postgres:16.10
+    environment:
+      POSTGRES_USER: tieout_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: tieout
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tieout_admin -d tieout']
+      interval: 5s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://tieout_app:${APP_DB_PASSWORD}@db:5432/tieout
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - '127.0.0.1:${TIEOUT_PORT:-8080}:8080'
+
+volumes:
+  db-data:

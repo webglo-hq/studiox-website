@@ -1,0 +1,25 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September vs August: a material sponsorship, a missing hosting bill and payroll timing",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-US", "as": "devon" },
+    "expect": [
+      { "description": "Events variance is material and names ConfabCon", "where": { "kind": "flux_explanation", "payload.accountCode": "6310", "payload.materiality": "material", "payload.text": "~ConfabCon" }, "count": 1 },
+      { "description": "Hosting drop is explained by the missing Cumulus bill", "where": { "payload.accountCode": "5000", "payload.text": "~Cumulus" }, "count": 1 },
+      { "description": "Salaries explanation separates the accrual timing", "where": { "payload.accountCode": "6000", "payload.text": "~accrual" }, "count": 1 },
+      { "description": "Four significant variances explained", "where": { "kind": "flux_explanation" }, "count": 4 },
+      { "description": "Explanations go to the Controller", "where": { "kind": "flux_explanation", "assigned_role": "controller", "status": "pending_approval" }, "count": 4 }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September vs August",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-UK", "as": "devon" },
+    "expect": [
+      { "description": "Two significant variances explained", "where": { "kind": "flux_explanation" }, "count": 2 },
+      { "description": "Intercompany revenue increase names the recharge", "where": { "payload.accountCode": "4900" }, "count": 1 }
+    ]
+  }
+]

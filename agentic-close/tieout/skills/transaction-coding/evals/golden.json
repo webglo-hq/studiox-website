@@ -1,0 +1,126 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: late-month card charges, a misclassified hosting charge and an expensed instrument",
+    "fixture": "bramblewood-2026-09",
+    "params": {
+      "entity": "BWL-US",
+      "as": "sam"
+    },
+    "expect": [
+      {
+        "description": "Every uncoded card charge gets a coding proposal",
+        "where": {
+          "kind": "coding"
+        },
+        "count": 20
+      },
+      {
+        "description": "Skylark Air is travel",
+        "where": {
+          "kind": "coding",
+          "payload.merchant": "Skylark Air",
+          "payload.accountCode": "6400"
+        },
+        "count": 1
+      },
+      {
+        "description": "Kettle & Crane Coffee is meals",
+        "where": {
+          "kind": "coding",
+          "payload.merchant": "Kettle & Crane Coffee",
+          "payload.accountCode": "6410"
+        },
+        "count": 3
+      },
+      {
+        "description": "Metro Rideshare follows the Controller's mapping",
+        "where": {
+          "kind": "coding",
+          "payload.merchant": "Metro Rideshare",
+          "payload.source": "human",
+          "payload.accountCode": "6400"
+        },
+        "count": 3
+      },
+      {
+        "description": "The plain-English rule keeps Atrium charges for a person",
+        "where": {
+          "kind": "coding",
+          "payload.merchant": "Atrium Event Spaces",
+          "flags": "~policy_never_auto",
+          "status": "pending_approval"
+        },
+        "count": 1
+      },
+      {
+        "description": "Cumulus hosting charge coded to office supplies is reclassified to hosting",
+        "where": {
+          "kind": "journal_entry",
+          "payload.entryType": "reclass",
+          "payload.lines.0.account": "5000",
+          "payload.lines.0.debit": 688000,
+          "payload.lines.1.account": "6600"
+        },
+        "count": 1
+      },
+      {
+        "description": "The $14,250 spectrometer is capitalized to lab equipment",
+        "where": {
+          "kind": "journal_entry",
+          "payload.lines.0.account": "1520",
+          "payload.lines.0.debit": 1425000,
+          "flags": "~requires_capitalization"
+        },
+        "count": 1
+      },
+      {
+        "description": "Capitalization creates a fixed asset on approval",
+        "where": {
+          "payload.effects.fixedAsset.category": "lab_equipment"
+        },
+        "count": 1
+      },
+      {
+        "description": "No other reclasses (no false positives)",
+        "where": {
+          "kind": "journal_entry"
+        },
+        "count": 2
+      },
+      {
+        "description": "Small, confident codings post by policy (L2)",
+        "where": {
+          "kind": "coding",
+          "status": "applied"
+        },
+        "min": 15
+      }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: nine late card charges, nothing misclassified",
+    "fixture": "bramblewood-2026-09",
+    "params": {
+      "entity": "BWL-UK",
+      "as": "sam"
+    },
+    "expect": [
+      {
+        "description": "Nine codings",
+        "where": {
+          "kind": "coding"
+        },
+        "count": 9
+      },
+      {
+        "description": "No reclasses",
+        "where": {
+          "kind": "journal_entry"
+        },
+        "count": 0
+      }
+    ]
+  }
+]

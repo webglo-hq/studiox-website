@@ -1,0 +1,20 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: AP ties, but Harborview was overpaid",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-US", "as": "priya" },
+    "expect": [
+      { "description": "Harborview debit balance is reclassified to vendor refunds receivable", "where": { "kind": "journal_entry", "payload.lines.0.account": "1250", "payload.lines.0.debit": 1840000, "payload.lines.1.account": "2000" }, "count": 1 },
+      { "description": "Touching AP is flagged and goes to a person", "where": { "flags": "~control_account", "status": "pending_approval" }, "count": 1 },
+      { "description": "AP and AR agree to the GL (no difference findings)", "where": { "kind": "finding" }, "count": 0 }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: clean",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-UK", "as": "priya" },
+    "expect": [{ "description": "Nothing to propose", "count": 0 }]
+  }
+]

@@ -1,0 +1,70 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: a self-approved Sunday bonus entry and a duplicate rent payment",
+    "fixture": "bramblewood-2026-09",
+    "params": {
+      "entity": "BWL-US",
+      "as": "casey"
+    },
+    "expect": [
+      {
+        "description": "The $62,000 self-approved Sunday upload is critical",
+        "where": {
+          "kind": "finding",
+          "payload.category": "self_approval",
+          "payload.severity": "critical"
+        },
+        "count": 1
+      },
+      {
+        "description": "All three risk tests are cited",
+        "where": {
+          "payload.tests": "~weekend_holiday",
+          "payload.category": "self_approval"
+        },
+        "count": 1
+      },
+      {
+        "description": "Harborview rent paid twice",
+        "where": {
+          "payload.category": "duplicate_payment",
+          "title": "~Harborview"
+        },
+        "count": 1
+      },
+      {
+        "description": "Findings are suggestions only (L0)",
+        "where": {
+          "route": "suggestion"
+        },
+        "count": 2
+      },
+      {
+        "description": "No other findings",
+        "where": {
+          "kind": "finding"
+        },
+        "count": 2
+      }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: nothing unusual",
+    "fixture": "bramblewood-2026-09",
+    "params": {
+      "entity": "BWL-UK",
+      "as": "casey"
+    },
+    "expect": [
+      {
+        "description": "No findings",
+        "where": {
+          "kind": "finding"
+        },
+        "count": 0
+      }
+    ]
+  }
+]

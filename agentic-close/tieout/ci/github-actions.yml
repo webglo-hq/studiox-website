@@ -1,0 +1,56 @@
+# CI pipeline for Tieout. Kept inside the product folder (everything Tieout ships lives here);
+# copy it to .github/workflows/tieout.yml at the repository root to enable it.
+name: tieout
+on:
+  push:
+    paths: ['agentic-close/tieout/**']
+  pull_request:
+    paths: ['agentic-close/tieout/**']
+
+defaults:
+  run:
+    working-directory: agentic-close/tieout
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.10
+        env:
+          POSTGRES_USER: tieout
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: tieout_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tieout -d tieout_test" --health-interval 5s --health-retries 20
+    env:
+      TIEOUT_PG_ADMIN_URL: postgres://tieout:ci-only-password@127.0.0.1:5432/tieout_test
+      TIEOUT_PG_APP_URL: postgres://tieout_app:ci-only-app-password@127.0.0.1:5432/tieout_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agentic-close/tieout/package-lock.json
+      - run: npm ci
+      - name: Application role (ordinary, so row-level security applies)
+        run: |
+          psql "$TIEOUT_PG_ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE tieout_app LOGIN PASSWORD 'ci-only-app-password' NOSUPERUSER;"
+      - run: npm run gen:check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run evals
+      - run: npm run audit:deps
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - run: npm run e2e:demo
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: agentic-close/tieout/test-results/
