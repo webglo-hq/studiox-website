@@ -4,7 +4,7 @@
  *
  *  maker_checker      approver ≠ preparer ≠ editor             (AX-SOD-01)
  *  requester_checker  approver ≠ person who ran the agent       (AX-SOD-02)
- *  role_conflict      nobody holds two conflicting roles        (assignment-time)
+ *  role_conflict      the first listed role is never held with any of the others (assignment-time)
  *  permission_conflict nobody holds two conflicting permissions (assignment-time)
  */
 import type { SodRuleRow } from '../../../schema';
@@ -52,9 +52,10 @@ export function evaluateAssignment(rules: readonly SodRuleRow[], roleKeys: reado
   for (const r of rules) {
     if (!r.enabled) continue;
     if (r.kind === 'role_conflict') {
-      const roles = r.config.roles ?? [];
-      const held = roles.filter((x) => roleKeys.includes(x));
-      if (held.length >= 2) out.push({ code: r.code, name: r.name, message: `Holds conflicting roles: ${held.join(' + ')}` });
+      // e.g. auditor vs every preparer/approver role; the others may be combined with each other
+      const [anchor, ...others] = r.config.roles ?? [];
+      const clash = anchor && roleKeys.includes(anchor) ? others.filter((x) => roleKeys.includes(x)) : [];
+      if (clash.length) out.push({ code: r.code, name: r.name, message: `Holds conflicting roles: ${anchor} + ${clash.join(', ')}` });
     }
     if (r.kind === 'permission_conflict') {
       const perms = r.config.permissions ?? [];

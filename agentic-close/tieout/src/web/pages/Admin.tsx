@@ -6,6 +6,7 @@
 import { KeyRound, Plus, ShieldCheck, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError, setCsrf, type AdminData } from '../api';
+import { RecoveryCodes } from '../components/RecoveryCodes';
 import { Avatar, Badge, Dialog, ErrorBox, Loading, Money, ReasonDialog, Segmented, Term } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
 import { dateTime, ROLE_LABEL } from '../lib/format';
@@ -61,8 +62,10 @@ function People({ data }: { data: AdminData }) {
   const legal = data.entities.filter((e) => e.kind === 'legal');
   const [inviting, setInviting] = useState(false);
   const [invite, setInvite] = useState({ email: '', name: '', title: '', role: 'staff_accountant' });
-  const [temp, setTemp] = useState<string | null>(null);
+  const [temp, setTemp] = useState<{ title: string; password: string } | null>(null);
   const [disabling, setDisabling] = useState<AdminData['users'][number] | null>(null);
+  const [signIn, setSignIn] = useState<AdminData['users'][number] | null>(null);
+  const [resettingMfa, setResettingMfa] = useState<AdminData['users'][number] | null>(null);
 
   async function saveRoles() {
     if (!editing) return;
@@ -78,7 +81,7 @@ function People({ data }: { data: AdminData }) {
   async function sendInvite() {
     try {
       const r = await api<{ tempPassword: string }>('/admin/users', { body: invite });
-      setTemp(r.tempPassword);
+      setTemp({ title: 'Invitation created', password: r.tempPassword });
       setInviting(false);
       setInvite({ email: '', name: '', title: '', role: 'staff_accountant' });
       bump();
@@ -86,15 +89,37 @@ function People({ data }: { data: AdminData }) {
       toast(e instanceof ApiError ? e.message : 'Could not invite.', 'bad');
     }
   }
-  async function setStatus(u: AdminData['users'][number], status: 'active' | 'disabled') {
+  async function setStatus(u: AdminData['users'][number], status: 'active' | 'disabled', reason = '') {
     try {
-      await api(`/admin/users/${u.id}/status`, { body: { status } });
+      await api(`/admin/users/${u.id}/status`, { body: { status, reason } });
       toast(`${u.name} ${status === 'active' ? 'enabled' : 'disabled'}.`);
       bump();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Could not change status.', 'bad');
     } finally {
       setDisabling(null);
+    }
+  }
+
+  async function resetPassword(u: AdminData['users'][number]) {
+    try {
+      const r = await api<{ tempPassword: string }>(`/admin/users/${u.id}/password-reset`, { body: {} });
+      setSignIn(null);
+      setTemp({ title: `Temporary password for ${u.name}`, password: r.tempPassword });
+      bump();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not reset the password.', 'bad');
+    }
+  }
+  async function resetMfa(u: AdminData['users'][number], reason: string) {
+    try {
+      await api(`/admin/users/${u.id}/mfa-reset`, { body: { reason } });
+      toast(`Two-factor authentication reset for ${u.name}. They were signed out everywhere.`);
+      bump();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not reset two-factor authentication.', 'bad');
+    } finally {
+      setResettingMfa(null);
     }
   }
 
@@ -168,6 +193,11 @@ function People({ data }: { data: AdminData }) {
                       >
                         Roles
                       </button>
+                      {u.id !== me.user.id ? (
+                        <button className="btn ghost small" onClick={() => setSignIn(u)}>
+                          Sign-in
+                        </button>
+                      ) : null}
                       {u.id !== me.user.id ? (
                         u.status === 'active' ? (
                           <button className="btn ghost small" onClick={() => setDisabling(u)}>
@@ -330,7 +360,7 @@ function People({ data }: { data: AdminData }) {
       <Dialog
         open={!!temp}
         onClose={() => setTemp(null)}
-        title="Invitation created"
+        title={temp?.title ?? ''}
         actions={
           <button className="btn primary" onClick={() => setTemp(null)}>
             Done
@@ -339,9 +369,65 @@ function People({ data }: { data: AdminData }) {
       >
         <p>Share this one-time password with the person through a separate channel. It is shown only once; ask them to change it after their first sign-in (My account → Password).</p>
         <p className="mono" style={{ fontSize: 18, userSelect: 'all' }}>
-          {temp}
+          {temp?.password}
         </p>
       </Dialog>
+
+      <Dialog
+        open={!!signIn}
+        onClose={() => setSignIn(null)}
+        title={`Sign-in help for ${signIn?.name ?? ''}`}
+        actions={
+          <button className="btn" onClick={() => setSignIn(null)}>
+            Close
+          </button>
+        }
+      >
+        <div className="stack">
+          <div className="stack" style={{ gap: 6 }}>
+            <strong>Forgotten password</strong>
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              Issues a one-time temporary password and signs {signIn?.name ?? 'them'} out everywhere.
+            </p>
+            <div>
+              <button className="btn" onClick={() => signIn && void resetPassword(signIn)}>
+                Issue a temporary password
+              </button>
+            </div>
+          </div>
+          <div className="stack" style={{ gap: 6 }}>
+            <strong>Lost authenticator</strong>
+            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+              {signIn?.mfa
+                ? 'Removes their two-factor set-up and recovery codes and signs them out everywhere; they set it up again at their next sign-in. Check their identity first, outside Tieout.'
+                : 'Two-factor authentication is not on for this person.'}
+            </p>
+            <div>
+              <button
+                className="btn danger"
+                aria-disabled={!signIn?.mfa}
+                onClick={() => {
+                  if (!signIn?.mfa) return;
+                  setResettingMfa(signIn);
+                  setSignIn(null);
+                }}
+              >
+                Reset two-factor
+              </button>
+            </div>
+          </div>
+        </div>
+      </Dialog>
+
+      <ReasonDialog
+        open={!!resettingMfa}
+        title={`Reset two-factor for ${resettingMfa?.name ?? ''}?`}
+        label="How did you confirm it is really them? (for the audit log)"
+        min={10}
+        confirm="Reset two-factor"
+        onCancel={() => setResettingMfa(null)}
+        onConfirm={(reason) => resettingMfa && void resetMfa(resettingMfa, reason)}
+      />
 
       <ReasonDialog
         open={!!disabling}
@@ -349,7 +435,7 @@ function People({ data }: { data: AdminData }) {
         label="They are signed out everywhere and cannot sign in. Reason (for the audit log)"
         confirm="Disable account"
         onCancel={() => setDisabling(null)}
-        onConfirm={() => disabling && void setStatus(disabling, 'disabled')}
+        onConfirm={(reason) => disabling && void setStatus(disabling, 'disabled', reason)}
       />
     </div>
   );
@@ -567,6 +653,7 @@ function Account({ data }: { data: AdminData }) {
   const [pw, setPw] = useState({ current: '', next: '' });
   const [enrol, setEnrol] = useState<{ secret: string; otpauth: string } | null>(null);
   const [code, setCode] = useState('');
+  const [codes, setCodes] = useState<string[] | null>(null);
   const [tokenName, setTokenName] = useState('Claude Desktop (MCP)');
   const [newToken, setNewToken] = useState<string | null>(null);
 
@@ -588,15 +675,24 @@ function Account({ data }: { data: AdminData }) {
   }
   async function verifyMfa() {
     try {
-      const r = await api<{ csrfToken: string }>('/auth/mfa/verify', { body: { code } });
+      const r = await api<{ csrfToken: string; recoveryCodes: string[] | null }>('/auth/mfa/verify', { body: { code } });
       setCsrf(r.csrfToken);
       setEnrol(null);
       setCode('');
+      setCodes(r.recoveryCodes);
       toast('Two-factor authentication is on.');
       await refresh();
       bump();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'That code did not work.', 'bad');
+    }
+  }
+  async function newCodes() {
+    try {
+      setCodes((await api<{ recoveryCodes: string[] }>('/auth/mfa/recovery-codes', { body: {} })).recoveryCodes);
+      bump();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not issue recovery codes.', 'bad');
     }
   }
   async function createToken() {
@@ -625,9 +721,23 @@ function Account({ data }: { data: AdminData }) {
           <ShieldCheck className="icon" aria-hidden="true" /> Two-factor authentication
         </h2>
         {me.user.mfaEnabled ? (
-          <p style={{ margin: 0 }}>
-            <Badge tone="good">On</Badge> You enter a code from your authenticator app at sign-in.
-          </p>
+          <div className="stack">
+            <p style={{ margin: 0 }}>
+              <Badge tone="good">On</Badge> You enter a code from your authenticator app at sign-in.
+            </p>
+            {codes ? (
+              <RecoveryCodes codes={codes} account={me.user.email} />
+            ) : (
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                {data.account.recoveryCodesLeft} unused recovery code{data.account.recoveryCodesLeft === 1 ? '' : 's'} for when you lose your authenticator.
+              </p>
+            )}
+            <div>
+              <button className="btn" onClick={() => void newCodes()}>
+                New recovery codes
+              </button>
+            </div>
+          </div>
         ) : enrol ? (
           <div className="stack">
             <p style={{ margin: 0 }}>Add this key to your authenticator app (Google Authenticator, 1Password, Authy…), then enter the 6-digit code it shows.</p>

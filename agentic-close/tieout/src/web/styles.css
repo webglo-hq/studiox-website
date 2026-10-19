@@ -722,6 +722,16 @@ textarea:focus-visible {
   background: var(--info-wash);
   border-color: color-mix(in srgb, var(--info) 30%, transparent);
 }
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 4px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+  user-select: all;
+}
 
 /* term popovers */
 .term {

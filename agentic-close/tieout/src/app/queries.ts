@@ -516,7 +516,9 @@ export async function adminView(ctx: AppContext, u: RequestUser) {
     const tenant = (await tx.get('tenants', u.tenantId))!;
     const entities = await tx.find('entities', {}, { orderBy: [['sort_order', 'asc']] });
     const tokens = await tx.find('api_tokens', { user_id: u.actor.id });
+    const recoveryCodesLeft = await tx.count('mfa_recovery_codes', { user_id: u.actor.id, used_at: { isNull: true } });
     return {
+      account: { recoveryCodesLeft },
       canManage: { users: canUsers, sod: u.actor.permissions.has('admin.sod'), settings: u.actor.permissions.has('admin.settings'), tokens: u.actor.permissions.has('mcp.token') },
       users: users.map((x) => ({ id: x.id, name: x.display_name, email: canUsers ? x.email : x.email.replace(/^(.).*(@.*)$/, '$1…$2'), title: x.title, status: x.status, mfa: x.mfa_enabled, lastLoginAt: x.last_login_at, roles: [...new Set(grants.filter((g) => g.user_id === x.id).map((g) => roles.find((r) => r.id === g.role_id)?.key ?? '?'))], scope: scopeOf(grants.filter((g) => g.user_id === x.id), entities) })),
       roles: ROLES.map((r) => ({ key: r.key, name: r.name, description: r.description, approvalLimitMinor: r.approvalLimitMinor, permissions: rp.filter((x) => x.role_id === roles.find((y) => y.key === r.key)?.id).map((x) => x.permission_id).sort() })),

@@ -274,9 +274,17 @@ describe('HTTP API: entity scope', () => {
     const login = await morgan.post<{ csrfToken: string }>('/api/auth/login', { email: 'morgan.ellis@bramblewood.example', password: invited.body.tempPassword }, { 'x-tieout-client-ip': '203.0.113.7' });
     expect(login.status).toBe(200);
     morgan.csrf = login.body.csrfToken;
+    // people with access beyond the UK are out of reach: roles, sign-in resets, disabling
+    const casey = admin.users.find((u) => u.name === 'Casey Morgan')!;
+    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(403);
+    expect((await morgan.post(`/api/admin/users/${casey.id}/password-reset`, {})).status).toBe(403);
+    expect((await morgan.post(`/api/admin/users/${casey.id}/status`, { status: 'disabled', reason: 'testing the scope limit' })).status).toBe(403);
+    // within the UK: only UK access can be granted
+    expect((await avery.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(200);
     expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'] })).status).toBe(403);
     expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [us.id] })).status).toBe(403);
-    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(200);
+    // (two preparer roles together are fine; SOD-05 only keeps the auditor apart from them)
+    expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant', 'ap_specialist'], entityIds: [uk.id] })).status).toBe(200);
     // people they invite get the same limit, never wider
     const hire = await morgan.post<{ userId: string }>('/api/admin/users', { email: 'robin.hale@bramblewood.example', name: 'Robin Hale', role: 'staff_accountant' });
     expect(hire.status).toBe(200);

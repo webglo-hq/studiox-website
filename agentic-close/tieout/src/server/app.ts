@@ -11,7 +11,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { DomainError, fromStorageError, validation } from '../core/util/errors';
 import { PEOPLE, SCENARIO } from '../packs/accounting/seed/company';
 import * as admin from '../app/admin';
-import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcCallback, oidcStart, oidcStatus, revokeApiToken, type Authenticated } from '../app/auth';
+import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcCallback, oidcStart, oidcStatus, regenerateRecoveryCodes, revokeApiToken, type Authenticated } from '../app/auth';
 import * as close from '../app/close';
 import type { AppContext, RequestUser } from '../app/context';
 import { importFile } from '../app/imports';
@@ -26,6 +26,12 @@ const OIDC_COOKIE = 'tieout_oidc';
 const OIDC_PATH = '/api/auth/oidc';
 /** The web app root, relative to `${OIDC_PATH}/callback` (so it also works under a path prefix). */
 const APP_ROOT_FROM_CALLBACK = '../../../';
+/**
+ * The only routes a session that has not finished two-factor verification may call. Everything
+ * else (password change, API tokens, data) needs a verified session, so a password alone never
+ * yields a token or a changed credential.
+ */
+const PENDING_MFA_ROUTES = new Set(['/api/auth/me', '/api/auth/logout', '/api/auth/mfa/enroll', '/api/auth/mfa/verify']);
 
 type Env = { Variables: { auth: Authenticated | null; user: RequestUser; token: string | null } };
 
@@ -163,7 +169,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
       return next();
     }
     const token = getCookie(c, SESSION_COOKIE) ?? (opts.cookieBridge ? c.req.header(SESSION_BRIDGE_HEADER) || undefined : undefined) ?? null;
-    const allowPending = path.startsWith('/api/auth/');
+    const allowPending = PENDING_MFA_ROUTES.has(path);
     const a = await authenticate(ctx, token, { ip: ipOf(c), allowPendingMfa: allowPending });
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       if (!sameOrigin(c, ctx)) throw new DomainError('forbidden', 'Cross-site request blocked.');
@@ -194,8 +200,9 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const b = await body<{ code: string }>(c, 1000);
     const r = await mfaVerify(ctx, c.get('auth')!, b.code, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
     issueSession(c, r.sessionToken);
-    return c.json({ ok: true, csrfToken: r.csrfToken });
+    return c.json({ ok: true, csrfToken: r.csrfToken, recoveryCodes: r.recoveryCodes, recoveryCodesLeft: r.recoveryCodesLeft });
   });
+  app.post('/api/auth/mfa/recovery-codes', async (c) => c.json(await regenerateRecoveryCodes(ctx, U(c))));
   app.post('/api/auth/password', async (c) => {
     const b = await body<{ current: string; next: string }>(c, 2000);
     await changePassword(ctx, U(c), b.current, b.next);
@@ -300,7 +307,12 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const roles = Array.isArray(b.roles) ? b.roles.map(String) : (null as unknown as string[]);
     return c.json(await admin.assignRoles(ctx, U(c), c.req.param('id'), roles, Array.isArray(b.entityIds) ? b.entityIds.map(String) : null));
   });
-  app.post('/api/admin/users/:id/status', async (c) => c.json(await admin.setUserStatus(ctx, U(c), c.req.param('id'), (await body<{ status: string }>(c, 1000)).status === 'active' ? 'active' : 'disabled')));
+  app.post('/api/admin/users/:id/mfa-reset', async (c) => c.json(await admin.resetMfa(ctx, U(c), c.req.param('id'), String((await body<{ reason?: string }>(c, 2000)).reason ?? ''))));
+  app.post('/api/admin/users/:id/password-reset', async (c) => c.json(await admin.resetPassword(ctx, U(c), c.req.param('id'))));
+  app.post('/api/admin/users/:id/status', async (c) => {
+    const b = await body<{ status?: string; reason?: string }>(c, 2000);
+    return c.json(await admin.setUserStatus(ctx, U(c), c.req.param('id'), b.status === 'active' ? 'active' : 'disabled', String(b.reason ?? '')));
+  });
   app.post('/api/admin/sod/:code', async (c) => {
     const b = await body<{ enabled: boolean; reason: string }>(c, 5000);
     return c.json(await admin.setSodRule(ctx, U(c), c.req.param('code'), !!b.enabled, String(b.reason ?? '')));

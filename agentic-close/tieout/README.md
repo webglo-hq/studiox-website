@@ -95,8 +95,8 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
   close package with hashed sign-off; database triggers enforce balanced, immutable entries, open
   periods, maker-checker and the hash-chained audit log; row-level security isolates tenants.
 * **Enterprise auth**: scrypt, server-side sessions, CSRF + Origin checks, rate limits, RBAC (8 roles,
-  34 permissions) with SoD and approval limits, TOTP MFA, OpenID Connect SSO, entity scoping, API
-  tokens for MCP.
+  34 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
+  entity scoping, administrator resets of passwords and two-factor, API tokens for MCP.
 * **Integrations**: BAI2, ISO 20022 camt.053, OFX and CSV bank statements; card, ERP journal, AP and
   payroll files; idempotent by content hash with per-record provenance.
 * **MCP server** (`src/mcp`): Claude can read the close and start agent runs with a read-only token.

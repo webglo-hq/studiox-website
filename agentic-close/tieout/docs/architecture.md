@@ -89,10 +89,10 @@ sequenceDiagram
 
 | Concern | Mechanism | Where |
 |---|---|---|
-| Sessions | 256-bit random token in an HttpOnly, SameSite=Strict, Secure (prod) cookie; only SHA-256 stored; idle + absolute expiry; rotation after MFA | `src/app/auth.ts` |
+| Sessions | 256-bit random token in an HttpOnly, SameSite=Strict, Secure (prod) cookie; only SHA-256 stored; idle + absolute expiry; rotation after MFA; until two-factor is finished a session can only finish it | `src/app/auth.ts`, `src/server/app.ts` |
 | CSRF | Token = HMAC(session token) checked on every mutation (hash stored), plus Origin check | `src/server/app.ts` |
 | Passwords | scrypt (N=2¹⁵, r=8, p=3), PHC strings, rehash on login, lockout, per-IP and per-account rate limits | `src/core/auth/password.ts` |
-| MFA | TOTP (RFC 6238) with replay protection; secrets AES-256-GCM encrypted at rest | `src/core/auth/totp.ts` |
+| MFA | TOTP (RFC 6238, wall-clock time) with replay protection; secrets AES-256-GCM encrypted at rest; ten one-time recovery codes stored as hashes; administrator reset with a documented reason | `src/core/auth/totp.ts`, `src/core/auth/recovery.ts`, `src/app/admin.ts` |
 | SSO | OpenID Connect code flow + PKCE, ID tokens verified against JWKS | `src/core/auth/oidc.ts` |
 | Authorization | RBAC (8 roles, 34 permissions), entity scoping, SoD rules, approval limits, maker-checker also as a DB trigger | `src/packs/accounting/controls`, `migrations/0002_accounting.sql` |
 | Tenant isolation | Store-level scoping plus PostgreSQL row-level security (FORCE) on every tenant table | `src/core/store/postgres.ts`, `migrations/0003_tenant_rls.sql` |

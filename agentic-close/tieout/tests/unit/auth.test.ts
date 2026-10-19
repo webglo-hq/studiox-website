@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { csrfFor } from '../../src/app/auth';
 import { RateLimiter } from '../../src/app/rate-limit';
 import { DEMO_SCRYPT, nobleScrypt, PasswordHasher, PRODUCTION_SCRYPT } from '../../src/core/auth/password';
+import { hashRecoveryCode, newRecoveryCodes, normalizeRecoveryCode, RECOVERY_CODE_COUNT } from '../../src/core/auth/recovery';
 import { decryptSecret, encryptSecret, newTotpSecret, otpauthUri, totpAt, verifyTotp } from '../../src/core/auth/totp';
 import { bytesToBase32, bytesToBase64 } from '../../src/core/util/base64';
+import { sha256Hex } from '../../src/core/util/hash';
 
 describe('TOTP (RFC 6238, SHA-1, 30 s, 6 digits)', () => {
   // RFC 6238 Appendix B test vectors (8-digit values; a 6-digit code is the last six digits)
@@ -53,6 +55,27 @@ describe('TOTP (RFC 6238, SHA-1, 30 s, 6 digits)', () => {
     expect(await decryptSecret(ct, key)).toBe('JBSWY3DPEHPK3PXP');
     await expect(decryptSecret(ct, other)).rejects.toThrow();
     expect(await encryptSecret('JBSWY3DPEHPK3PXP', key)).not.toBe(ct); // random IV
+  });
+});
+
+describe('two-factor recovery codes', () => {
+  it('are ten distinct codes from an unambiguous alphabet', () => {
+    const codes = newRecoveryCodes();
+    expect(codes).toHaveLength(RECOVERY_CODE_COUNT);
+    expect(new Set(codes).size).toBe(codes.length);
+    for (const c of codes) expect(c).toMatch(/^[a-km-np-z2-9]{5}-[a-km-np-z2-9]{5}$/);
+  });
+  it('accept how people type them (case, spaces, dashes) and nothing else', () => {
+    expect(normalizeRecoveryCode(' ABCDE-fgh23 ')).toBe('abcdefgh23');
+    expect(normalizeRecoveryCode('abcde fgh23')).toBe('abcdefgh23');
+    expect(normalizeRecoveryCode('123456')).toBeNull(); // a TOTP code is not a recovery code
+    expect(normalizeRecoveryCode('abcde-fgh2l')).toBeNull(); // l is not in the alphabet
+    expect(normalizeRecoveryCode('abcde-fgh234')).toBeNull();
+  });
+  it('are stored as a domain-separated hash', () => {
+    expect(hashRecoveryCode('abcdefgh23')).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashRecoveryCode('abcdefgh23')).toBe(hashRecoveryCode(normalizeRecoveryCode('ABCDE-FGH23')!));
+    expect(hashRecoveryCode('abcdefgh23')).not.toBe(sha256Hex('abcdefgh23'));
   });
 });
 

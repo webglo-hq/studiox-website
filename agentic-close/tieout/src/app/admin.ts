@@ -1,4 +1,7 @@
-/** Administration: users and roles (SoD-checked), SoD rules, tenant settings and materiality. */
+/**
+ * Administration: people (invite, roles with entity scope, disable, two-factor and password
+ * resets), SoD rules, tenant settings and materiality. Every change is audited.
+ */
 import { audit } from '../core/audit/audit';
 import type { TenantSettings } from '../core/tenancy';
 import { conflict, forbidden, notFound, sodViolation, validation } from '../core/util/errors';
@@ -7,8 +10,21 @@ import type { MaterialitySettings } from '../packs/accounting/model/types';
 import { ROLES } from '../packs/accounting/controls/permissions';
 import { evaluateAssignment } from '../packs/accounting/controls/sod';
 import { closeOntology } from '../packs/accounting/ontology';
+import type { DbTx } from '../schema';
 import type { AppContext, RequestUser } from './context';
 import { requirePermission } from './context';
+
+/** An administrator limited to some entities manages only people whose access lies within them. */
+async function assertCanManage(tx: DbTx, u: RequestUser, userId: string) {
+  if (!u.actor.entityScope) return;
+  const grants = await tx.find('user_roles', { user_id: userId });
+  if (grants.some((g) => g.scope_entity_id === null || !u.actor.entityScope!.includes(g.scope_entity_id)))
+    throw forbidden('This person has access beyond your entities, so an administrator with access to every entity has to make this change.');
+}
+
+async function revokeSessions(tx: DbTx, userId: string, now: string, reason: string) {
+  for (const s of await tx.find('sessions', { user_id: userId, revoked_at: { isNull: true } })) await tx.update('sessions', s.id, { revoked_at: now, revoked_reason: reason });
+}
 
 /**
  * Set a person's roles and, optionally, the legal entities those roles apply to (entity scope).
@@ -25,6 +41,7 @@ export async function assignRoles(ctx: AppContext, u: RequestUser, userId: strin
   return ctx.db.tx(u.tenantId, async (tx) => {
     const user = await tx.get('users', userId);
     if (!user) throw notFound('User', userId);
+    await assertCanManage(tx, u, userId);
     const ents = scope ? await tx.find('entities', { id: { in: scope } }) : [];
     if (scope && (ents.length !== scope.length || ents.some((e) => e.kind !== 'legal'))) throw validation('Access can only be limited to legal entities.');
     const roles = await tx.find('roles', { key: { in: roleKeys } });
@@ -40,17 +57,60 @@ export async function assignRoles(ctx: AppContext, u: RequestUser, userId: strin
   });
 }
 
-export async function setUserStatus(ctx: AppContext, u: RequestUser, userId: string, status: 'active' | 'disabled') {
+export async function setUserStatus(ctx: AppContext, u: RequestUser, userId: string, status: 'active' | 'disabled', reason = '') {
   requirePermission(u, 'admin.users');
   if (userId === u.actor.id) throw forbidden('You cannot disable yourself.');
+  if (status === 'disabled' && reason.trim().length < 5) throw validation('Say briefly why the account is being disabled (at least 5 characters); it is recorded in the audit log.');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const user = await tx.get('users', userId);
     if (!user) throw notFound('User', userId);
+    await assertCanManage(tx, u, userId);
     const now = ctx.clock.now().toISOString();
     await tx.update('users', userId, { status, failed_logins: 0, locked_until: null });
-    if (status === 'disabled') for (const s of await tx.find('sessions', { user_id: userId, revoked_at: { isNull: true } })) await tx.update('sessions', s.id, { revoked_at: now, revoked_reason: 'account disabled' });
-    await audit(tx, u.actor, ctx.clock, { action: `admin.user.${status === 'active' ? 'enable' : 'disable'}`, subjectType: 'user', subjectId: userId, summary: `${user.display_name} ${status === 'active' ? 'enabled' : 'disabled'}`, data: {} }, u.ip);
+    if (status === 'disabled') await revokeSessions(tx, userId, now, 'account disabled');
+    await audit(tx, u.actor, ctx.clock, { action: `admin.user.${status === 'active' ? 'enable' : 'disable'}`, subjectType: 'user', subjectId: userId, summary: `${user.display_name} ${status === 'active' ? 'enabled' : `disabled: ${reason.trim().slice(0, 200)}`}`, data: {} }, u.ip);
     return { userId, status };
+  });
+}
+
+/**
+ * Lost authenticator: clear a person's two-factor setup and recovery codes with a documented
+ * reason, and sign them out everywhere. They set it up again at their next sign-in (or under My
+ * account); roles that require two-factor are asked to enrol before anything else.
+ */
+export async function resetMfa(ctx: AppContext, u: RequestUser, userId: string, reason: string) {
+  requirePermission(u, 'admin.users');
+  if (userId === u.actor.id) throw forbidden('Another administrator has to reset your own two-factor authentication.');
+  if (!reason || reason.trim().length < 10) throw validation('Resetting two-factor authentication needs a documented reason (at least 10 characters).');
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    const user = await tx.get('users', userId);
+    if (!user) throw notFound('User', userId);
+    await assertCanManage(tx, u, userId);
+    const now = ctx.clock.now().toISOString();
+    for (const f of await tx.find('mfa_factors', { user_id: userId })) if (f.status !== 'revoked') await tx.update('mfa_factors', f.id, { status: 'revoked' });
+    for (const r of await tx.find('mfa_recovery_codes', { user_id: userId })) await tx.delete('mfa_recovery_codes', r.id);
+    await tx.update('users', userId, { mfa_enabled: false });
+    await revokeSessions(tx, userId, now, 'two-factor reset by an administrator');
+    await audit(tx, u.actor, ctx.clock, { action: 'admin.user.mfa_reset', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: two-factor authentication reset: ${reason.trim().slice(0, 200)}`, data: {} }, u.ip);
+    return { userId, mfa: false };
+  });
+}
+
+/** Issue a one-time temporary password (delivered out of band) and sign the person out everywhere. */
+export async function resetPassword(ctx: AppContext, u: RequestUser, userId: string) {
+  requirePermission(u, 'admin.users');
+  if (userId === u.actor.id) throw forbidden('Change your own password under My account.');
+  const tempPassword = `${secureToken(12)}-Tmp`;
+  const hash = await ctx.hasher.hash(tempPassword);
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    const user = await tx.get('users', userId);
+    if (!user) throw notFound('User', userId);
+    await assertCanManage(tx, u, userId);
+    const now = ctx.clock.now().toISOString();
+    await tx.update('users', userId, { password_hash: hash, failed_logins: 0, locked_until: null });
+    await revokeSessions(tx, userId, now, 'password reset by an administrator');
+    await audit(tx, u.actor, ctx.clock, { action: 'admin.user.password_reset', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: temporary password issued; signed out everywhere`, data: {} }, u.ip);
+    return { userId, tempPassword };
   });
 }
 

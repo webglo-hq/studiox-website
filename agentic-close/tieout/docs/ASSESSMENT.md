@@ -7,16 +7,16 @@ comes from a run in the build environment (Node 22, PostgreSQL 16.15, Chromium v
 
 | Gate | Command | Result |
 |---|---|---|
-| Generated code in sync with migrations | `npm run gen:check` | OK, 76 tables |
+| Generated code in sync with migrations | `npm run gen:check` | OK, 77 tables |
 | Types | `npm run typecheck` | 0 errors |
 | Lint (incl. layering and browser-safety rules) | `npm run lint` | 0 problems |
-| Unit tests | `npm run test:unit` | 94 passed, 8 files |
-| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, MCP, OIDC) | `npx tsx scripts/pgtest.ts start && npm run test:integration` | 55 passed, 6 files |
+| Unit tests | `npm run test:unit` | 98 passed, 8 files |
+| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, identity, MCP, OIDC) | `npx tsx scripts/pgtest.ts start && npm run test:integration` | 62 passed, 7 files |
 | Skill evals (golden cases, offline engine) | `npm run evals` | 18/18 cases, 105/105 checks |
-| End-to-end, server (demo script, entity scope, axe WCAG 2.2 AA on every screen, light and dark) | `npm run e2e` | 15 passed |
+| End-to-end, server (demo script, entity scope, two-factor, axe WCAG 2.2 AA on every screen, light and dark) | `npm run e2e` | 16 passed |
 | End-to-end, static demo (demo script from `file://`, sandboxed iframe, no network, phone) | `npm run e2e:demo` | 15 passed |
 | Dependency advisories | `npm audit --audit-level=high` | 0 vulnerabilities |
-| Static demo build checks | `npm run build:demo` | 1 file + favicon, 1.89 MB, relative paths, no service worker, guarded storage |
+| Static demo build checks | `npm run build:demo` | 1 file + favicon, 1.91 MB, relative paths, no service worker, guarded storage |
 
 Without the throwaway PostgreSQL cluster the 13 PostgreSQL tests report as **skipped**, never as passed.
 
@@ -28,13 +28,13 @@ Without the throwaway PostgreSQL cluster the 13 PostgreSQL tests report as **ski
 |---|---|---|
 | Research of the reference company's AI products and advertising | Done | `docs/research.md` (sources, verification labels, decisions with file pointers) |
 | Versioned, executable accounting ontology that validates, grounds agents, drives bucketing, explains terms in the UI, with an explorer | Done | `src/packs/accounting/ontology` (v1.2.0: 245 classes, 75 relations, 39 executable axioms, 264 terms, 41 sources); verifier `agent/verify.ts`; coding signals `services/coding.ts`; `Term` popovers; Ontology screen; JSON-LD/Turtle in `docs/ontology/` |
-| Production PostgreSQL schema, migrations, Mermaid ERD, DB-enforced invariants | Done | `migrations/0001–0003`, `docs/erd.md` (generated), triggers for AX-DE-01/03, AX-IM-01/02, AX-PD-01..03, AX-SOD-01, AX-CL-01, AX-AUD-01; row-level security; tested on PostgreSQL 16 (`tests/integration/postgres.test.ts`) |
+| Production PostgreSQL schema, migrations, Mermaid ERD, DB-enforced invariants | Done | `migrations/0001–0004`, `docs/erd.md` (generated), triggers for AX-DE-01/03, AX-IM-01/02, AX-PD-01..03, AX-SOD-01, AX-CL-01, AX-AUD-01; row-level security; tested on PostgreSQL 16 (`tests/integration/postgres.test.ts`) |
 | Integration layer: CSV and a bank standard, idempotent imports with provenance | Done | BAI2, ISO 20022 camt.053, OFX and CSV statements; card, ERP journal, AP (JSON) and payroll feeds (`src/integrations`); content-hash idempotency, per-record source line (`src/app/imports.ts`); tested in `parsers.test.ts` and `http-api.test.ts` |
 | SKILL.md skills with typed manifests and CI evals; a full close library | Done | 10 skills in `skills/` (bank rec, coding, accruals, schedules, subledger tie-out, intercompany, FX, JE review, flux, close package), zod-validated manifests, 18 golden cases in CI |
 | Durable agent runtime: plan→act→observe→verify→propose→HITL→post→audit, L0–L3, maker-checker/SoD, budgets, idempotency, crash resume, why+confidence, injection hygiene, orchestration | Done | `src/core/agent/*`, `tests/unit/runtime.test.ts` (crash after action 5 and resume without duplicates; budget stop; least privilege; injection routing) |
 | Live Claude via `@anthropic-ai/sdk` plus a deterministic offline engine | Done, live path verified only with a scripted provider | `src/core/llm/anthropic.ts` (streaming, adaptive thinking, per-skill model); no API key was available here, so no live traffic was exercised |
 | Web app: My close, close cockpit, inbox, rec workbench, flux, JE explorer, TB/FS, run trace, skill catalog and policy editor, ontology explorer, audit log, admin | Done | `src/web/pages/*`; screenshots in `docs/screenshots/` |
-| Enterprise auth: password hashing, secure sessions, CSRF, rate limiting, RBAC + SoD, TOTP MFA, OIDC, tenant/entity scoping, audit of mutations | Done | scrypt (OWASP parameters; Argon2id was not used to stay dependency-free and browser-portable), HttpOnly/SameSite=Strict cookies with hashed tokens, HMAC CSRF + Origin checks, per-IP/account/user limits, 8 roles and 34 permissions, TOTP with replay protection and encrypted secrets, OIDC code flow + PKCE (`tests/integration/oidc.test.ts`), RLS, entity scope set per person in Admin and enforced on every read model and write path (`http-api.test.ts`, `e2e/entity-scope.spec.ts`), audit events on every mutation |
+| Enterprise auth: password hashing, secure sessions, CSRF, rate limiting, RBAC + SoD, TOTP MFA, OIDC, tenant/entity scoping, audit of mutations | Done | scrypt (OWASP parameters; Argon2id was not used to stay dependency-free and browser-portable), HttpOnly/SameSite=Strict cookies with hashed tokens, HMAC CSRF + Origin checks, per-IP/account/user limits, 8 roles and 34 permissions, TOTP with replay protection, encrypted secrets and one-time recovery codes, administrator resets of passwords and two-factor (`tests/integration/identity.test.ts`, `e2e/two-factor.spec.ts`), OIDC code flow + PKCE (`tests/integration/oidc.test.ts`), RLS, entity scope set per person in Admin and enforced on every read model and write path (`http-api.test.ts`, `e2e/entity-scope.spec.ts`), audit events on every mutation |
 | WCAG 2.2 AA, responsive, light and dark | Done for automated checks | axe-core on 17 routes × 2 themes + drawers (0 serious/critical), keyboard checks, phone viewport without horizontal scroll; no manual screen-reader pass yet |
 | Fictional multi-entity seed with planted issues and a demo script | Done | Bramblewood Labs (US parent, UK subsidiary, elimination entity; 13 months of history; >2,000 entries); planted issues listed in `README.md`; the demo script is the e2e suite |
 
@@ -44,7 +44,7 @@ Without the throwaway PostgreSQL cluster the 13 PostgreSQL tests report as **ski
 |---|---|---|
 | README, assessment, decision records | Done | `README.md`, this file, `docs/decisions.md`, `docs/architecture.md` |
 | Screenshots (1440×900 and phone, < 6 MB) | Done | 17 PNGs, 3.3 MB, regenerated by `npm run screenshots` |
-| Zero-install static demo | Done | `npm run build:demo` → `dist/demo/index.html` (single file, 1.89 MB); Playwright-verified from disk, in a sandboxed iframe, offline and on a phone viewport |
+| Zero-install static demo | Done | `npm run build:demo` → `dist/demo/index.html` (single file, 1.91 MB); Playwright-verified from disk, in a sandboxed iframe, offline and on a phone viewport |
 
 ### P2
 
@@ -74,6 +74,15 @@ Without the throwaway PostgreSQL cluster the 13 PostgreSQL tests report as **ski
   under a path prefix); it now links relative to the callback.
 * The PostgreSQL pool set the session time zone with a query that raced the first query on each new
   connection; it is now a startup parameter (and asserted in the PostgreSQL tests).
+* A session that had not finished two-factor could create an API token or change the password (a
+  two-factor bypass); it can now only finish two-factor.
+* Failed two-factor attempts were audited inside the transaction that the error then rolled back, so
+  they never reached the audit log.
+* TOTP was checked against the demo's shifted business clock, so a real authenticator app could not
+  work in demo mode.
+* SOD-05 read "auditor vs preparers" as "any two of these roles", refusing e.g. Staff Accountant +
+  AP Specialist; a role conflict is now the first role against each of the others.
+* Disabling a person asked for a reason and then discarded it; it is now required and audited.
 
 ## Known gaps and risks
 
@@ -81,8 +90,9 @@ Without the throwaway PostgreSQL cluster the 13 PostgreSQL tests report as **ski
    production, the golden evals should also run against Claude with a budget.
 2. **Container files are unverified.** `Dockerfile` and `compose.yaml` were written but not built
    (no container runtime in the build environment).
-3. **Identity lifecycle is minimal.** No password-reset email, MFA recovery codes or admin MFA reset,
-   SCIM, or OIDC logout; SSO was tested against an in-process provider, not a commercial IdP.
+3. **Identity lifecycle gaps.** No self-service password-reset email (administrators issue temporary
+   passwords), no forced change of a temporary password, no SCIM provisioning or OIDC logout; SSO was
+   tested against an in-process provider, not a commercial IdP.
 4. **Single-node limits.** Rate limits and agent runs are in-process; several nodes need a shared
    limiter and a job queue. Agents run on demand (no built-in scheduler).
 5. **Connectors are file-based.** Bank and ERP data arrive as files (BAI2, camt.053, OFX, CSV, JSON);

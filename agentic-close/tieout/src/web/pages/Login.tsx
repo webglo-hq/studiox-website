@@ -1,7 +1,11 @@
-/** Sign-in with password, then TOTP (verify or first-time enrolment). Demo mode lists personas. */
+/**
+ * Sign-in with password, then TOTP (verify, a one-time recovery code, or first-time enrolment,
+ * which shows recovery codes once). Demo mode lists personas.
+ */
 import { ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { api, ApiError, setCsrf, type AuthOptions } from '../api';
+import { RecoveryCodes } from '../components/RecoveryCodes';
 import { Avatar } from '../components/ui';
 import { useApp } from '../lib/app-state';
 import { ROLE_LABEL } from '../lib/format';
@@ -16,6 +20,8 @@ export function Login() {
   const [stage, setStage] = useState<'password' | 'mfa' | 'enroll'>(mfaPending ? 'mfa' : 'password');
   const [code, setCode] = useState('');
   const [enrol, setEnrol] = useState<{ secret: string; otpauth: string } | null>(null);
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [codes, setCodes] = useState<string[] | null>(null);
   const id = useId();
 
   useEffect(() => {
@@ -48,9 +54,10 @@ export function Login() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api<{ csrfToken: string }>('/auth/mfa/verify', { body: { code } });
+      const r = await api<{ csrfToken: string; recoveryCodes: string[] | null }>('/auth/mfa/verify', { body: { code } });
       setCsrf(r.csrfToken);
-      await refresh();
+      if (r.recoveryCodes?.length) setCodes(r.recoveryCodes); // first-time set-up: show them once
+      else await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'That code did not work.');
     } finally {
@@ -143,6 +150,17 @@ export function Login() {
                 ) : null}
               </form>
             </>
+          ) : codes ? (
+            <div className="stack" style={{ gap: 12 }}>
+              <div className="row">
+                <ShieldCheck className="icon" aria-hidden="true" />
+                <h2 style={{ fontSize: 22 }}>Two-factor authentication is on</h2>
+              </div>
+              <RecoveryCodes codes={codes} account={email || 'your account'} />
+              <button className="btn primary big" type="button" onClick={() => void refresh()}>
+                I saved them, continue
+              </button>
+            </div>
           ) : (
             <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void verify(e)}>
               <div className="row">
@@ -159,20 +177,40 @@ export function Login() {
                   </div>
                 </div>
               ) : (
-                <p className="muted">Enter the 6-digit code from your authenticator app.</p>
+                <p className="muted">{useRecovery ? 'Enter one of the recovery codes you saved when you set up two-factor authentication. Each works once.' : 'Enter the 6-digit code from your authenticator app.'}</p>
               )}
-              <label className="field" htmlFor={`${id}-c`}>
-                Code
-                <input id={`${id}-c`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
-              </label>
+              {useRecovery ? (
+                <label className="field" htmlFor={`${id}-r`}>
+                  Recovery code
+                  <input id={`${id}-r`} autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={11} placeholder="xxxxx-xxxxx" value={code} onChange={(e) => setCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} />
+                </label>
+              ) : (
+                <label className="field" htmlFor={`${id}-c`}>
+                  Code
+                  <input id={`${id}-c`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+                </label>
+              )}
               {error ? (
                 <p className="error-text" role="alert">
                   {error}
                 </p>
               ) : null}
-              <button className="btn primary big" type="submit" disabled={busy || code.length !== 6}>
+              <button className="btn primary big" type="submit" disabled={busy || (useRecovery ? code.replace(/-/g, '').length !== 10 : code.length !== 6)}>
                 Verify
               </button>
+              {stage === 'mfa' ? (
+                <button
+                  className="linklike"
+                  type="button"
+                  onClick={() => {
+                    setUseRecovery((x) => !x);
+                    setCode('');
+                    setError(null);
+                  }}
+                >
+                  {useRecovery ? 'Use my authenticator app instead' : 'Lost your authenticator? Use a recovery code'}
+                </button>
+              ) : null}
             </form>
           )}
         </div>

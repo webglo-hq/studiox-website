@@ -5,6 +5,7 @@
  */
 import { resolveUserActor } from '../core/auth/actor';
 import { decryptSecret, encryptSecret, newTotpSecret, otpauthUri, verifyTotp } from '../core/auth/totp';
+import { hashRecoveryCode, newRecoveryCodes, normalizeRecoveryCode } from '../core/auth/recovery';
 import { audit } from '../core/audit/audit';
 import { conflict, DomainError, forbidden, notFound, precondition, validation } from '../core/util/errors';
 import { hmacSha256Hex, sha256Hex, timingSafeEqual } from '../core/util/hash';
@@ -187,27 +188,81 @@ export async function mfaEnroll(ctx: AppContext, a: Authenticated): Promise<{ se
   });
 }
 
-/** Verify a TOTP code; activates a pending factor and rotates the session. */
-export async function mfaVerify(ctx: AppContext, a: Authenticated, code: string, meta: { ip: string | null; userAgent: string | null }): Promise<{ sessionToken: string; csrfToken: string }> {
+export interface MfaVerifyResult {
+  sessionToken: string;
+  csrfToken: string;
+  /** shown once, when two-factor authentication is switched on */
+  recoveryCodes: string[] | null;
+  /** unused recovery codes left, when one was just used */
+  recoveryCodesLeft: number | null;
+}
+
+/** Replace a user's recovery codes with a fresh set (stored as hashes); returns the plain codes once. */
+async function issueRecoveryCodes(tx: DbTx, userId: string): Promise<string[]> {
+  for (const r of await tx.find('mfa_recovery_codes', { user_id: userId })) await tx.delete('mfa_recovery_codes', r.id);
+  const codes = newRecoveryCodes();
+  for (const c of codes) await tx.insert('mfa_recovery_codes', { user_id: userId, code_hash: hashRecoveryCode(normalizeRecoveryCode(c)!) });
+  return codes;
+}
+
+/**
+ * Verify a TOTP code (or, once two-factor is on, a one-time recovery code); activates a pending
+ * factor (issuing recovery codes) and rotates the session. A failed attempt is audited in its own
+ * committed transaction before the error is returned.
+ */
+export async function mfaVerify(ctx: AppContext, a: Authenticated, code: string, meta: { ip: string | null; userAgent: string | null }): Promise<MfaVerifyResult> {
   const gate = ctx.limiter.check(`mfa:${a.user.actor.id}`, 6, 60_000);
   if (!gate.ok) throw new DomainError('rate_limited', 'Too many codes tried. Wait a minute.', { retryAfterSec: gate.retryAfterSec });
-  return ctx.db.tx(a.user.tenantId, async (tx) => {
+  const input = String(code ?? '').trim();
+  const outcome = await ctx.db.tx(a.user.tenantId, async (tx): Promise<{ ok: false; message: string } | ({ ok: true } & MfaVerifyResult)> => {
     const user = (await tx.get('users', a.user.actor.id))!;
     const factor = (await tx.findOne('mfa_factors', { user_id: user.id, status: 'active' })) ?? (await tx.findOne('mfa_factors', { user_id: user.id, status: 'pending' }));
     if (!factor) throw validation('Set up two-factor authentication first.');
-    const secret = await decryptSecret(factor.secret_ciphertext, ctx.config.encryptionKey);
-    const step = verifyTotp(secret, String(code ?? '').trim(), ctx.clock.now().getTime(), factor.last_used_step);
-    if (step === null) {
-      await audit(tx, a.user.actor, ctx.clock, { action: 'auth.mfa.failed', subjectType: 'user', subjectId: user.id, summary: 'Wrong or reused two-factor code', data: {} }, a.user.ip);
-      throw validation('That code is not valid. Codes change every 30 seconds and can be used once.');
-    }
     const now = ctx.clock.now().toISOString();
-    await tx.update('mfa_factors', factor.id, { status: 'active', last_used_step: step, activated_at: factor.activated_at ?? now });
+    const fail = async (summary: string, message: string) => {
+      await audit(tx, a.user.actor, ctx.clock, { action: 'auth.mfa.failed', subjectType: 'user', subjectId: user.id, summary, data: {} }, a.user.ip);
+      return { ok: false as const, message };
+    };
+    let action: string;
+    let summary: string;
+    let recoveryCodes: string[] | null = null;
+    let recoveryCodesLeft: number | null = null;
+    const recovery = factor.status === 'active' ? normalizeRecoveryCode(input) : null;
+    if (recovery) {
+      const row = await tx.findOne('mfa_recovery_codes', { user_id: user.id, code_hash: hashRecoveryCode(recovery) });
+      if (!row || row.used_at) return fail('Wrong or already used recovery code', 'That recovery code is not valid or has already been used.');
+      await tx.update('mfa_recovery_codes', row.id, { used_at: now });
+      recoveryCodesLeft = await tx.count('mfa_recovery_codes', { user_id: user.id, used_at: { isNull: true } });
+      action = 'auth.mfa.recovery_used';
+      summary = `Signed in with a recovery code (${recoveryCodesLeft} left)`;
+    } else {
+      const secret = await decryptSecret(factor.secret_ciphertext, ctx.config.encryptionKey);
+      // authenticator apps run on wall-clock time (the demo's business clock is shifted)
+      const step = verifyTotp(secret, input, Date.now(), factor.last_used_step);
+      if (step === null) return fail('Wrong or reused two-factor code', 'That code is not valid. Codes change every 30 seconds and can be used once.');
+      await tx.update('mfa_factors', factor.id, { status: 'active', last_used_step: step, activated_at: factor.activated_at ?? now });
+      if (factor.status === 'pending') recoveryCodes = await issueRecoveryCodes(tx, user.id);
+      action = factor.status === 'pending' ? 'auth.mfa.activated' : 'auth.mfa.verified';
+      summary = factor.status === 'pending' ? 'Two-factor authentication turned on; recovery codes issued' : 'Two-factor code verified';
+    }
     if (!user.mfa_enabled) await tx.update('users', user.id, { mfa_enabled: true });
     await tx.update('sessions', a.session.id, { revoked_at: now, revoked_reason: 'rotated after MFA' });
     const s = await createSession(ctx, tx, user, 'verified', meta, a.session.id);
-    await audit(tx, a.user.actor, ctx.clock, { action: factor.status === 'pending' ? 'auth.mfa.activated' : 'auth.mfa.verified', subjectType: 'user', subjectId: user.id, summary: factor.status === 'pending' ? 'Two-factor authentication turned on' : 'Two-factor code verified', data: {} }, a.user.ip);
-    return { sessionToken: s.token, csrfToken: s.csrf };
+    await audit(tx, a.user.actor, ctx.clock, { action, subjectType: 'user', subjectId: user.id, summary, data: {} }, a.user.ip);
+    return { ok: true, sessionToken: s.token, csrfToken: s.csrf, recoveryCodes, recoveryCodesLeft };
+  });
+  if (!outcome.ok) throw validation(outcome.message);
+  const { ok: _ok, ...result } = outcome;
+  return result;
+}
+
+/** A fresh set of recovery codes (the old ones stop working); needs two-factor to be on. */
+export async function regenerateRecoveryCodes(ctx: AppContext, u: RequestUser): Promise<{ recoveryCodes: string[] }> {
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    if (!(await tx.findOne('mfa_factors', { user_id: u.actor.id, status: 'active' }))) throw precondition('Turn on two-factor authentication first.');
+    const recoveryCodes = await issueRecoveryCodes(tx, u.actor.id);
+    await audit(tx, u.actor, ctx.clock, { action: 'auth.mfa.recovery_regenerated', subjectType: 'user', subjectId: u.actor.id, summary: 'New two-factor recovery codes issued; the old ones no longer work', data: {} }, u.ip);
+    return { recoveryCodes };
   });
 }
 

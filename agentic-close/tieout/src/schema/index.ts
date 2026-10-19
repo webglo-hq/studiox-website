@@ -24,6 +24,7 @@ export const ID_PREFIX: Record<TableName, string> = {
   user_roles: 'ur',
   sessions: 'ses',
   mfa_factors: 'mfa',
+  mfa_recovery_codes: 'mrc',
   api_tokens: 'tok',
   sod_rules: 'sod',
   audit_log: 'aud',

@@ -32,7 +32,7 @@ export interface FluxDriver {
 export interface SodRuleConfig {
   /** maker_checker / requester_checker: subject types the rule covers */
   subjects?: string[];
-  /** role_conflict: role keys that must not be held together */
+  /** role_conflict: the first role key may not be held together with any of the others */
   roles?: string[];
   /** permission_conflict: permissions that must not be held together */
   permissions?: string[];

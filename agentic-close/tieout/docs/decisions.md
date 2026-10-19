@@ -115,6 +115,12 @@ read-only plus `agent.run`, hashed, expiring and revocable.
 short-lived Lax cookie, and ID-token validation against the provider's JWKS. Only invited, active
 accounts can sign in; the provider's `amr` satisfies MFA, otherwise the account's TOTP is required.
 
+Until two-factor is finished, a session may call only `/api/auth/me`, logout, enrol and verify, so a
+password alone never yields an API token or a changed credential. Switching two-factor on issues ten
+one-time recovery codes (hashed, `migrations/0004_mfa_recovery.sql`); a lost authenticator is reset by
+an administrator with a documented reason, which signs the person out everywhere. TOTP is checked
+against wall-clock time, never the demo's shifted business clock.
+
 ## ADR-012 · Tenant isolation in the database (row-level security)
 
 **Context.** Store-level tenant filters are one missed `WHERE` away from a leak.

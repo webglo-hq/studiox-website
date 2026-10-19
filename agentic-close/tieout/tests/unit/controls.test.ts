@@ -64,6 +64,14 @@ describe('segregation of duties', () => {
     expect(evaluateAssignment(rules, ['auditor', 'staff_accountant'], new Set(['je.create'])).length).toBeGreaterThan(0);
     expect(evaluateAssignment(rules, ['controller'], new Set(['je.approve'])).length).toBe(0);
   });
+  it('reads a role conflict as "the first role with any of the others", not every pair', () => {
+    // SOD-05 lists the auditor first: preparer roles may still be combined with each other
+    expect(evaluateAssignment(rules, ['staff_accountant', 'ap_specialist'], new Set(['je.create', 'vendor.manage']))).toEqual([]);
+    expect(evaluateAssignment(rules, ['senior_accountant', 'controller'], new Set(['je.approve']))).toEqual([]);
+    const clash = evaluateAssignment(rules, ['auditor', 'ap_specialist', 'cfo'], new Set(['je.approve']));
+    expect(clash.map((c) => c.code)).toEqual(['SOD-05']);
+    expect(clash[0]!.message).toBe('Holds conflicting roles: auditor + cfo, ap_specialist');
+  });
   it('approval limits escalate by amount (AX-SOD-04)', () => {
     expect(approvalLimit(['senior_accountant'])).toBe(2_500_000);
     expect(approvalLimit(['controller'])).toBe(25_000_000);

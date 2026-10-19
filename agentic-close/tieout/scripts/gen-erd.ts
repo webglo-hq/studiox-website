@@ -14,7 +14,7 @@ const GROUPS: { title: string; note: string; tables: string[] }[] = [
   {
     title: 'Tenancy, identity and controls',
     note: 'Every tenant table carries tenant_id (row-level security, migration 0003). Sessions store only a SHA-256 of the token; MFA secrets are AES-256-GCM encrypted; the audit log is hash-chained and append-only (AX-AUD-01).',
-    tables: ['tenants', 'users', 'roles', 'permissions', 'role_permissions', 'user_roles', 'sessions', 'mfa_factors', 'api_tokens', 'sod_rules', 'audit_log'],
+    tables: ['tenants', 'users', 'roles', 'permissions', 'role_permissions', 'user_roles', 'sessions', 'mfa_factors', 'mfa_recovery_codes', 'api_tokens', 'sod_rules', 'audit_log'],
   },
   {
     title: 'Agents, skills and proposals',
