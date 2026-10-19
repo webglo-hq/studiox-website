@@ -4,13 +4,12 @@
  *   subsequent_invoice  a bill received after month-end for services in the period (cut-off)
  *   recurring_gap       a monthly-service vendor billed in each of the last 3 months but not this one
  *   grni                goods received against a PO with no bill (goods received, not invoiced)
- *   payroll_calendar    working days earned after the last pay period but unpaid at month-end
+ *   payroll_calendar    paid days (weekdays, holidays included) earned after the last pay period, unpaid at month-end
  *
  * Amounts come from documents (the invoice, the receipt), the vendor's trailing average, or the
  * latest payroll register — never from the model.
  */
-import { addDays, periodEnd, periodStart, shiftPeriod } from '../../../core/util/time';
-import { isBusinessDay } from '../close/workdays';
+import { addDays, isWeekend, periodEnd, periodStart, shiftPeriod } from '../../../core/util/time';
 import type { AcctContext } from './context';
 
 export interface AccrualLine {
@@ -143,11 +142,12 @@ export class AccrualService {
     const runs = (await this.c.tx.find('payroll_runs', { entity_id: entityId }, { orderBy: [['period_end', 'desc']] })).filter((r) => r.pay_date <= end);
     const lastRun = runs[0];
     if (lastRun && lastRun.period_end < end) {
-      const cal = entity.holiday_calendar;
+      // salaried staff are paid for every weekday, public holidays included: a biweekly run pays
+      // 10 days whatever the holiday calendar says, and each unpaid weekday at month-end is owed
       let days = 0;
-      for (let d = addDays(lastRun.period_end, 1); d <= end; d = addDays(d, 1)) if (isBusinessDay(d, cal)) days++;
+      for (let d = addDays(lastRun.period_end, 1); d <= end; d = addDays(d, 1)) if (!isWeekend(d)) days++;
       let runDays = 0;
-      for (let d = lastRun.period_start; d <= lastRun.period_end; d = addDays(d, 1)) if (isBusinessDay(d, cal)) runDays++;
+      for (let d = lastRun.period_start; d <= lastRun.period_end; d = addDays(d, 1)) if (!isWeekend(d)) runDays++;
       const already = existingAccruals.some((j) => /payroll/i.test(j.memo));
       if (days > 0 && runDays > 0 && !already) {
         const factor = days / runDays;
@@ -173,7 +173,7 @@ export class AccrualService {
           creditAccount: '2120',
           lines,
           confidence: 0.93,
-          reasoning: `The last pay period ended ${lastRun.period_end} (paid ${lastRun.pay_date}). Employees worked ${days} more business days in ${periodLabel(periodKey)} that will be paid next month. The daily cost comes from the latest payroll register (${fmt(gross + lastRun.employer_taxes_minor + lastRun.benefits_minor, lastRun.currency)} for ${runDays} business days), split by department.`,
+          reasoning: `The last pay period ended ${lastRun.period_end} (paid ${lastRun.pay_date}). Employees earned ${days} more paid days in ${periodLabel(periodKey)} that will be paid next month. The daily cost comes from the latest payroll register (${fmt(gross + lastRun.employer_taxes_minor + lastRun.benefits_minor, lastRun.currency)} for ${runDays} paid days, public holidays included), split by department.`,
           evidence: [{ label: `Payroll register ${lastRun.pay_date} (${lastRun.period_start} – ${lastRun.period_end})`, refType: 'payroll_run', refId: lastRun.id }],
         });
       }

@@ -16,6 +16,7 @@ import { SCENARIO } from '../../src/packs/accounting/seed/company';
 import { AccountingServices } from '../../src/packs/accounting/services';
 import { accountingSkills } from '../../src/packs/accounting/skills/install';
 import { testApp, type HttpClient, type TestApp } from '../support/app';
+import { closeTheMonth } from '../support/full-close';
 
 const P = SCENARIO.closeKey;
 const clock = scenarioClock(SCENARIO.businessDate);
@@ -140,37 +141,39 @@ describe('variance explanations go out of date when the ledger moves (AX-FLX-01)
 
   it('TO-ACC-M1: the lock gate refuses a signed package whose commentary the ledger has since left behind', async () => {
     const t = await testApp();
-    const [sam, casey, riley] = await signIn(t, 'sam', 'casey', 'riley');
-    // every significant variance explained, the package drafted and signed
-    for (const code of ['BWL-US', 'BWL-UK']) {
-      const id = t.fx.entityIds.get(code)!;
-      for (const l of (await fluxOf(casey!, id)).lines.filter((x) => x.exceeds)) await explain(sam!, casey!, id, l.code, `${l.name}: the September movement is explained by the drivers shown.`);
-    }
-    expect((await casey!.post('/api/runs', { skillKey: 'close-package', entityId: null, periodKey: P })).status).toBe(200);
-    const report = (await riley!.get<{ items: Item[] }>(`/api/proposals?status=open&period=${P}&kind=report`)).body.items[0]!;
-    expect((await riley!.post(`/api/proposals/${report.id}/approve`, {})).status).toBe(200);
-    const pkg = (await casey!.get<{ packages: { id: string }[] }>(`/api/close/${P}`)).body.packages[0]!;
-    const signed = await riley!.post(`/api/packages/${pkg.id}/finalize`, {});
-    expect(signed.status, JSON.stringify(signed.body)).toBe(200);
-    expect(await readinessOf(casey!)).toMatchObject({ unexplainedFlux: 0, finalPackage: true, stalePackage: false });
-
-    // after sign-off a late entry moves a variance, and someone explains it again
+    // the whole September close, signed and locked; then BWL-US reopens for a late adjustment
+    const { people } = await closeTheMonth(t, { runAgents: true });
+    const { sam, casey, riley } = people as Record<'sam' | 'casey' | 'riley', HttpClient>;
     const us = t.fx.entityIds.get('BWL-US')!;
-    const target = (await fluxOf(casey!, us)).lines.find((l) => l.exceeds && l.code.startsWith('6'))!;
-    await adjust(sam!, casey!, us, target.code, 1_234_500);
-    const stale = await readinessOf(casey!);
+    expect((await casey.post(`/api/close/${P}/reopen`, { entityId: us, reason: 'Late timesheets from the payroll provider' })).status).toBe(200);
+    expect(await readinessOf(casey)).toMatchObject({ unexplainedFlux: 0, finalPackage: true, stalePackage: false });
+
+    const target = (await fluxOf(casey, us)).lines.find((l) => l.exceeds && l.code.startsWith('6'))!;
+    await adjust(sam, casey, us, target.code, 1_234_500);
+    const stale = await readinessOf(casey);
     expect(stale).toMatchObject({ unexplainedFlux: 1, finalPackage: true, stalePackage: true, ready: false });
     expect(stale.messages).toContain(`Package v1: BWL-US ${target.code} ${target.name}: the ledger moved after its explanation was approved`);
     expect(stale.messages.some((m) => /^Package v1: it shows consolidated net income of \$[\d,.]+; the ledger now gives \$[\d,.]+$/.test(m))).toBe(true);
 
-    await explain(sam!, casey!, us, target.code, `${target.name}: the September movement, including the late timesheets posted on the 30th.`);
-    const reExplained = await readinessOf(casey!);
-    expect(reExplained).toMatchObject({ unexplainedFlux: 0, stalePackage: true });
+    // explained again: the variances are explained, but not in the package that was signed
+    await explain(sam, casey, us, target.code, `${target.name}: the September movement, including the late timesheets posted on the 30th.`);
+    const reExplained = await readinessOf(casey);
+    expect(reExplained).toMatchObject({ unexplainedFlux: 0, stalePackage: true, ready: false });
     expect(reExplained.messages).toContain(`Package v1: BWL-US ${target.code} ${target.name}: the package explains a different change than the ledger now shows`);
     expect(reExplained.messages).toContain('the approved close package no longer matches the books; generate a new version and approve it');
-    const lock = await casey!.post<{ error: { message: string } }>(`/api/close/${P}/lock`, {});
-    expect(lock.status).toBe(422);
-    expect(lock.body.error.message).toContain('the approved close package no longer matches the books');
+    const refused = await casey.post<{ error: { message: string } }>(`/api/close/${P}/lock`, {});
+    expect(refused.status).toBe(422);
+    expect(refused.body.error.message).toContain('the approved close package no longer matches the books');
+
+    // a new version, approved and signed, describes the books as they are: now the period locks
+    expect((await casey.post('/api/runs', { skillKey: 'close-package', entityId: null, periodKey: P })).status).toBe(200);
+    const report = (await riley.get<{ items: Item[] }>(`/api/proposals?status=open&period=${P}&kind=report`)).body.items[0]!;
+    expect((await riley.post(`/api/proposals/${report.id}/approve`, {})).status).toBe(200);
+    const v2 = (await casey.get<{ packages: { id: string; version: number }[] }>(`/api/close/${P}`)).body.packages[0]!;
+    expect(v2.version).toBe(2);
+    expect((await riley.post(`/api/packages/${v2.id}/finalize`, {})).status).toBe(200);
+    expect(await readinessOf(casey)).toMatchObject({ stalePackage: false, ready: true });
+    expect((await casey.post(`/api/close/${P}/lock`, {})).status).toBe(200);
   });
 
   it('TO-ACC-M1: drafts for figures the ledger has left behind are retired or refused, and the agent drafts again', async () => {

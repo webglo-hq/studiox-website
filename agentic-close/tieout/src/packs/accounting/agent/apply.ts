@@ -54,6 +54,11 @@ async function applyJournal(svc: AccountingServices, proposal: ProposalRow, p: J
     const dep = await tx.get('proposals', id);
     if (!dep || dep.status !== 'applied') throw precondition(`Approve ${dep?.ref ?? id} first: this entry was computed assuming it is posted.`);
   }
+  if (p.reversesJeId) {
+    // reversed once only (AX-IM-02): someone may have reversed it by hand since this was proposed
+    const already = await tx.findOne('journal_entries', { reverses_je_id: p.reversesJeId });
+    if (already) throw precondition(`It is already reversed by ${already.je_number}; reject this proposal.`);
+  }
   const je = await createJournalEntry(await svc.ctx.ledger(), jeInput(p, proposal.prepared_by, { proposalId: proposal.id, agentRunId: proposal.run_id, idempotencyKey: `proposal:${proposal.id}` }), 'pending_approval');
   const posted = await post(svc, je.id, approver, `Proposal ${proposal.ref}`);
   // Accruals reverse on day 1 of the next period. The close runs after month-end, so that period is

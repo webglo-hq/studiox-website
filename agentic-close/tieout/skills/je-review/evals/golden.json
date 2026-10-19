@@ -34,11 +34,21 @@
         "count": 1
       },
       {
-        "description": "Findings are suggestions only (L0)",
+        "description": "The self-approved upload is reversed pending an independent review of its support",
+        "where": {
+          "kind": "journal_entry",
+          "payload.entryType": "reversing",
+          "payload.lines": "~SALES",
+          "amount_minor": 6200000
+        },
+        "count": 1
+      },
+      {
+        "description": "Findings and the reversal are suggestions only (L0)",
         "where": {
           "route": "suggestion"
         },
-        "count": 2
+        "count": 3
       },
       {
         "description": "No other findings",

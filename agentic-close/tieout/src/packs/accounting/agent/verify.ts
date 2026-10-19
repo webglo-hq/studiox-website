@@ -7,7 +7,7 @@ import type { RunContext } from '../../../core/agent/runtime';
 import type { ProposalDraft, VerificationResult } from '../../../core/agent/types';
 import type { AxiomOutcome } from '../../../core/ontology/types';
 import { periodKeyOf } from '../../../core/util/time';
-import { evaluateEntry, type JournalDraftInput } from '../ledger/journal';
+import { evaluateEntry, reversalLines, type JournalDraftInput } from '../ledger/journal';
 import { closeOntology } from '../ontology';
 import type { AccountingServices } from '../services';
 import { covers } from '../services/flux';
@@ -32,6 +32,7 @@ export function jeInput(p: JePayload, preparedBy: string, extra: Partial<Journal
     autoReverseOn: p.autoReverseOn ?? null,
     counterpartyEntityId: p.counterpartyEntityId ?? null,
     sourceRef: p.sourceRef ?? null,
+    reversesJeId: p.reversesJeId ?? null,
     ...extra,
   };
 }
@@ -61,6 +62,17 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       }
       if (p.entryType === 'accrual') out.push(fromOutcome(onto.check('AX-ACR-02', { evidenceKinds: draft.evidence.filter((e) => e.kind === 'record' || e.kind === 'source_document').map((e) => e.refType ?? e.kind) })));
       if (p.fx) out.push(fromOutcome(onto.check('AX-FX-01', { foreignMinor: p.fx.foreignMinor, closingRate: p.fx.closingRate, revaluedFunctionalMinor: p.fx.revaluedFunctionalMinor })));
+      if (p.reversesJeId) {
+        // a reversal cancels the posted entry exactly, once (AX-IM-02): never the drafter's version of it
+        const orig = await tx.get('journal_entries', p.reversesJeId);
+        const already = orig ? await tx.findOne('journal_entries', { reverses_je_id: orig.id }) : undefined;
+        const mirror = orig ? reversalLines(orig, await tx.find('journal_lines', { journal_entry_id: orig.id }), chart) : [];
+        const key = (l: { account: string; debit?: number; credit?: number; department?: string | null; location?: string | null; project?: string | null; product_class?: string | null }) => [l.account, l.debit ?? 0, l.credit ?? 0, l.department ?? '', l.location ?? '', l.project ?? '', l.product_class ?? ''].join('|');
+        const same = mirror.map(key).sort().join('\n') === p.lines.map(key).sort().join('\n');
+        if (!orig || orig.entity_id !== p.entityId || orig.status !== 'posted') out.push(fail('Reverses a posted entry', orig ? `${orig.je_number} is ${orig.status}` : 'the entry to reverse does not exist', 'AX-IM-02'));
+        else if (already) out.push(fail('Reverses a posted entry', `${orig.je_number} is already reversed by ${already.je_number}`, 'AX-IM-02'));
+        else out.push(same ? ok('Reversal mirrors the entry', `${orig.je_number}, line for line`, 'AX-IM-02') : fail('Reversal mirrors the entry', `the lines do not cancel ${orig.je_number} exactly`, 'AX-IM-02'));
+      }
       for (const id of p.dependsOnProposalIds ?? []) {
         const dep = await tx.get('proposals', id);
         out.push(dep ? ok('Prerequisite proposal exists', `${dep.ref} (${dep.status})`) : fail('Prerequisite proposal exists', `Proposal ${id} not found`));

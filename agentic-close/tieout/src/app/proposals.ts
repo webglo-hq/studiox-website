@@ -44,11 +44,17 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
   if (!['pending_approval', 'suggested'].includes(p.status)) reasons.push(`It is already ${p.status.replace('_', ' ')}.`);
   const rules = await tx.find('sod_rules', { enabled: true });
   const skill = ctx.skills.has(p.skill_key) ? ctx.skills.get(p.skill_key) : null;
-  const relevant = skill?.manifest.controls.requesterMayApprove ? rules.filter((r) => r.kind !== 'requester_checker') : rules;
+  // a skill may let whoever ran it acknowledge its findings, never approve the entries it drafts (SOD-02)
+  const relevant = skill?.manifest.controls.requesterMayApprove && p.kind !== 'journal_entry' ? rules.filter((r) => r.kind !== 'requester_checker') : rules;
   const decision = evaluateApproval(relevant, u.actor.id, { subjectType: 'proposal', preparedBy: p.prepared_by, editedBy: p.edited_by, requestedBy: p.requested_by, agentPrepared: true });
   for (const v of decision.violations) {
     sod.push({ code: v.code, message: v.message });
     if (v.severity === 'block') reasons.push(`${v.code}: ${v.message}`);
+  }
+  const conflicted = await reversalConflict(tx, u, p);
+  if (conflicted) {
+    sod.push(conflicted);
+    reasons.push(`${conflicted.code}: ${conflicted.message}`);
   }
   if (p.kind === 'journal_entry' && p.period_key) {
     const usd = await usdEquivalent(new AccountingServices(tx, u.actor, ctx.clock), p.amount_minor, p.currency ?? 'USD', p.period_key);
@@ -66,6 +72,17 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
     if (!live || !covers(draft, live)) reasons.push(staleExplanationMessage(draft, live, p.currency ?? 'USD'));
   }
   return { canDecide: reasons.length === 0, reasons, sod };
+}
+
+/**
+ * A reversal proposed because an entry was never independently approved is decided by someone
+ * independent of that entry: its preparer or approver may neither approve nor reject it.
+ */
+async function reversalConflict(tx: DbTx, u: RequestUser, p: ProposalRow): Promise<{ code: string; message: string } | null> {
+  const id = p.kind === 'journal_entry' ? (p.payload as { reversesJeId?: string | null }).reversesJeId : null;
+  const orig = id ? await tx.get('journal_entries', id) : undefined;
+  if (!orig || (orig.prepared_by !== u.actor.id && orig.approved_by !== u.actor.id)) return null;
+  return { code: 'SOD-01', message: `You prepared or approved ${orig.je_number}, the entry this reverses, so someone independent decides on it.` };
 }
 
 /** One flux computation per entity and period per unit of work (the inbox checks many drafts at once). */
@@ -113,6 +130,9 @@ export async function rejectProposal(ctx: AppContext, u: RequestUser, id: string
     assertCanActOn(u, p.entity_id, 'This item');
     if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(`Needs the ${DECISION_PERMISSION[p.kind]} permission.`);
     if (!['pending_approval', 'suggested'].includes(p.status)) throw conflict(`It is already ${p.status.replace('_', ' ')}.`);
+    // rejecting a reversal keeps the entry: that is a decision for someone independent of it too
+    const conflicted = await reversalConflict(tx, u, p);
+    if (conflicted) throw sodViolation(`${conflicted.code}: ${conflicted.message}`);
     const now = ctx.clock.now().toISOString();
     const updated = await tx.update('proposals', p.id, { status: 'rejected', decided_by: u.actor.id, decided_at: now, decision_reason: reason.trim().slice(0, 500), updated_at: now });
     await tx.insert('approvals', { subject_type: 'proposal', subject_id: p.id, decision: 'rejected', actor_type: 'user', actor_id: u.actor.id, policy_ref: null, reason: reason.trim().slice(0, 500), at: now });

@@ -40,6 +40,8 @@ export interface Readiness {
 }
 
 const PENDING: ProposalRow['status'][] = ['pending_approval', 'suggested', 'approved'];
+/** reconciling items that are exceptions, not routine timing differences */
+const EXCEPTIONS = new Set(['unexplained', 'bank_error', 'book_error', 'other']);
 
 export class CloseService {
   constructor(private readonly c: AcctContext) {}
@@ -72,7 +74,11 @@ export class CloseService {
     return (await this.c.tx.findOne('close_periods', { period_key: periodKey })) ?? null;
   }
 
-  async readiness(periodKey: string): Promise<Readiness> {
+  /**
+   * AX-CL-02. `forPackage`: the conditions a close package reports on, i.e. every lock condition
+   * except the package itself and its own checklist task (a package cannot wait for its own approval).
+   */
+  async readiness(periodKey: string, opts: { forPackage?: boolean } = {}): Promise<Readiness> {
     const legal = await this.c.legalEntities();
     const pendingProposals = (await this.c.tx.find('proposals', { period_key: periodKey, status: { in: PENDING } })).length;
     let openRecs = 0;
@@ -97,13 +103,14 @@ export class CloseService {
     }
     const cp = await this.closePeriod(periodKey);
     const tasks = cp ? await this.c.tx.find('close_tasks', { close_period_id: cp.id }) : [];
-    const openTasks = tasks.filter((t) => t.key !== 'lock' && t.status !== 'done' && t.status !== 'skipped').length;
-    const final = (await this.c.tx.find('close_packages', { period_key: periodKey, status: 'final' }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
+    const openTasks = tasks.filter((t) => t.key !== 'lock' && !(opts.forPackage && t.key === 'close-package') && t.status !== 'done' && t.status !== 'skipped').length;
+    const final = opts.forPackage ? undefined : (await this.c.tx.find('close_packages', { period_key: periodKey, status: 'final' }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
     const ties = await incomeStatementTies(this.c.tx, await this.c.chart(), periodKey);
     const untied = ties.filter((t) => !t.ties);
-    // a package signed before the books moved (a later posting, a variance explained again) no longer describes them
-    const staleBecause = final ? [...(await this.commentaryProblems(periodKey, final.content)), ...netIncomeProblems(final.content, ties)] : [];
-    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage: !!final, untiedStatements: untied.length, stalePackage: staleBecause.length > 0 });
+    // a package signed before the books moved (a later posting, a variance explained again) no longer
+    // describes them, nor does one drafted while other lock conditions were still open
+    const staleBecause = final ? [...(await this.commentaryProblems(periodKey, final.content)), ...netIncomeProblems(final.content, ties), ...(final.content.readiness?.ready === false ? [`it was drafted while the close still had open work (${final.content.readiness.messages.join('; ')})`] : [])] : [];
+    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage: opts.forPackage ? undefined : !!final, untiedStatements: untied.length, stalePackage: staleBecause.length > 0 });
     return { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage: !!final, stalePackage: staleBecause.length > 0, untiedStatements: untied.length, ready: out.passed, messages: [...out.messages, ...untied.map((t) => t.message ?? `${t.statement} does not tie to the ledger`), ...staleBecause.map((m) => `Package v${final!.version}: ${m}`)] };
   }
 
@@ -187,6 +194,17 @@ export class CloseService {
       }
     }
     const pending = await this.c.tx.find('proposals', { period_key: periodKey, status: { in: PENDING } }, { orderBy: [['ref', 'asc']] });
+    const openItems: ClosePackageContent['openItems'] = pending.map((p) => ({ kind: p.kind, ref: p.ref, title: p.title, amountMinor: p.amount_minor, currency: p.currency ?? 'USD', entityCode: p.entity_id ? chart.entity(p.entity_id).code : null }));
+    // reconciling exceptions still open at month-end (an unexplained bank debit, a bank or book error) are open items too
+    for (const ba of await bank.accounts()) {
+      const rec = (await bank.state(ba.id, periodKey)).reconciliation;
+      const items = rec ? await this.c.tx.find('reconciling_items', { reconciliation_id: rec.id, status: 'open' }, { orderBy: [['item_date', 'asc']] }) : [];
+      for (const i of items.filter((x) => EXCEPTIONS.has(x.kind) || x.requires_adjustment)) {
+        const code = chart.entity(ba.entity_id).code;
+        const ref = i.proposal_id ? (await this.c.tx.get('proposals', i.proposal_id))?.ref : undefined;
+        openItems.push({ kind: 'reconciling_item', ref: ref ?? `${code}-${i.item_date}`, title: `${i.description} (${ba.name}, open since ${i.item_date})`.slice(0, 300), amountMinor: i.amount_minor, currency: ba.currency, entityCode: code });
+      }
+    }
     const runs = await this.c.tx.find('agent_runs', { period_key: periodKey });
     const props = await this.c.tx.find('proposals', { period_key: periodKey });
     const kpi = (codes: string[]) => cons.incomeStatement.filter((l) => codes.some((c) => l.code.startsWith(c)) && !l.isTotal).reduce((s, l) => s + l.amountMinor, 0);
@@ -207,7 +225,7 @@ export class CloseService {
       consolidation: { eliminationsMinor: cons.eliminationsMinor, ctaMinor: cons.ctaMinor, closingRate: cons.closingRate, averageRate: cons.averageRate },
       commentary,
       reconciliations,
-      openItems: pending.map((p) => ({ kind: p.kind, ref: p.ref, title: p.title, amountMinor: p.amount_minor })),
+      openItems,
       agentActivity: {
         runs: runs.length,
         proposals: props.length,

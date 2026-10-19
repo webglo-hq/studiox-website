@@ -17,6 +17,7 @@ export const JeLineSchema = z
     debit: minor.nonnegative().optional(),
     credit: minor.nonnegative().optional(),
     department: z.string().max(20).nullable().optional(),
+    location: z.string().max(20).nullable().optional(),
     project: z.string().max(30).nullable().optional(),
     product_class: z.string().max(30).nullable().optional(),
     memo: z.string().max(200).nullable().optional(),
@@ -66,6 +67,8 @@ export const JePayloadSchema = z
     effects: JeEffectsSchema.optional(),
     autoEligible: z.boolean().optional(),
     dependsOnProposalIds: z.array(z.string()).optional(),
+    /** a reversing entry: the posted entry it cancels, line for line (AX-IM-02) */
+    reversesJeId: z.string().max(40).nullable().optional(),
     basis: z.string().max(40).optional(),
     fx: z.object({ foreignMinor: minor, closingRate: z.number().positive(), revaluedFunctionalMinor: minor, carryingMinor: minor, currency: z.string().length(3) }).strict().optional(),
   })

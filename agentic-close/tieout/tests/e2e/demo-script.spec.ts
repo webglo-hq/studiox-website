@@ -45,7 +45,7 @@ test('2 · run the close agents: nine checklist tasks in dependency waves', asyn
   const dialog = page.getByRole('dialog', { name: 'Close agents finished' });
   await expect(dialog).toBeVisible({ timeout: 60_000 });
   await expect(dialog).toContainText('9 of 9 checklist tasks ran in 3 dependency waves');
-  await expect(dialog).toContainText('Proposed 4 accruals totalling $561,381.00 for BWL-US');
+  await expect(dialog).toContainText('Proposed 4 accruals totalling $515,469.00 for BWL-US');
   await dialog.getByRole('link', { name: 'Review the inbox' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Inbox' })).toBeVisible();
 });

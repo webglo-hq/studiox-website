@@ -272,6 +272,11 @@ export function entryInputFromRows(je: JournalEntryRow, lines: readonly JournalL
   };
 }
 
+/** The lines that cancel an entry exactly: same accounts and dimensions, debits and credits swapped (AX-IM-02). */
+export function reversalLines(je: JournalEntryRow, lines: readonly JournalLineRow[], chart: Chart): JournalLineInput[] {
+  return entryInputFromRows(je, lines, chart).lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit, txn_amount_minor: l.txn_amount_minor === null || l.txn_amount_minor === undefined ? l.txn_amount_minor : -l.txn_amount_minor }));
+}
+
 /**
  * Build the reversing entry for a posted JE (AX-IM-01/02). Manual reversals go to approval;
  * system reversals (accrual auto-reversal) post immediately.
@@ -295,7 +300,7 @@ export async function reverseJournalEntry(ctx: LedgerCtx, jeId: string, opts: { 
     reversesJeId: jeId,
     autoReverseOn: null,
     idempotencyKey: `reversal:${jeId}`,
-    lines: entryInputFromRows(je, lines, chart).lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit, txn_amount_minor: l.txn_amount_minor === null || l.txn_amount_minor === undefined ? l.txn_amount_minor : -l.txn_amount_minor })),
+    lines: reversalLines(je, lines, chart),
   };
   const draft = await createJournalEntry(ctx, input, opts.post === 'system' ? 'draft' : 'pending_approval');
   if (opts.post === 'system') return approveAndPost(ctx, draft.id, { route: 'system', approverId: 'system:auto-reversal', reason: opts.reason });
