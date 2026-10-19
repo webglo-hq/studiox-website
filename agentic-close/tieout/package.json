@@ -30,6 +30,8 @@
     "test": "vitest run --config vitest.config.ts",
     "test:unit": "vitest run --config vitest.config.ts --project unit",
     "test:integration": "vitest run --config vitest.config.ts --project integration",
+    "pg:start": "tsx scripts/pgtest.ts start",
+    "pg:stop": "tsx scripts/pgtest.ts stop",
     "evals": "tsx scripts/run-evals.ts",
     "e2e": "playwright test --config playwright.config.ts",
     "e2e:demo": "npm run build:demo && playwright test --config playwright.demo.config.ts",
