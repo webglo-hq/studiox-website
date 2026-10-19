@@ -497,6 +497,29 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
   }
 
   /** Test/ops helper: raw row count across tenants. */
+  /** Deep copy of every row (used to fork a seeded demo state cheaply: evals, demo reset). */
+  snapshot(): Record<string, Row[]> {
+    const out: Record<string, Row[]> = {};
+    for (const [name, t] of this.tables) out[name] = [...t.rows.values()].map((r) => structuredClone(r));
+    return out;
+  }
+
+  /** Replace all data with a snapshot taken from a store with the same schema. */
+  async restore(snap: Record<string, Row[]>): Promise<void> {
+    await this.serialise(async () => {
+      for (const [name, t] of this.tables) {
+        t.rows.clear();
+        for (const idx of t.indexes.values()) idx.clear();
+        for (const u of t.uniques.values()) u.clear();
+        for (const r of snap[name] ?? []) {
+          const row = structuredClone(r);
+          t.rows.set(row.id as string, row);
+          this.indexAdd(t, row);
+        }
+      }
+    });
+  }
+
   size(table: string): number {
     return this.table(table).rows.size;
   }

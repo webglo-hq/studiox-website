@@ -1,0 +1,47 @@
+[
+  {
+    "id": "group-september-early",
+    "title": "Group September at WD+2: the package lists what still blocks the lock",
+    "fixture": "bramblewood-2026-09",
+    "params": {
+      "entity": null,
+      "as": "casey"
+    },
+    "expect": [
+      {
+        "description": "One close package draft",
+        "where": {
+          "kind": "report"
+        },
+        "count": 1
+      },
+      {
+        "description": "Not ready to lock yet",
+        "where": {
+          "kind": "report",
+          "payload.readiness.ready": false
+        },
+        "count": 1
+      },
+      {
+        "description": "Readiness names unreviewed reconciliations",
+        "where": {
+          "kind": "report",
+          "payload.readiness.messages": "~reconciliations"
+        },
+        "count": 1
+      },
+      {
+        "description": "Consolidation uses the September closing rate",
+        "where": {
+          "kind": "report",
+          "payload.content.consolidation.closingRate": {
+            "approx": 1.34,
+            "tol": 0.05
+          }
+        },
+        "count": 1
+      }
+    ]
+  }
+]

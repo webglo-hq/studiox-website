@@ -390,7 +390,7 @@ CREATE TABLE proposals (
   ref TEXT NOT NULL,
   run_id TEXT REFERENCES agent_runs(id),
   skill_key TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('journal_entry', 'coding', 'rec_match', 'reconciling_item', 'flux_explanation', 'finding', 'schedule_update')),
+  kind TEXT NOT NULL CHECK (kind IN ('journal_entry', 'coding', 'rec_match', 'reconciling_item', 'flux_explanation', 'finding', 'schedule_update', 'report')),
   ontology_type TEXT NOT NULL,
   entity_id TEXT,
   period_key TEXT,

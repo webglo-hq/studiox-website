@@ -300,7 +300,7 @@ export interface ProposalRow {
   ref: string;
   run_id: string | null;
   skill_key: string;
-  kind: 'journal_entry' | 'coding' | 'rec_match' | 'reconciling_item' | 'flux_explanation' | 'finding' | 'schedule_update';
+  kind: 'journal_entry' | 'coding' | 'rec_match' | 'reconciling_item' | 'flux_explanation' | 'finding' | 'schedule_update' | 'report';
   ontology_type: string;
   entity_id: string | null;
   period_key: string | null;
@@ -373,7 +373,7 @@ export interface SourceDocumentRow {
   uploaded_by: string;
 }
 
-export interface ImportBatcheRow {
+export interface ImportBatchRow {
   id: string;
   tenant_id: string;
   connector_id: string;
@@ -1021,7 +1021,7 @@ export interface ReconciliationRow {
   notes: string | null;
 }
 
-export interface RecMatcheRow {
+export interface RecMatchRow {
   id: string;
   tenant_id: string;
   reconciliation_id: string;
@@ -1155,7 +1155,7 @@ export interface DbTables {
   approvals: ApprovalRow;
   connectors: ConnectorRow;
   source_documents: SourceDocumentRow;
-  import_batches: ImportBatcheRow;
+  import_batches: ImportBatchRow;
   evidence: EvidenceRow;
   currencies: CurrencyRow;
   entities: EntityRow;
@@ -1198,7 +1198,7 @@ export interface DbTables {
   close_task_dependencies: CloseTaskDependencyRow;
   signoffs: SignoffRow;
   reconciliations: ReconciliationRow;
-  rec_matches: RecMatcheRow;
+  rec_matches: RecMatchRow;
   rec_match_items: RecMatchItemRow;
   reconciling_items: ReconcilingItemRow;
   flux_analyses: FluxAnalysisRow;
@@ -1677,7 +1677,7 @@ export const tableMeta = {
       {"name":"ref","type":"text","nullable":false},
       {"name":"run_id","type":"text","nullable":true,"references":{"table":"agent_runs","onDelete":"restrict"}},
       {"name":"skill_key","type":"text","nullable":false},
-      {"name":"kind","type":"text","nullable":false,"enumValues":["journal_entry","coding","rec_match","reconciling_item","flux_explanation","finding","schedule_update"]},
+      {"name":"kind","type":"text","nullable":false,"enumValues":["journal_entry","coding","rec_match","reconciling_item","flux_explanation","finding","schedule_update","report"]},
       {"name":"ontology_type","type":"text","nullable":false},
       {"name":"entity_id","type":"text","nullable":true},
       {"name":"period_key","type":"text","nullable":true},

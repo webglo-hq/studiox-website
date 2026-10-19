@@ -1,0 +1,22 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: depreciation did not run and one prepaid line was missed",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-US", "as": "sam" },
+    "expect": [
+      { "description": "One depreciation entry per asset category", "where": { "kind": "journal_entry", "payload.memo": "~Depreciation" }, "count": 3 },
+      { "description": "Tessellate CRM prepaid amortization of $4,500", "where": { "payload.memo": "~Tessellate", "payload.lines.0.debit": 450000 }, "count": 1 },
+      { "description": "Computer-equipment depreciation is above clearly trivial and waits for a person", "where": { "payload.memo": "~computer equipment", "status": "pending_approval" }, "count": 1 },
+      { "description": "The smaller schedule entries post by policy (L2)", "where": { "kind": "journal_entry", "status": "applied" }, "count": 3 },
+      { "description": "No schedule integrity findings", "where": { "kind": "finding" }, "count": 0 }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: depreciation due",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-UK", "as": "sam" },
+    "expect": [{ "description": "Two depreciation entries", "where": { "payload.memo": "~Depreciation" }, "count": 2 }]
+  }
+]

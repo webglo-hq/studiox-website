@@ -53,6 +53,21 @@ function walk(v: unknown, parts: string[], at: string, out: InjectionFlag[]) {
   } else walk((v as Record<string, unknown>)[head], rest, at ? `${at}.${head}` : head, out);
 }
 
+/**
+ * For echoing third-party text into titles and summaries: keep the part before the first
+ * instruction-like span and withhold the rest, so injected directions never propagate into
+ * proposals, audit summaries or later prompts.
+ */
+export function redactInstructions(s: string): string {
+  let cut = -1;
+  for (const p of PATTERNS) {
+    const m = p.re.exec(s);
+    if (m && (cut === -1 || m.index < cut)) cut = m.index;
+  }
+  if (cut === -1) return s;
+  return `${s.slice(0, cut).trim()} [instruction-like text withheld]`.trim();
+}
+
 /** Escape anything that could terminate the data boundary. */
 export function neutralise(s: string): string {
   return s.replace(/</g, '‹').replace(/>/g, '›').replace(/\[\/?INST\]/gi, '[inst]');

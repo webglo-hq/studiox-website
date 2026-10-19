@@ -24,7 +24,8 @@ export type ProposalKind =
   | 'reconciling_item'
   | 'flux_explanation'
   | 'finding'
-  | 'schedule_update';
+  | 'schedule_update'
+  | 'report';
 
 export type Route = 'suggestion' | 'human_approval' | 'auto_post_sampled' | 'auto_post';
 export type Materiality = 'trivial' | 'below_pm' | 'material';

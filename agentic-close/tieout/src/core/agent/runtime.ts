@@ -66,6 +66,8 @@ export interface DomainPack<Svc> {
   apply(svc: Svc, proposal: ProposalRow, approver: { id: string; route: 'human' | 'policy'; policyRef?: string }): Promise<ApplyResult | null>;
   offlineBrains: Readonly<Record<string, OfflineBrain>>;
   taskPrompt(skill: LoadedSkill, input: SkillRunInput): string;
+  /** Permission the agent needs to prepare a proposal of this kind (least privilege for offline brains too). */
+  proposalPermission?(kind: string): string | undefined;
 }
 
 export interface RuntimeDeps<Svc> {
@@ -347,6 +349,14 @@ export class AgentRuntime<Svc> {
       if (existing.status === 'auto_approved' && !existing.applied_ref_id) await this.applyByPolicy(st, existing);
       await this.recordStep(st, 'propose', `Already proposed: ${existing.ref}`, { actionSeq: st.actionSeq, proposalId: existing.id, duplicate: true });
       return { status: 'duplicate', proposalId: existing.id, ref: existing.ref, route: existing.route, verification: existing.verification };
+    }
+    // least privilege: the agent (requester ∩ manifest) must hold the permission for this kind
+    const perm = pack.proposalPermission?.(draft.kind);
+    if (perm && !ctx.agent.permissions.has(perm) && !ctx.agent.permissions.has('*')) {
+      const verification: VerificationResult[] = [{ check: 'Agent may prepare this', axiomId: 'AX-AGT-03', passed: false, severity: 'error', message: `The agent lacks ${perm} (inherited from the requesting user and the skill manifest).` }];
+      await this.recordStep(st, 'verify', `Not permitted: ${draft.title}`, { actionSeq: st.actionSeq, checks: verification as unknown as JsonValue, dedupeKey: draft.dedupeKey }, 'failed');
+      st.summary.verificationFailures++;
+      return { status: 'rejected_by_verifier', verification };
     }
     // verify (deterministic): domain checks + framework checks
     const t0 = Date.now();

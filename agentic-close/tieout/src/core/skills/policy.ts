@@ -23,7 +23,7 @@ export function defaultThresholds(m: SkillManifest, clearlyTrivialMinor: number,
   const ap = m.materiality.autoPostMax;
   out.autoPostMaxMinor = ap === 'clearly_trivial' ? clearlyTrivialMinor : ap === 'performance' ? performanceMinor : ap === 'none' ? 0 : ap;
   out.minConfidenceAuto = m.confidence.minAuto;
-  out.sampleRatePct = 20;
+  out.sampleRatePct = out.sampleRatePct ?? 20;
   return out;
 }
 

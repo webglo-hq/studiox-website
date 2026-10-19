@@ -89,6 +89,7 @@ function singular(word: string): string {
   if (word.endsWith('analyses')) return word.slice(0, -2) + 'is';
   if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
   if (word.endsWith('sses')) return word.slice(0, -2);
+  if (/(ch|sh|x)es$/.test(word)) return word.slice(0, -2);
   if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
   return word;
 }

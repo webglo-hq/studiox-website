@@ -1,0 +1,25 @@
+[
+  {
+    "id": "us-september",
+    "title": "BWL-US September: subsequent invoice, missing legal bill, GRNI and unpaid payroll",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-US", "as": "sam" },
+    "expect": [
+      { "description": "Cumulus September bill received 2 Oct is accrued at the invoice amount", "where": { "payload.basis": "subsequent_invoice", "payload.lines.0.account": "5000", "payload.lines.0.debit": 4125000 }, "count": 1 },
+      { "description": "Atlas & Pike legal fees are accrued from the recurring pattern", "where": { "payload.basis": "recurring_gap", "payload.lines.0.account": "6500" }, "count": 1 },
+      { "description": "PO-2026-0412 goods received not invoiced: $48,000 to inventory", "where": { "payload.basis": "grni", "payload.lines.0.account": "1300", "payload.lines.0.debit": 4800000 }, "count": 1 },
+      { "description": "Unpaid payroll days are accrued", "where": { "payload.basis": "payroll_calendar", "payload.entryType": "accrual" }, "count": 1 },
+      { "description": "Every accrual reverses on 1 October (AX-ACR-01)", "where": { "kind": "journal_entry", "payload.autoReverseOn": "2026-10-01" }, "count": 4 },
+      { "description": "The payroll accrual exceeds the Controller's limit and goes to the CFO", "where": { "payload.basis": "payroll_calendar", "assigned_role": "cfo" }, "count": 1 },
+      { "description": "Vendors that billed are not accrued", "where": { "title": "~Orbitron" }, "count": 0 },
+      { "description": "Nothing else", "where": { "kind": "journal_entry" }, "count": 4 }
+    ]
+  },
+  {
+    "id": "uk-september",
+    "title": "BWL-UK September: complete",
+    "fixture": "bramblewood-2026-09",
+    "params": { "entity": "BWL-UK", "as": "sam" },
+    "expect": [{ "description": "No accruals needed", "where": { "kind": "journal_entry" }, "count": 0 }]
+  }
+]

@@ -327,7 +327,8 @@ function simulateMonth(st: HistoryState, pk: string) {
   // ---------------- AP payments
   payBills(st, start, end, { skip: sept ? (x) => PLANTED.skipPayment(x) : undefined });
   // ---------------- intercompany
-  const icDate = businessDayOnOrBefore(end, 'UK');
+  // services are recharged on the 25th; the payable then sits open over month-end and must be remeasured
+  const icDate = businessDayOnOrBefore(addDays(start, 24), 'UK');
   const ukRevGbp = 120_000_00;
   const usExpBefore = st.icPayableUsd;
   if (sept) intercompanyCharge(st, icDate, ukRevGbp, { ukOnlyExtra: { gbp: PLANTED.icTooling.gbp, memo: PLANTED.icTooling.memo } });
@@ -552,7 +553,11 @@ function budgets(st: HistoryState) {
       for (const [k, total] of sums) {
         const [code, dept] = k.split('|') as [string, string];
         let monthly = Math.round(total / 12 / 100) * 100;
-        if (code === '6310') monthly = e.code === 'BWL-US' ? 12_000_00 : 0;
+        if (code === '6310') {
+          // events are budgeted in Marketing only: one regional workshop a month in the US
+          if (e.code !== 'BWL-US' || dept !== 'MKTG') continue;
+          monthly = 12_000_00;
+        }
         if (code === '5000' && e.code === 'BWL-US') monthly = 36_500_00;
         if (code === '4900' || code === '6950' || code === '7110' || code === '7100' || code === '7120') continue;
         if (Math.abs(monthly) < 1_000_00) continue;
