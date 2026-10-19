@@ -101,7 +101,7 @@ export function Close() {
             const runs = t.skill_key ? (data.bySkill[t.skill_key]?.runs ?? []) : [];
             const open = t.skill_key ? (data.bySkill[t.skill_key]?.open ?? 0) : 0;
             const canComplete = can(me, 'close.manage') && ['not_started', 'in_progress', 'blocked'].includes(t.status) && t.key !== 'lock';
-            const canSign = can(me, 'close.signoff') && t.status === 'ready_for_review' && t.completed_by !== me.user.id;
+            const canSign = !!t.signOff?.can;
             return (
               <div className="task" key={t.id}>
                 <span className={`tick ${t.status === 'done' ? 'done' : t.status === 'ready_for_review' ? 'review' : t.status === 'in_progress' ? 'progress' : t.status === 'blocked' ? 'blocked' : ''}`} aria-hidden="true">
@@ -115,10 +115,10 @@ export function Close() {
                     {t.skill_key ? (
                       <>
                         {' '}
-                        · skill <a href={`#/skills/${t.skill_key}`}>{t.skill_key}</a>
+                        · agent skill <a href={`#/skills/${t.skill_key}`}>{data.bySkill[t.skill_key]?.title ?? t.skill_key}</a>
                       </>
                     ) : null}
-                    {t.dependsOn.length ? ` · after ${t.dependsOn.join(', ')}` : ''}
+                    {t.dependsOnTitles.length ? ` · after “${t.dependsOnTitles.join('”, “')}”` : ''}
                   </div>
                   {t.notes ? <div className="meta" style={{ color: 'var(--ink-2)' }}>{t.notes}</div> : null}
                   {runs.length || open ? (
@@ -128,7 +128,13 @@ export function Close() {
                           {r.ref}
                         </a>
                       ))}
-                      {open ? <a href={`#/inbox?skill=${t.skill_key}`}>{open} waiting in the inbox</a> : null}
+                      {/* counted now, from the proposals themselves, so it never contradicts the inbox */}
+                      {open ? <a href={`#/inbox?skill=${t.skill_key}`}>{open} waiting for a decision in the inbox</a> : <span>All agent items decided.</span>}
+                    </div>
+                  ) : null}
+                  {t.signOff && !t.signOff.can && can(me, 'close.signoff') ? (
+                    <div className="meta" style={{ color: 'var(--ink-2)' }}>
+                      Sign-off: {t.signOff.blockedBy[0]!.replace(/^AX-CL-01: /, '')}
                     </div>
                   ) : null}
                   {canComplete || canSign ? (

@@ -12,6 +12,7 @@ import { forbidden } from '../core/util/errors';
 import type { Clock } from '../core/util/time';
 import type { Db, DbTx } from '../schema';
 import { accountingPack } from '../packs/accounting/agent/pack';
+import { permissionNeeded } from '../packs/accounting/controls/permissions';
 import { AccountingServices } from '../packs/accounting/services';
 import { accountingSkills } from '../packs/accounting/skills/install';
 import { demoMailboxDelivery, emailRelayDelivery, type OutboxDelivery } from './outbox';
@@ -70,7 +71,7 @@ export interface RequestUser {
 }
 
 export function requirePermission(u: RequestUser, permission: string) {
-  if (!u.actor.permissions.has(permission)) throw forbidden(`This needs the “${permission}” permission.`);
+  if (!u.actor.permissions.has(permission)) throw forbidden(permissionNeeded(permission));
 }
 
 /**

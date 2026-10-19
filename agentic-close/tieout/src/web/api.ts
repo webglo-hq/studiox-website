@@ -45,7 +45,7 @@ export type MailMessage = R<typeof Outbox.openMail>;
 
 export interface AuthOptions {
   demo: boolean;
-  personas: { email: string; name: string; title: string; role: string }[];
+  personas: { email: string; name: string; title: string; role: string; part: string }[];
   demoPassword: string | null;
   demoPasswordHint: string | null;
   oidc: { enabled: boolean; issuer: string | null; note: string };

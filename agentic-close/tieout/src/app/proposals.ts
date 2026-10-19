@@ -10,6 +10,7 @@ import type { DbTx, ProposalRow } from '../schema';
 import { applyProposal } from '../packs/accounting/agent/apply';
 import { usdEquivalent } from '../packs/accounting/agent/assess';
 import { CodingPayloadSchema } from '../packs/accounting/agent/payloads';
+import { permissionNeeded, roleDef } from '../packs/accounting/controls/permissions';
 import { evaluateApproval } from '../packs/accounting/controls/sod';
 import { closeOntology } from '../packs/accounting/ontology';
 import { AccountingServices } from '../packs/accounting/services';
@@ -29,6 +30,8 @@ export const DECISION_PERMISSION: Record<ProposalRow['kind'], string> = {
 
 export interface Eligibility {
   canDecide: boolean;
+  /** may reject it with a reason (rejecting needs the decision permission, not the approval limit) */
+  canReject: boolean;
   reasons: string[];
   sod: { code: string; message: string }[];
 }
@@ -38,10 +41,12 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
   const reasons: string[] = [];
   const sod: Eligibility['sod'] = [];
   const perm = DECISION_PERMISSION[p.kind];
-  if (!u.actor.permissions.has(perm)) reasons.push(`Needs the ${perm} permission.`);
+  if (!u.actor.permissions.has(perm)) reasons.push(permissionNeeded(perm));
   if (p.entity_id && u.actor.entityScope && !u.actor.entityScope.includes(p.entity_id)) reasons.push('This entity is outside your access scope.');
   if (!p.entity_id && u.actor.entityScope) reasons.push('This item covers the whole group, and your access is limited to some entities.');
   if (!['pending_approval', 'suggested'].includes(p.status)) reasons.push(`It is already ${p.status.replace('_', ' ')}.`);
+  // so far, the conditions rejectProposal() checks as well
+  const mayReject = reasons.length === 0;
   const rules = await tx.find('sod_rules', { enabled: true });
   const skill = ctx.skills.has(p.skill_key) ? ctx.skills.get(p.skill_key) : null;
   // a skill may let whoever ran it acknowledge its findings, never approve the entries it drafts (SOD-02)
@@ -56,10 +61,12 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
     sod.push(conflicted);
     reasons.push(`${conflicted.code}: ${conflicted.message}`);
   }
+  const canReject = mayReject && !conflicted;
   if (p.kind === 'journal_entry' && p.period_key) {
     const usd = await usdEquivalent(new AccountingServices(tx, u.actor, ctx.clock), p.amount_minor, p.currency ?? 'USD', p.period_key);
     const lim = closeOntology().check('AX-SOD-04', { amountMinor: usd, limitMinor: u.actor.approvalLimitMinor });
-    if (!lim.passed) reasons.push(`AX-SOD-04: ${lim.messages.join('; ')}; it needs the ${p.assigned_role?.replace('_', ' ') ?? 'next approver'}.`);
+    const next = roleDef(p.assigned_role ?? '')?.name;
+    if (!lim.passed) reasons.push(`AX-SOD-04: ${lim.messages.join('; ')}, so it goes to ${next ? `the ${next}` : 'someone with a higher limit'}.`);
   }
   for (const id of (p.payload.dependsOnProposalIds as string[] | undefined) ?? []) {
     const dep = await tx.get('proposals', id);
@@ -71,7 +78,7 @@ export async function eligibility(ctx: AppContext, tx: DbTx, u: RequestUser, p: 
     const live = (await fluxFor(ctx, tx, u, p.entity_id, p.period_key, draft.comparison ?? 'pop')).lines.find((l) => l.code === draft.accountCode) ?? null;
     if (!live || !covers(draft, live)) reasons.push(staleExplanationMessage(draft, live, p.currency ?? 'USD'));
   }
-  return { canDecide: reasons.length === 0, reasons, sod };
+  return { canDecide: reasons.length === 0, canReject, reasons, sod };
 }
 
 /**
@@ -105,6 +112,7 @@ export async function approveProposal(ctx: AppContext, u: RequestUser, id: strin
   const out = await ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
     assertCanActOn(u, p.entity_id, 'This item');
+    if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(permissionNeeded(DECISION_PERMISSION[p.kind]));
     const el = await eligibility(ctx, tx, u, p);
     if (!el.canDecide) {
       if (el.sod.length && el.reasons.some((r) => r.startsWith('SOD-'))) throw sodViolation(el.reasons.join(' '), { reasons: el.reasons });
@@ -128,7 +136,7 @@ export async function rejectProposal(ctx: AppContext, u: RequestUser, id: string
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
     assertCanActOn(u, p.entity_id, 'This item');
-    if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(`Needs the ${DECISION_PERMISSION[p.kind]} permission.`);
+    if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(permissionNeeded(DECISION_PERMISSION[p.kind]));
     if (!['pending_approval', 'suggested'].includes(p.status)) throw conflict(`It is already ${p.status.replace('_', ' ')}.`);
     // rejecting a reversal keeps the entry: that is a decision for someone independent of it too
     const conflicted = await reversalConflict(tx, u, p);
@@ -164,7 +172,7 @@ export async function reviewProposal(ctx: AppContext, u: RequestUser, id: string
   return ctx.db.tx(u.tenantId, async (tx) => {
     const p = await load(tx, id);
     assertCanActOn(u, p.entity_id, 'This item');
-    if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(`Needs the ${DECISION_PERMISSION[p.kind]} permission.`);
+    if (!u.actor.permissions.has(DECISION_PERMISSION[p.kind])) throw forbidden(permissionNeeded(DECISION_PERMISSION[p.kind]));
     if (p.review_status !== 'pending') throw conflict('This item is not waiting for review.');
     if (p.requested_by === u.actor.id && !ctx.skills.get(p.skill_key).manifest.controls.requesterMayApprove) throw sodViolation('You ran the agent that produced this, so someone else has to review it.');
     const now = ctx.clock.now().toISOString();
@@ -181,7 +189,7 @@ export async function editCoding(ctx: AppContext, u: RequestUser, id: string, ch
     const p = await load(tx, id);
     if (p.kind !== 'coding') throw validation('Only coding suggestions can be edited.');
     assertCanActOn(u, p.entity_id, 'This item');
-    if (!u.actor.permissions.has('coding.approve')) throw forbidden('Needs the coding.approve permission.');
+    if (!u.actor.permissions.has('coding.approve')) throw forbidden(permissionNeeded('coding.approve'));
     if (!['pending_approval', 'suggested'].includes(p.status)) throw conflict(`It is already ${p.status.replace('_', ' ')}.`);
     const svc = new AccountingServices(tx, u.actor, ctx.clock);
     const acct = (await svc.ctx.chart()).tryAccount(change.accountCode);
@@ -203,5 +211,5 @@ export async function refreshCloseTask(tx: DbTx, periodKey: string | null, skill
   const task = await tx.findOne('close_tasks', { close_period_id: cp.id, skill_key: skillKey });
   if (!task || task.status !== 'in_progress') return;
   const waiting = await tx.count('proposals', { skill_key: skillKey, period_key: periodKey, status: { in: ['pending_approval', 'suggested'] } });
-  if (waiting === 0) await tx.update('close_tasks', task.id, { status: 'ready_for_review', notes: `${task.notes ? `${task.notes} · ` : ''}All agent items decided.`.slice(0, 2000) });
+  if (waiting === 0) await tx.update('close_tasks', task.id, { status: 'ready_for_review' });
 }

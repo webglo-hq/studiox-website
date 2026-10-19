@@ -11,7 +11,7 @@ import { periodEnd, periodLabel } from '../core/util/time';
 import type { AuditRecord } from '../core/store/types';
 import type { DbTx, ProposalRow } from '../schema';
 import { formatWorkday, workdayOffset } from '../packs/accounting/close/workdays';
-import { ROLES } from '../packs/accounting/controls/permissions';
+import { ROLES, rolesWith } from '../packs/accounting/controls/permissions';
 import { balancesAsOf, trialBalanceRows } from '../packs/accounting/ledger/balances';
 import { consolidatedStatements, entityStatements } from '../packs/accounting/ledger/statements';
 import { toJsonLd, toTurtle } from '../core/ontology/export';
@@ -21,6 +21,8 @@ import { RULE_EXAMPLES } from '../packs/accounting/agent/rules';
 import { ACCOUNTING_TOOLS } from '../packs/accounting/agent/tools';
 import type { AccountingServices } from '../packs/accounting/services';
 import { csrfFor } from './auth';
+import { signOffBlockers } from './close';
+import { nextSteps } from './next-steps';
 import { assertInScope, asUser, inScope, requireGroupAccess, requirePermission, type AppContext, type RequestUser } from './context';
 import { DECISION_PERMISSION, eligibility } from './proposals';
 
@@ -77,6 +79,10 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
     const runs = (await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'desc']], limit: 40 })).filter((r) => inScope(u, r.entity_id)).slice(0, 8);
     const readiness = await svc.close.readiness(periodKey);
     const done = t.tasks.filter((x) => x.status === 'done' || x.status === 'skipped').length;
+    const pkg = u.actor.entityScope ? undefined : (await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
+    const pkgRun = pkg?.agent_run_id ? await tx.get('agent_runs', pkg.agent_run_id) : undefined;
+    const closed = t.closePeriod?.status === 'closed';
+    const next = await nextSteps(svc, tx, u, periodKey, { closed, agentsRun: runs.length > 0, mine, open, readiness, tasks: t.tasks, latestPackage: pkg ? { id: pkg.id, status: pkg.status, requestedBy: pkgRun?.requested_by ?? null } : null });
     return {
       periodKey,
       periodLabel: periodLabel(periodKey),
@@ -86,7 +92,8 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
       progress: { done, total: t.tasks.length },
       myTasks: t.tasks.filter((x) => (x.owner_id === u.actor.id || x.reviewer_id === u.actor.id) && x.status !== 'done' && x.status !== 'skipped'),
       tasks: t.tasks,
-      inbox: { awaitingMe: mine, pending: open.filter((p) => p.status === 'pending_approval').length, suggested: open.filter((p) => p.status === 'suggested').length, reviewQueue: props.filter((p) => p.review_status === 'pending').length, autoApplied: props.filter((p) => p.status === 'applied' && p.route !== 'human_approval' && p.route !== 'suggestion').length, total: props.length },
+      // "open" is what the inbox calls "Needs a decision" and the lock gate counts: waiting for approval plus suggestions
+      inbox: { awaitingMe: mine, open: open.length, pending: open.filter((p) => p.status === 'pending_approval').length, suggested: open.filter((p) => p.status === 'suggested').length, reviewQueue: props.filter((p) => p.review_status === 'pending').length, autoApplied: props.filter((p) => p.status === 'applied' && p.route !== 'human_approval' && p.route !== 'suggestion').length, total: props.length },
       highlights: open
         .sort((a, b) => Number(b.flags.length > 0) - Number(a.flags.length > 0) || b.amount_minor - a.amount_minor)
         .slice(0, 6)
@@ -94,9 +101,11 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
       readiness,
       runs: runs.map((r) => ({ id: r.id, ref: r.ref, skillKey: r.skill_key, status: r.status, entityId: r.entity_id, headline: r.summary.headline ?? null, createdAt: r.created_at, mode: r.mode, costMicros: r.cost_micros })),
       // once the month is locked: who closed it, and the signed package (group access only)
-      closed: t.closePeriod?.status === 'closed' ? { at: t.closePeriod.closed_at, by: who(t.closePeriod.closed_by, users) } : null,
-      latestPackage: u.actor.entityScope ? null : ((await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']], limit: 1 })).map((p) => ({ id: p.id, version: p.version, status: p.status }))[0] ?? null),
+      closed: closed ? { at: t.closePeriod!.closed_at, by: who(t.closePeriod!.closed_by, users) } : null,
+      latestPackage: pkg ? { id: pkg.id, version: pkg.version, status: pkg.status } : null,
       agentsRun: runs.length > 0,
+      /** what waits on this person, in the order the close needs it; else what the close waits on */
+      next,
     };
   });
 }
@@ -128,7 +137,7 @@ export async function listProposals(ctx: AppContext, u: RequestUser, q: { status
     const out = [];
     for (const p of rows) {
       const el = OPEN.includes(p.status) ? await eligibility(ctx, tx, u, p) : null;
-      out.push({ ...slim(p, users), canDecide: el?.canDecide ?? false, blockedBy: el?.reasons ?? [] });
+      out.push({ ...slim(p, users), skillTitle: skillTitle(ctx, p.skill_key), canDecide: el?.canDecide ?? false, blockedBy: el?.reasons ?? [] });
     }
     return { items: out, counts: countBy(rows) };
   });
@@ -143,6 +152,9 @@ function countBy(rows: ProposalRow[]) {
     all: rows.length,
   };
 }
+
+/** A skill's name as people read it ("Flux analysis"), not its key ("flux-analysis"). */
+const skillTitle = (ctx: AppContext, key: string) => (ctx.skills.has(key) ? ctx.skills.get(key).manifest.title : key);
 
 export async function proposalDetail(ctx: AppContext, u: RequestUser, id: string) {
   requirePermission(u, 'proposal.view');
@@ -180,7 +192,9 @@ export async function proposalDetail(ctx: AppContext, u: RequestUser, id: string
       appliedEntry: applied ? { id: applied.id, number: applied.je_number, status: applied.status } : null,
       eligibility: el,
       decisionPermission: DECISION_PERMISSION[p.kind],
-      skillTitle: ctx.skills.has(p.skill_key) ? ctx.skills.get(p.skill_key).manifest.title : p.skill_key,
+      /** the roles that may decide it, by name (approval limits still apply to journal entries) */
+      decisionRoles: rolesWith(DECISION_PERMISSION[p.kind]),
+      skillTitle: skillTitle(ctx, p.skill_key),
     };
   });
 }
@@ -194,15 +208,25 @@ export async function closeView(ctx: AppContext, u: RequestUser, periodKey: stri
     const props = (await tx.find('proposals', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
     const packages = u.actor.entityScope ? [] : await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']] });
     const periods = (await tx.find('periods', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
+    // who may sign off each task waiting for review, decided by the same rules signOffTask applies
+    const tasks = [];
+    for (const task of t.tasks) {
+      if (task.status !== 'ready_for_review') tasks.push({ ...task, signOff: null });
+      else {
+        const b = await signOffBlockers(tx, u, task);
+        tasks.push({ ...task, signOff: { can: !b.sod.length && !b.other.length, blockedBy: [...b.sod, ...b.other] } });
+      }
+    }
     return {
       ...t,
+      tasks,
       readiness,
       periods: periods.map((p) => ({ entityId: p.entity_id, status: p.status })),
       packages: packages.map((p) => ({ id: p.id, version: p.version, status: p.status, generatedAt: p.generated_at, contentHash: p.content_hash })),
       bySkill: Object.fromEntries(
         [...new Set(t.tasks.map((x) => x.skill_key).filter(Boolean))].map((k) => [
           k!,
-          { runs: runs.filter((r) => r.skill_key === k).map((r) => ({ id: r.id, ref: r.ref, status: r.status, entityId: r.entity_id, headline: r.summary.headline ?? null })), open: props.filter((p) => p.skill_key === k && OPEN.includes(p.status)).length, applied: props.filter((p) => p.skill_key === k && p.status === 'applied').length },
+          { title: skillTitle(ctx, k!), runs: runs.filter((r) => r.skill_key === k).map((r) => ({ id: r.id, ref: r.ref, status: r.status, entityId: r.entity_id, headline: r.summary.headline ?? null })), open: props.filter((p) => p.skill_key === k && OPEN.includes(p.status)).length, applied: props.filter((p) => p.skill_key === k && p.status === 'applied').length },
         ]),
       ),
     };

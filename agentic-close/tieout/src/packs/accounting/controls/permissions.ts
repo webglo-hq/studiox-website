@@ -123,6 +123,25 @@ export function roleDef(key: string): RoleDef | undefined {
   return ROLES.find((r) => r.key === key);
 }
 
+/** The roles that hold a permission, by name. */
+export function rolesWith(permission: string): string[] {
+  return ROLES.filter((r) => (r.permissions as readonly string[]).includes(permission)).map((r) => r.name);
+}
+
+const and = (xs: readonly string[]) => (xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+/**
+ * Why someone cannot do a thing, in words they can act on — what it is and which roles can —
+ * never a permission code: "Your role can’t approve variance explanations; the Controller and
+ * CFO roles can."
+ */
+export function permissionNeeded(permission: string): string {
+  const what = (PERMISSIONS as Record<string, readonly [string, string]>)[permission]?.[1].replace(/\s*\(.*\)$/, '');
+  const who = rolesWith(permission);
+  const can = who.length ? `; the ${and(who)} role${who.length === 1 ? '' : 's'} can` : '';
+  return what ? `Your role can’t ${what[0]!.toLowerCase()}${what.slice(1)}${can}.` : `Your role doesn’t allow this${can}.`;
+}
+
 /** Highest approval limit among a user's roles (null = unlimited). */
 export function approvalLimit(roleKeys: readonly string[]): number | null {
   let best: number | null = 0;

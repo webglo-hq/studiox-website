@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, ApiError, type PackageData } from '../api';
 import { Badge, Dialog, ErrorBox, Loading, Money, Stat } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
-import { dateTime, pct, ROLE_LABEL } from '../lib/format';
+import { dateTime, pct, percent, ROLE_LABEL } from '../lib/format';
 import { useRoute } from '../lib/router';
 
 export function Package() {
@@ -92,7 +92,7 @@ export function Package() {
 
       <div className="grid cols-4" style={{ marginBottom: 16 }}>
         <Stat label="Revenue" value={<Money minor={c.kpis.revenueMinor} currency={ccy} compact />} />
-        <Stat label="Gross margin" value={pct(c.kpis.grossMarginPct, 1)} />
+        <Stat label="Gross margin" value={percent(c.kpis.grossMarginPct, 1)} />
         <Stat label="Net income" value={<Money minor={c.kpis.netIncomeMinor} currency={ccy} compact />} />
         <Stat label="Cash" value={<Money minor={c.kpis.cashMinor} currency={ccy} compact />} />
       </div>
@@ -174,7 +174,7 @@ export function Package() {
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {c.openItems.map((o) => (
                 <li key={o.ref}>
-                  <span className="mono">{o.ref}</span> {o.title} (<Money minor={o.amountMinor} />)
+                  <span className="mono">{o.ref}</span> {o.title} (<Money minor={o.amountMinor} currency={o.currency ?? (o.entityCode ? ccyOf(o.entityCode) : ccy)} />)
                 </li>
               ))}
             </ul>

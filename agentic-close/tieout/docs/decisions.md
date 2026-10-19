@@ -120,6 +120,11 @@ Now nobody handles another person's credential and nobody grants authority alone
   (both also CHECK constraints), and someone whose own authority covers what is granted (a
   Controller cannot approve a CFO). Narrowing access and preparer roles apply at once.
 
+**Revised 2026-10-19 (T-10).** A checklist task is signed off by its named reviewer, or by someone
+with at least the reviewer role's authority (a Controller may stand in for a Senior Accountant, never
+for the CFO), and never by the task's owner, whoever completed it or whoever ran its agents. The
+cockpit shows the same rule the API applies (`signOffBlockers` in `src/app/close.ts`).
+
 ## ADR-010 · Sessions and CSRF without client-readable secrets
 
 **Decision.** Server-side sessions: random 256-bit token in an HttpOnly, SameSite=Strict cookie; only

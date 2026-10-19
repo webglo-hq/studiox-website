@@ -152,10 +152,16 @@ function useFocusTrap(open: boolean, onClose: () => void) {
         if (!items.length) return;
         const a = items[0]!;
         const b = items[items.length - 1]!;
-        if (e.shiftKey && document.activeElement === a) {
+        const at = document.activeElement as HTMLElement | null;
+        // focus may also rest on something outside the tab order, such as the panel's heading
+        // (focused on open): Tab and Shift+Tab still wrap inside the panel instead of leaving it
+        const inside = !!at && el.contains(at);
+        const listed = !!at && items.includes(at);
+        const follows = (x: HTMLElement) => !!at && (at.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        if (e.shiftKey && (!inside || at === a || (!listed && follows(a)))) {
           e.preventDefault();
           b.focus();
-        } else if (!e.shiftKey && document.activeElement === b) {
+        } else if (!e.shiftKey && (!inside || at === b || (!listed && !follows(b)))) {
           e.preventDefault();
           a.focus();
         }
@@ -180,7 +186,9 @@ export function Drawer({ open, onClose, title, children, footer, subtitle }: { o
       <div className="drawer" role="dialog" aria-modal="true" aria-labelledby={`${id}-t`} ref={ref}>
         <div className="drawer-head">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 id={`${id}-t`} style={{ fontSize: 19 }}>
+            {/* focus starts on the title, so a screen reader announces what opened and the key that
+                opened the panel cannot press a button in it */}
+            <h2 id={`${id}-t`} style={{ fontSize: 19 }} tabIndex={-1} data-autofocus>
               {title}
             </h2>
             {subtitle ? <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{subtitle}</div> : null}

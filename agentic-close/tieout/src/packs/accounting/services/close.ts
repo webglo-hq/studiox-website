@@ -17,8 +17,12 @@ import { FluxService, isExplained, staleExplanationMessage } from './flux';
 import { SubledgerService } from './subledgers';
 
 export interface TaskView extends CloseTaskRow {
+  /** prerequisite task keys (for agents and the MCP server) */
   dependsOn: string[];
   openDependencies: string[];
+  /** the same prerequisites by title, for people */
+  dependsOnTitles: string[];
+  waitingOn: string[];
   dueLabel: string;
   overdue: boolean;
   ownerName: string | null;
@@ -61,6 +65,8 @@ export class CloseService {
         ...t,
         dependsOn: mine.map((d) => d.key),
         openDependencies: mine.filter((d) => d.status !== 'done' && d.status !== 'skipped').map((d) => d.key),
+        dependsOnTitles: mine.map((d) => d.title),
+        waitingOn: mine.filter((d) => d.status !== 'done' && d.status !== 'skipped').map((d) => d.title),
         dueLabel: formatWorkday(t.workday_offset),
         overdue: t.status !== 'done' && t.status !== 'skipped' && t.due_date < businessDate,
         ownerName: t.owner_id ? (users.get(t.owner_id) ?? null) : null,

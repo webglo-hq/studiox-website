@@ -123,7 +123,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.get('/api/health', (c) => c.json({ ok: true, version: ctx.config.version, store: ctx.db.kind, liveAgents: !!ctx.llm }));
 
   app.get('/api/auth/options', async (c) => {
-    const personas = ctx.config.demoMode ? PEOPLE.map((p) => ({ email: p.email, name: p.name, title: p.title, role: p.roles[0] })) : [];
+    const personas = ctx.config.demoMode ? PEOPLE.map((p) => ({ email: p.email, name: p.name, title: p.title, role: p.roles[0], part: p.part })) : [];
     return c.json({ demo: ctx.config.demoMode, personas, demoPassword: ctx.config.demoMode ? ctx.config.demoPassword : null, demoPasswordHint: ctx.config.demoMode ? 'Every fictional demo user shares one documented, dev-only password.' : null, oidc: oidcStatus(ctx), scenarioDate: ctx.config.demoMode ? SCENARIO.businessDate : null });
   });
 

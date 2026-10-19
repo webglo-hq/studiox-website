@@ -58,6 +58,8 @@ export interface RecFacts {
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 const fmt = (minor: number) => `${minor < 0 ? '-' : ''}${(Math.abs(minor) / 100).toFixed(2)}`;
+/** approval limits are set, and compared, in US dollars (at the closing rate) */
+const usd = (minor: number) => `${minor < 0 ? '−' : ''}$${(Math.abs(minor) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening', 'closing']);
 
 const A = <F>(a: Axiom<F>) => a;
@@ -234,7 +236,7 @@ export const AXIOMS = [
     formal: 'approve(u, x) ⇒ amount(x) ≤ approvalLimit(role(u))',
     plainEnglish: 'You can only approve amounts within your role’s approval limit; larger items escalate.',
     citations: ['coso2013'],
-    check: (f) => (f.amountMinor !== undefined && f.limitMinor !== undefined && f.limitMinor !== null && f.amountMinor > f.limitMinor ? [`amount ${fmt(f.amountMinor)} exceeds your approval limit of ${fmt(f.limitMinor)}`] : []),
+    check: (f) => (f.amountMinor !== undefined && f.limitMinor !== undefined && f.limitMinor !== null && f.amountMinor > f.limitMinor ? [`${usd(f.amountMinor)} is above your approval limit of ${usd(f.limitMinor)}`] : []),
   }),
   // ---------------------------------------------------------------- reconciliation
   A<RecFacts>({
@@ -399,11 +401,12 @@ export const AXIOMS = [
     citations: ['sox404', 'coso2013'],
     check: (f) => {
       const out: string[] = [];
-      if ((f.pendingProposals ?? 0) > 0) out.push(`${f.pendingProposals} proposals still need a decision`);
-      if ((f.openRecs ?? 0) > 0) out.push(`${f.openRecs} reconciliations are not reviewed`);
-      if ((f.unexplainedFlux ?? 0) > 0) out.push(`${f.unexplainedFlux} significant variances lack an approved explanation`);
+      const one = (n: number | undefined) => n === 1;
+      if ((f.pendingProposals ?? 0) > 0) out.push(`${f.pendingProposals} ${one(f.pendingProposals) ? 'proposal still needs' : 'proposals still need'} a decision`);
+      if ((f.openRecs ?? 0) > 0) out.push(`${f.openRecs} ${one(f.openRecs) ? 'reconciliation is' : 'reconciliations are'} not reviewed`);
+      if ((f.unexplainedFlux ?? 0) > 0) out.push(`${f.unexplainedFlux} significant ${one(f.unexplainedFlux) ? 'variance lacks' : 'variances lack'} an approved explanation`);
       if ((f.untiedStatements ?? 0) > 0) out.push(`${f.untiedStatements} income statement${f.untiedStatements === 1 ? ' does' : 's do'} not tie to the ledger (AX-FS-01)`);
-      if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close tasks are not done`);
+      if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close ${one(f.openTasks) ? 'task is' : 'tasks are'} not done`);
       if (f.finalPackage === false) out.push('generate the close package first');
       else if (f.stalePackage) out.push('the approved close package no longer matches the books; generate a new version and approve it');
       return out;

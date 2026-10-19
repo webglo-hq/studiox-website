@@ -1195,6 +1195,27 @@ textarea:focus-visible {
   place-items: center;
   padding: 32px 20px;
 }
+/* My close: what's next, and the first-run guide */
+.next-list,
+.guide-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+.guide-steps {
+  font-size: 14px;
+}
+.guide-steps li.done > a {
+  color: var(--ink-2);
+}
+.guide-steps li.now {
+  font-weight: 600;
+}
+.guide-steps .badge {
+  margin-left: 8px;
+}
+
 /* pages that work without signing in: a link's "choose your password", the demo mailbox */
 .public-page {
   min-height: 100vh;

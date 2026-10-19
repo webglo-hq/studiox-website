@@ -73,7 +73,7 @@ const ADS: Record<string, string> = {
       <span class="badge good">✓ Verified</span>
     </div>
     <div class="card" style="margin-top:22px;padding:30px 40px;display:flex;justify-content:space-between;align-items:center;">
-      <div><div style="font-size:30px;font-weight:650;">Payroll accrual $459,094.00</div><div style="font-size:24px;color:#4a4842;margin-top:8px;">Above the Controller’s limit, so it routes to the CFO</div></div>
+      <div><div style="font-size:30px;font-weight:650;">Payroll accrual $413,182.00</div><div style="font-size:24px;color:#4a4842;margin-top:8px;">Above the Controller’s limit, so it routes to the CFO</div></div>
       <span class="badge warn">→ CFO</span>
     </div>
     <div class="foot"><div>Maker-checker · approval limits · row-level security<div class="fine">Demo data: a fictional company.</div></div><span class="cta">See it work</span></div>`),

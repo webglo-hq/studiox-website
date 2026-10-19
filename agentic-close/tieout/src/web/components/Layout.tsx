@@ -126,6 +126,8 @@ export function Layout({ children }: { children: ReactNode }) {
   }, []);
 
   const nextTheme: Record<Theme, Theme> = { system: 'dark', dark: 'light', light: 'system' };
+  // the button's name starts with the word it shows (WCAG 2.5.3: a voice user says what they see)
+  const themeLabel: Record<Theme, string> = { system: 'Auto', dark: 'Dark', light: 'Light' };
   return (
     <>
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}>
@@ -195,10 +197,10 @@ export function Layout({ children }: { children: ReactNode }) {
             <button className="btn ghost small hide-sm" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
               <Keyboard className="icon" aria-hidden="true" />
             </button>
-            <button className="btn ghost small" onClick={() => setTheme(nextTheme[theme])} aria-label={`Theme: ${theme}. Switch to ${nextTheme[theme]}`} title={`Theme: ${theme}`}>
+            <button className="btn ghost small" onClick={() => setTheme(nextTheme[theme])} aria-label={`${themeLabel[theme]} theme: switch to ${themeLabel[nextTheme[theme]]}`} title={`${themeLabel[theme]} theme (follows your device when Auto)`}>
               {theme === 'dark' ? <Moon className="icon" aria-hidden="true" /> : <Sun className="icon" aria-hidden="true" />}
               <span className="hide-sm" style={{ fontWeight: 500 }}>
-                {theme === 'system' ? 'Auto' : theme === 'dark' ? 'Dark' : 'Light'}
+                {themeLabel[theme]}
               </span>
             </button>
             <span className="row" style={{ gap: 8 }}>

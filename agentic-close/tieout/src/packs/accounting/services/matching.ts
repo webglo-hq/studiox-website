@@ -12,6 +12,7 @@
  * signals that produced it — the "why" a reviewer sees.
  */
 import { diffDays } from '../../../core/util/time';
+import { formatMoney } from '../ledger/money';
 
 export interface ExternalLine {
   id: string;
@@ -51,9 +52,11 @@ export interface MatchOptions {
   toleranceMinor: number;
   maxSubset: number;
   maxCandidates: number;
+  /** the bank account's currency, for the amounts quoted in each match's signals and explanation */
+  currency: string;
 }
 
-export const DEFAULT_MATCH_OPTIONS: MatchOptions = { windowDays: 3, fuzzyWindowDays: 7, toleranceMinor: 0, maxSubset: 4, maxCandidates: 14 };
+export const DEFAULT_MATCH_OPTIONS: MatchOptions = { windowDays: 3, fuzzyWindowDays: 7, toleranceMinor: 0, maxSubset: 4, maxCandidates: 14, currency: 'USD' };
 
 const norm = (s: string | null | undefined) => (s ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 
@@ -73,7 +76,8 @@ function nameAgrees(e: ExternalLine, l: LedgerLine): boolean {
   return !!first && norm(l.memo).includes(first);
 }
 
-const money = (m: number) => `${m < 0 ? '−' : ''}$${(Math.abs(m) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** An amount in the account's currency: −£1,234.50 (a pound amount never reads as dollars). */
+const amountIn = (ccy: string) => (m: number) => `${m < 0 ? '−' : ''}${formatMoney(Math.abs(m), ccy)}`;
 
 function* combinations<T>(items: readonly T[], k: number, start = 0, acc: T[] = []): Generator<T[]> {
   if (acc.length === k) {
@@ -118,6 +122,7 @@ export interface MatchResult {
 
 export function matchLines(external: readonly ExternalLine[], ledger: readonly LedgerLine[], opts: Partial<MatchOptions> = {}): MatchResult {
   const o = { ...DEFAULT_MATCH_OPTIONS, ...opts };
+  const money = amountIn(o.currency);
   const ext = [...external].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const led = [...ledger].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const usedE = new Set<string>();

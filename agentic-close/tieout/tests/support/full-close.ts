@@ -106,11 +106,15 @@ export async function closeTheMonth(t: TestApp, opts: { runAgents: boolean }): P
   for (const p of (await casey.get<{ items: Item[] }>(`/api/proposals?status=open&period=${P}&kind=flux_explanation`)).body.items) expect((await casey.post(`/api/proposals/${p.id}/approve`, {})).status).toBe(200);
   expect((await readiness()).unexplainedFlux).toBe(0);
 
-  // 4. the checklist, signed off in dependency order
-  type Task = { id: string; key: string; status: string };
+  // 4. the checklist, signed off in dependency order, each task by its named reviewer or someone with
+  //    at least that reviewer's authority, never by its owner (T-10): the Controller signs what she
+  //    reviews, and the CFO the journal-entry review the Controller owns
+  type Task = { id: string; key: string; status: string; signOff: { can: boolean } | null };
   for (let round = 0; round < 4; round++) {
-    const open = (await casey.get<{ tasks: Task[] }>(`/api/close/${P}`)).body.tasks.filter((x) => x.status === 'ready_for_review');
-    for (const task of open) await casey.post(`/api/close/tasks/${task.id}/signoff`, {});
+    for (const who of [casey, riley]) {
+      const mine = (await who.get<{ tasks: Task[] }>(`/api/close/${P}`)).body.tasks.filter((x) => x.signOff?.can);
+      for (const task of mine) expect((await who.post(`/api/close/tasks/${task.id}/signoff`, {})).status, task.key).toBe(200);
+    }
   }
 
   // 5. the package: the Controller asks the agent for it, the CFO approves the draft and signs it

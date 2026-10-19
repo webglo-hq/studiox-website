@@ -74,6 +74,7 @@ export interface ClosePackageContent {
   openItems: { kind: string; ref: string; title: string; amountMinor: number; currency?: string; entityCode?: string | null }[];
   agentActivity: { runs: number; proposals: number; autoApplied: number; approved: number; rejected: number; costMicros: number; mode: string };
   signoffs: { role: string; name: string; at: string }[];
+  /** grossMarginPct is a percentage (88.9 means 88.9%), not a fraction */
   kpis: { revenueMinor: number; grossMarginPct: number | null; opexMinor: number; netIncomeMinor: number; cashMinor: number };
   /** AX-FS-01 when the package was assembled: each income statement's net income against the ledger */
   statementChecks?: { statement: string; currency: string; netIncomeMinor: number; ledgerNetIncomeMinor: number }[];
