@@ -39,7 +39,7 @@ async function approveEverything(app: App, approvers: Principal[]): Promise<{ ap
   return { approved, stuck };
 }
 
-for (const adapter of adapterCases({ server: false })) {
+for (const adapter of adapterCases()) {
   describe(`end-to-end September close on ${adapter.name}`, () => {
     let db: Db;
     let close: () => Promise<void>;
