@@ -42,8 +42,8 @@ async function reviewAllRecs(page: Page): Promise<number> {
     await expect(rows.nth(i)).toBeVisible();
     await rows.nth(i).click();
     const signoff = page.getByTestId('review-signoff');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    await page.waitForTimeout(150);
+    // Wait for the reconciliation itself, not a fixed delay: it is either awaiting review, not yet certified, or signed off.
+    await expect(signoff.or(page.getByTestId('certify')).or(page.getByText('The numbers are frozen.'))).toBeVisible();
     if ((await signoff.isVisible()) && (await signoff.isEnabled())) {
       await signoff.click();
       await page.getByTestId('confirm-review').click();
