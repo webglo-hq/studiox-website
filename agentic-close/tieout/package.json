@@ -24,6 +24,7 @@
     "gen": "tsx scripts/gen-bundles.ts",
     "gen:check": "tsx scripts/gen-bundles.ts --check",
     "ontology:export": "tsx scripts/export-ontology.ts",
+    "docs:erd": "tsx scripts/gen-erd.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts",

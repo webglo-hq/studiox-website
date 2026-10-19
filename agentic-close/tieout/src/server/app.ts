@@ -11,7 +11,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { DomainError, fromStorageError, validation } from '../core/util/errors';
 import { PEOPLE, SCENARIO } from '../packs/accounting/seed/company';
 import * as admin from '../app/admin';
-import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcStatus, revokeApiToken, type Authenticated } from '../app/auth';
+import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcCallback, oidcStart, oidcStatus, revokeApiToken, type Authenticated } from '../app/auth';
 import * as close from '../app/close';
 import type { AppContext, RequestUser } from '../app/context';
 import { importFile } from '../app/imports';
@@ -22,6 +22,8 @@ import * as recs from '../app/recs';
 import * as skills from '../app/skills';
 
 export const SESSION_COOKIE = 'tieout_session';
+const OIDC_COOKIE = 'tieout_oidc';
+const OIDC_PATH = '/api/auth/oidc';
 
 type Env = { Variables: { auth: Authenticated | null; user: RequestUser; token: string | null } };
 
@@ -117,10 +119,39 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     return c.json({ user: r.user, csrfToken: r.csrfToken, mfa: r.mfa });
   });
 
+  // ------------------------------------------------------------------ single sign-on (OpenID Connect)
+  const page = (title: string, body: string, refresh?: string) =>
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${refresh ? `<meta http-equiv="refresh" content="0;url=${refresh}">` : ''}<title>${title}</title></head><body style="font:16px system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#1c1b18;background:#f5f3ec">${body}</body></html>`;
+  const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  app.get(`${OIDC_PATH}/start`, async (c) => {
+    const gate = ctx.limiter.check(`oidc:${ipOf(c) ?? '-'}`, 30, 60_000);
+    if (!gate.ok) throw new DomainError('rate_limited', 'Too many sign-in attempts.', { retryAfterSec: gate.retryAfterSec });
+    const { url, sealed } = await oidcStart(ctx);
+    // Lax: the provider sends the browser back with a top-level cross-site GET
+    setCookie(c, OIDC_COOKIE, sealed, { httpOnly: true, sameSite: 'Lax', secure: ctx.config.secureCookies, path: OIDC_PATH, maxAge: 600 });
+    return c.redirect(url, 302);
+  });
+  app.get(`${OIDC_PATH}/callback`, async (c) => {
+    const gate = ctx.limiter.check(`oidc:${ipOf(c) ?? '-'}`, 30, 60_000);
+    if (!gate.ok) throw new DomainError('rate_limited', 'Too many sign-in attempts.', { retryAfterSec: gate.retryAfterSec });
+    const sealed = getCookie(c, OIDC_COOKIE) ?? null;
+    deleteCookie(c, OIDC_COOKIE, { path: OIDC_PATH });
+    try {
+      const r = await oidcCallback(ctx, { code: c.req.query('code') ?? null, state: c.req.query('state') ?? null, error: c.req.query('error') ?? null }, sealed, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
+      issueSession(c, r.sessionToken);
+      // continue with a same-site navigation so the SameSite=Strict session cookie is sent
+      return c.html(page('Signing in', '<p>Signing you in…</p><p><a href="/">Continue</a></p>', '/'));
+    } catch (e) {
+      const msg = e instanceof DomainError ? e.message : 'Single sign-on failed.';
+      if (!(e instanceof DomainError)) ctx.log('error', { path: c.req.path, message: (e as Error).message });
+      return c.html(page('Sign-in failed', `<h1 style="font-weight:600">Sign-in failed</h1><p>${esc(msg)}</p><p><a href="/">Back to sign in</a></p>`), e instanceof DomainError && e.code === 'forbidden' ? 403 : 401);
+    }
+  });
+
   // ------------------------------------------------------------------ auth gate
   app.use('/api/*', async (c, next) => {
     const path = c.req.path;
-    if (path === '/api/health' || path === '/api/auth/options' || path === '/api/auth/login') return next();
+    if (path === '/api/health' || path === '/api/auth/options' || path === '/api/auth/login' || path === `${OIDC_PATH}/start` || path === `${OIDC_PATH}/callback`) return next();
     const bearer = c.req.header('authorization')?.match(/^Bearer\s+(tko_[A-Za-z0-9_-]+)$/)?.[1];
     if (bearer) {
       if (c.req.method !== 'GET' && !path.startsWith('/api/runs')) throw new DomainError('forbidden', 'API tokens are read-only (plus starting agent runs).');

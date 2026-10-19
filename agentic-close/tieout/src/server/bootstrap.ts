@@ -107,7 +107,7 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     sessionAbsoluteHours: Number(env.SESSION_ABSOLUTE_HOURS ?? 12),
     demoMode: demo,
     demoPassword: demo && !env.DEMO_PASSWORD ? DEV_DEMO_PASSWORD : null,
-    oidc: env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_REDIRECT_URI ? { issuer: env.OIDC_ISSUER, clientId: env.OIDC_CLIENT_ID, redirectUri: env.OIDC_REDIRECT_URI } : null,
+    oidc: env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_REDIRECT_URI ? { issuer: env.OIDC_ISSUER, clientId: env.OIDC_CLIENT_ID, redirectUri: env.OIDC_REDIRECT_URI, clientSecret: env.OIDC_CLIENT_SECRET || null } : null,
     version: '1.0.0',
   };
   const llm = env.ANTHROPIC_API_KEY ? new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY }) : null;

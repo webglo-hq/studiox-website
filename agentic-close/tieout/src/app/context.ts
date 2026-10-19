@@ -4,6 +4,7 @@
  */
 import { AgentRuntime } from '../core/agent/runtime';
 import { resolveUserActor, type UserActor } from '../core/auth/actor';
+import { OidcClient } from '../core/auth/oidc';
 import type { PasswordHasher } from '../core/auth/password';
 import type { LlmProvider } from '../core/llm/types';
 import type { SkillRegistry } from '../core/skills/skillmd';
@@ -27,7 +28,7 @@ export interface AppConfig {
   demoMode: boolean;
   /** the documented dev-only demo password, shown on the sign-in page only when it is the default */
   demoPassword: string | null;
-  oidc: { issuer: string; clientId: string; redirectUri: string } | null;
+  oidc: { issuer: string; clientId: string; redirectUri: string; clientSecret?: string | null } | null;
   version: string;
 }
 
@@ -40,16 +41,20 @@ export interface AppContext {
   skills: SkillRegistry;
   runtime: AgentRuntime<AccountingServices>;
   limiter: RateLimiter;
+  /** OpenID Connect relying party when single sign-on is configured */
+  oidc: OidcClient | null;
   log: (msg: string, data?: Record<string, unknown>) => void;
   /** optional hook to restore demo data (browser demo / demo server) */
   resetDemo?: () => Promise<void>;
 }
 
-export function createAppContext(opts: { db: Db; clock: Clock; config: AppConfig; hasher: PasswordHasher; llm?: LlmProvider | null; log?: AppContext['log']; resetDemo?: () => Promise<void> }): AppContext {
+export function createAppContext(opts: { db: Db; clock: Clock; config: AppConfig; hasher: PasswordHasher; llm?: LlmProvider | null; log?: AppContext['log']; resetDemo?: () => Promise<void>; oidcFetch?: typeof fetch }): AppContext {
   const skills = accountingSkills();
   const llm = opts.llm ?? null;
   const runtime = new AgentRuntime<AccountingServices>({ db: opts.db, clock: opts.clock, pack: accountingPack, skills, llm, resolveActor: resolveUserActor });
-  return { db: opts.db, clock: opts.clock, config: opts.config, hasher: opts.hasher, llm, skills, runtime, limiter: new RateLimiter(), log: opts.log ?? (() => undefined), resetDemo: opts.resetDemo };
+  // token lifetimes are checked against real time (the demo's business clock is shifted)
+  const oidc = opts.config.oidc ? new OidcClient(opts.config.oidc, opts.oidcFetch) : null;
+  return { db: opts.db, clock: opts.clock, config: opts.config, hasher: opts.hasher, llm, skills, runtime, limiter: new RateLimiter(), oidc, log: opts.log ?? (() => undefined), resetDemo: opts.resetDemo };
 }
 
 /** A request's identity after authentication. */

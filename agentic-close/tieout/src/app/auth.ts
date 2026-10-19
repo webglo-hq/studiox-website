@@ -6,7 +6,7 @@
 import { resolveUserActor } from '../core/auth/actor';
 import { decryptSecret, encryptSecret, newTotpSecret, otpauthUri, verifyTotp } from '../core/auth/totp';
 import { audit } from '../core/audit/audit';
-import { conflict, DomainError, forbidden, notFound, validation } from '../core/util/errors';
+import { conflict, DomainError, forbidden, notFound, precondition, validation } from '../core/util/errors';
 import { hmacSha256Hex, sha256Hex, timingSafeEqual } from '../core/util/hash';
 import { secureToken } from '../core/util/random';
 import { addMinutes } from '../core/util/time';
@@ -75,6 +75,60 @@ async function createSession(ctx: AppContext, tx: DbTx, user: UserRow, mfaState:
 export interface Authenticated {
   user: RequestUser;
   session: SessionRow;
+}
+
+// ------------------------------------------------------------------ OpenID Connect (SSO)
+const OIDC_TTL_MS = 10 * 60_000;
+/** Authentication methods (RFC 8176 `amr`) that count as multi-factor at the identity provider. */
+const MFA_AMR = new Set(['mfa', 'otp', 'hwk', 'swk', 'sms', 'fpt', 'face', 'iris', 'pop', 'sc']);
+
+/** Start SSO: where to send the browser, and the sealed (encrypted) values to keep in a short-lived cookie. */
+export async function oidcStart(ctx: AppContext): Promise<{ url: string; sealed: string }> {
+  if (!ctx.oidc) throw precondition('Single sign-on is not configured.');
+  const { url, pending } = await ctx.oidc.authorizationUrl();
+  const sealed = await encryptSecret(JSON.stringify({ ...pending, exp: Date.now() + OIDC_TTL_MS }), ctx.config.encryptionKey);
+  return { url, sealed };
+}
+
+/**
+ * Finish SSO: validate the provider's answer, map the verified email to an existing, active
+ * account (no self-registration: an admin invites people first) and open a session. MFA is
+ * accepted from the provider (`amr`); when a role requires MFA and the provider did not do it,
+ * the session waits for the account's own TOTP code.
+ */
+export async function oidcCallback(ctx: AppContext, params: { code: string | null; state: string | null; error: string | null }, sealed: string | null, meta: { ip: string | null; userAgent: string | null }): Promise<LoginResult> {
+  if (!ctx.oidc) throw precondition('Single sign-on is not configured.');
+  if (!sealed) throw unauthenticated('This sign-in link has expired. Start again.');
+  let pending: { state: string; nonce: string; verifier: string; exp: number };
+  try {
+    pending = JSON.parse(await decryptSecret(sealed, ctx.config.encryptionKey)) as typeof pending;
+  } catch {
+    throw unauthenticated('This sign-in link is not valid. Start again.');
+  }
+  if (pending.exp < Date.now()) throw unauthenticated('This sign-in link has expired. Start again.');
+  let claims;
+  try {
+    claims = await ctx.oidc.complete(params, pending);
+  } catch (e) {
+    throw unauthenticated(`Single sign-on failed: ${(e as Error).message}.`);
+  }
+  const email = String(claims.email ?? '').trim().toLowerCase();
+  if (!email || claims.email_verified !== true) throw unauthenticated('Your identity provider did not confirm a verified email address.');
+  const user = (await ctx.db.system((sys) => sys.findGlobal('users', { email })))[0] as UserRow | undefined;
+  if (!user || user.status !== 'active' || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
+  return ctx.db.tx(user.tenant_id, async (tx) => {
+    const now = ctx.clock.now().toISOString();
+    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now });
+    const actor = await resolveUserActor(tx, user.id);
+    const tenant = await tx.get('tenants', user.tenant_id);
+    const mfaRequired = (tenant?.settings.mfaRequiredRoles ?? []).some((r) => actor.roles.includes(r));
+    const idpMfa = (claims.amr ?? []).some((m) => MFA_AMR.has(m));
+    if (mfaRequired && !idpMfa && !user.mfa_enabled) throw forbidden('Your role requires multi-factor sign-in, and your identity provider did not report one. Sign in with MFA at your provider, or set up an authenticator in Tieout.');
+    const state: SessionRow['mfa_state'] = mfaRequired && !idpMfa ? 'pending' : 'not_required';
+    const { token, csrf } = await createSession(ctx, tx, user, state, meta, null);
+    await audit(tx, actor, ctx.clock, { action: 'auth.login', subjectType: 'user', subjectId: user.id, summary: `Signed in with single sign-on${state === 'pending' ? ' (Tieout MFA required)' : ''}`, data: { method: 'oidc', issuer: claims.iss, amr: claims.amr ?? [] } }, meta.ip);
+    return { sessionToken: token, csrfToken: csrf, mfa: state === 'pending' ? 'pending' : 'not_required', user: { id: user.id, name: user.display_name, email: user.email } };
+  });
 }
 
 /** Validate a session token from the cookie (or a bearer API token for the MCP server). */
@@ -213,7 +267,7 @@ export async function authenticateApiToken(ctx: AppContext, token: string): Prom
 
 /** OIDC seam: configuration is validated here; the code exchange plugs in behind this function. */
 export function oidcStatus(ctx: AppContext): { enabled: boolean; issuer: string | null; note: string } {
-  if (!ctx.config.oidc) return { enabled: false, issuer: null, note: 'Single sign-on is not configured. Set OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_REDIRECT_URI to enable the OpenID Connect authorization-code flow with PKCE.' };
-  return { enabled: true, issuer: ctx.config.oidc.issuer, note: 'OpenID Connect is configured.' };
+  if (!ctx.oidc) return { enabled: false, issuer: null, note: 'Single sign-on is not configured. Set OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_REDIRECT_URI (and OIDC_CLIENT_SECRET for a confidential client) to enable the OpenID Connect authorization-code flow with PKCE.' };
+  return { enabled: true, issuer: ctx.oidc.config.issuer, note: 'Sign in with your organization’s identity provider.' };
 }
 
