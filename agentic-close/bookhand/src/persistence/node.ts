@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Db } from './db';
-import { generateSchemaSql } from './ddl';
+import { GENERATED_MIGRATIONS, generateSchemaSql } from './ddl';
 import { createPgDriver } from './drivers/pg';
 import { createPgliteDriver } from './drivers/pglite';
 import { parseMigrationFilename, runMigrations, type MigrationFile, type MigrationResult } from './migrate';
@@ -33,9 +33,11 @@ export async function openSqlDriver(opts: Pick<OpenDbOptions, 'databaseUrl' | 'd
 export async function openDatabase(opts: OpenDbOptions): Promise<{ db: Db; driver: SqlDriver; migrations: MigrationResult }> {
   const driver = await openSqlDriver(opts);
   const files = loadMigrationFiles(opts.migrationsDir);
-  const schemaFile = files.find((f) => f.version === '0001');
-  if (schemaFile && schemaFile.sql !== generateSchemaSql()) {
-    opts.log?.('warning: db/migrations/0001_schema.sql differs from the schema generator output (run npm run db:generate)');
+  for (const m of GENERATED_MIGRATIONS) {
+    const file = files.find((f) => f.version === m.version);
+    if (file && file.sql !== generateSchemaSql(m.version)) {
+      opts.log?.(`warning: db/migrations/${m.version}_${m.name}.sql differs from the schema generator output (run npm run db:generate)`);
+    }
   }
   const migrations = await runMigrations(driver, files, opts.log);
   return { db: new SqlDb(driver, { clock: opts.clock }), driver, migrations };

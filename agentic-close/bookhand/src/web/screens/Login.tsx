@@ -7,7 +7,7 @@ interface DemoUsers {
   demo: boolean;
   company?: string;
   password: string | null;
-  users: Array<{ email: string; name: string; title: string | null; hue: number; role: string }>;
+  users: Array<{ email: string; name: string; title: string | null; hue: number; role: string; ownPassword?: boolean }>;
 }
 
 const ROLE_HINTS: Record<string, string> = {
@@ -33,14 +33,16 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: () => Promise<void> })
     api.get<DemoUsers>('/api/auth/demo-users').then(setDemo).catch(() => setDemo(null));
   }, []);
 
-  const signIn = async (e: string, p: string) => {
+  const signIn = async (e: string, p: string): Promise<boolean> => {
     setBusy(true);
     setError(null);
     try {
       await api.post('/api/auth/login', { email: e, password: p });
       await onSignedIn();
+      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -121,7 +123,16 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: () => Promise<void> })
             <ul className="list demo-users">
               {demo.users.map((u) => (
                 <li key={u.email}>
-                  <button type="button" className="demo-user" disabled={busy} onClick={() => (demo.password ? void signIn(u.email, demo.password) : pick(u.email))}>
+                  <button
+                    type="button"
+                    className="demo-user"
+                    disabled={busy}
+                    onClick={() => {
+                      // Someone who enrolled with their own password does not use the demo password: fill in the email.
+                      if (demo.password && !u.ownPassword) void signIn(u.email, demo.password).then((ok) => ok || pick(u.email));
+                      else pick(u.email);
+                    }}
+                  >
                     <Avatar name={u.name} hue={u.hue} size={34} />
                     <span className="grow" style={{ textAlign: 'left' }}>
                       <span style={{ display: 'block', fontWeight: 600 }}>
@@ -135,6 +146,9 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: () => Promise<void> })
                 </li>
               ))}
             </ul>
+            <p className="small" style={{ marginTop: 12 }}>
+              Added by an administrator? <a href="#/mailbox">Open your messages in the demo delivery log</a> to set your password.
+            </p>
             {transportKind() === 'demo' && <p className="tiny muted" style={{ marginTop: 12 }}>Running entirely in your browser: the database, the agents and the API are all in this tab.</p>}
           </>
         ) : (

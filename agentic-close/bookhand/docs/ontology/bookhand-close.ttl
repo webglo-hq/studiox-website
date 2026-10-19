@@ -8,8 +8,8 @@
 <https://bookhand.example/ontology/close> a owl:Ontology ;
   dcterms:title "Bookhand Financial Close Ontology"@en ;
   dcterms:description "A formal, versioned ontology of the month-end financial close: REA backbone, double-entry axioms, general ledger, subledgers, reconciliation, accruals and deferrals, flux, intercompany, FX, controls (COSO / SOX 404), audit assertions, materiality, the close calendar and the agent layer. Grounded in McCarthy (1982), XBRL GL, the US-GAAP taxonomy, FIBO, COSO 2013 and PCAOB/ISA standards."@en ;
-  owl:versionInfo "1.4.0" ;
-  owl:versionIRI <https://bookhand.example/ontology/close/1.4.0> .
+  owl:versionInfo "1.5.0" ;
+  owl:versionIRI <https://bookhand.example/ontology/close/1.5.0> .
 
 bh:whyItMatters a owl:AnnotationProperty ; rdfs:label "why it matters"@en .
 bh:formalStatement a owl:AnnotationProperty ; rdfs:label "formal statement"@en .
@@ -1669,6 +1669,26 @@ bh:SegregationOfDutiesRule a owl:Class ;
   skos:altLabel "SoD"@en ;
   bh:materializedBy "sod_rules" .
 
+bh:AccessRequest a owl:Class ;
+  rdfs:label "Access request"@en ;
+  skos:definition "A change to who may approve, or to a segregation-of-duties rule, that waits until a second person with enough authority approves it."@en ;
+  bh:whyItMatters "Whoever administers access must not be able to give themselves, or someone they control, the power to approve."@en ;
+  skos:example "Tom (admin) asks to make Dana a CFO; only Marcus, a CFO, can approve it, and Tom never sees her password."@en ;
+  rdfs:subClassOf bh:MakerChecker ;
+  skos:altLabel "dual control"@en ;
+  skos:altLabel "access change request"@en ;
+  bh:materializedBy "access_requests" .
+
+bh:CredentialLink a owl:Class ;
+  rdfs:label "Enrolment or reset link"@en ;
+  skos:definition "A single-use, expiring link that lets a person set their own password; only its hash is stored and only the person receives it."@en ;
+  bh:whyItMatters "An administrator who knew a temporary password could sign in as the person they had just created."@en ;
+  skos:example "Dana receives a link valid for 72 hours; once used, it stops working."@en ;
+  rdfs:subClassOf bh:PreventiveControl ;
+  skos:altLabel "invitation link"@en ;
+  skos:altLabel "password reset link"@en ;
+  bh:materializedBy "credential_tokens" .
+
 bh:Evidence a owl:Class ;
   rdfs:label "Evidence"@en ;
   skos:definition "Documents and data that support a number or a control performance: source documents, matches, calculations, sign-offs."@en ;
@@ -1910,6 +1930,14 @@ bh:Budget a owl:Class ;
   skos:altLabel "forecast"@en ;
   skos:altLabel "plan"@en ;
   bh:materializedBy "budgets" .
+
+bh:OutboxMessage a owl:Class ;
+  rdfs:label "Outbox message"@en ;
+  skos:definition "A message Bookhand sends a person (an enrolment or reset link, a lockout notice), queued for the configured transport."@en ;
+  bh:whyItMatters "Credentials reach the person they belong to, never whoever asked for them."@en ;
+  skos:example "The enrolment link for dana.example@brambleway.example."@en ;
+  rdfs:subClassOf bh:Thing ;
+  bh:materializedBy "outbox_messages" .
 
 bh:Connector a owl:Class ;
   rdfs:label "Connector"@en ;

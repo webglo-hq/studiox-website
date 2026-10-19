@@ -8,6 +8,7 @@ import * as close from './close';
 import * as recon from './recon';
 import * as flux from './flux';
 import * as agents from './agents';
+import * as access from './access';
 
 /**
  * The complete data model, keyed by table name. Order matters only for documentation; the DDL generator
@@ -89,6 +90,9 @@ export const schema = {
   proposals: agents.proposals,
   approvals: agents.approvals,
   ontology_versions: agents.ontologyVersions,
+  access_requests: access.accessRequests,
+  credential_tokens: access.credentialTokens,
+  outbox_messages: access.outboxMessages,
 } as const;
 
 export type Schema = typeof schema;

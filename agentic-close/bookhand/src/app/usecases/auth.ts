@@ -7,10 +7,12 @@ import { createSession, revokeSession, revokeUserSessions, rotateSession, type S
 import { generateTotpSecret, otpauthUrl, verifyTotp } from '../../security/totp';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
+import { queueMessage } from '../outbox';
 
 /**
  * Authentication: password (scrypt), optional TOTP second factor, server-side sessions. Errors never reveal
- * whether an email exists. Accounts lock for 15 minutes after 5 consecutive failures.
+ * whether an email exists, not even for a locked account. Accounts lock for 15 minutes after 5 consecutive
+ * failures, and the account holder (not the person guessing) is told by message.
  */
 
 const MAX_FAILURES = 5;
@@ -43,7 +45,9 @@ export async function login(app: App, email: string, password: string, meta: Req
     throw new DomainError('UNAUTHENTICATED', GENERIC);
   }
   if (user.locked_until && user.locked_until > now) {
-    throw new DomainError('RATE_LIMITED', `Too many failed attempts. Try again after ${new Date(user.locked_until).toISOString().slice(11, 16)} UTC or ask an admin to unlock the account.`);
+    // Same answer and timing as a wrong password: a lock message would tell a guesser the account exists.
+    await verifyPassword(password, null);
+    throw new DomainError('UNAUTHENTICATED', GENERIC);
   }
   const check = await verifyPassword(password, user.password_hash);
   if (!check.ok) {
@@ -51,6 +55,17 @@ export async function login(app: App, email: string, password: string, meta: Req
       const failures = user.failed_login_count + 1;
       await tx.update('users', user.id, { failed_login_count: failures, locked_until: failures >= MAX_FAILURES ? new Date(Date.parse(now) + LOCK_MINUTES * 60_000).toISOString() : user.locked_until, updated_at: now });
       await appendAudit(tx, user.tenant_id, { type: 'user', userId: user.id, label: user.display_name, ip: meta.ip, requestId: meta.requestId }, { action: failures >= MAX_FAILURES ? 'auth.locked' : 'auth.login_failed', objectType: 'user', objectId: user.id, summary: failures >= MAX_FAILURES ? `Account locked after ${failures} failed sign-ins` : `Failed sign-in (${failures} in a row)` }, now);
+      if (failures === MAX_FAILURES) {
+        const tenant = (await tx.get('tenants', user.tenant_id))!;
+        await queueMessage(tx, tenant, app.config.outbox ?? null, {
+          tenantId: tenant.id,
+          toUserId: user.id,
+          toEmail: user.email,
+          kind: 'account_locked',
+          subject: 'Your Bookhand account is locked for 15 minutes',
+          body: `Hello ${user.display_name.split(' ')[0]}, after ${failures} failed sign-ins in a row (the last from ${meta.ip ?? 'an unknown address'}) your account is locked until ${new Date(Date.parse(now) + LOCK_MINUTES * 60_000).toISOString().slice(11, 16)} UTC. If that was not you, tell your administrator.`,
+        }, now);
+      }
     });
     throw new DomainError('UNAUTHENTICATED', GENERIC);
   }

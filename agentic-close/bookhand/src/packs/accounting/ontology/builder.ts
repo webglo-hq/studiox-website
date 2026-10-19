@@ -1,6 +1,6 @@
 import type { OntologyClass } from '../../../ontology/kernel';
 
-export const ONTOLOGY_VERSION = '1.4.0';
+export const ONTOLOGY_VERSION = '1.5.0';
 
 type Extra = Omit<Partial<OntologyClass>, 'id' | 'label' | 'parents' | 'module' | 'definition' | 'whyItMatters' | 'example'>;
 

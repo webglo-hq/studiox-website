@@ -1,14 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { constraintName, generateSchemaSql, q } from './ddl';
+import { constraintName, GENERATED_MIGRATIONS, generateSchemaSql, q } from './ddl';
 import { schema, TABLE_NAMES } from './schema';
 import type { ColumnSpec } from './dsl';
 
 describe('DDL generator', () => {
-  it('matches the committed 0001_schema.sql (no drift between DSL and migration)', () => {
-    const file = readFileSync(fileURLToPath(new URL('../../db/migrations/0001_schema.sql', import.meta.url)), 'utf8');
-    expect(file).toBe(generateSchemaSql());
+  it('matches the committed generated migrations (no drift between DSL and migrations)', () => {
+    for (const m of GENERATED_MIGRATIONS) {
+      const file = readFileSync(fileURLToPath(new URL(`../../db/migrations/${m.version}_${m.name}.sql`, import.meta.url)), 'utf8');
+      expect(file, m.name).toBe(generateSchemaSql(m.version));
+    }
+  });
+
+  it('generates every table into exactly one migration', () => {
+    const generated = GENERATED_MIGRATIONS.flatMap((m) => [...generateSchemaSql(m.version).matchAll(/^CREATE TABLE "([a-z_]+)"/gm)].map((x) => x[1]));
+    expect(generated.sort()).toEqual([...TABLE_NAMES].sort());
   });
 
   it('is deterministic', () => {

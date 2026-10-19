@@ -7,6 +7,7 @@ import { certificationProblems } from '../../packs/accounting/services/recon';
 import { can, type Principal } from '../../security/principal';
 import { dateToWorkday, formatWorkday, usBusinessCalendar } from '../../shared/dates';
 import type { App } from '../app';
+import { decisionProblems } from './access';
 import { currentClose } from './close';
 
 /** "My close": what this person should do next, ranked, with their tasks and the close at a glance. */
@@ -54,7 +55,8 @@ export interface CloseAgentsView {
 }
 
 export async function home(app: App, p: Principal) {
-  const close = await currentClose(app, p.tenantId);
+  // Someone without close.view (a person whose roles still wait for approval) sees no close data.
+  const close = can(p, 'close.view') ? await currentClose(app, p.tenantId) : null;
   return app.read(async (tx) => {
     const tenant = (await tx.get('tenants', p.tenantId))!;
     const cal = usBusinessCalendar();
@@ -126,9 +128,16 @@ export async function home(app: App, p: Principal) {
         next.push({ id: 'closed', title: `${close.name} is locked`, detail: 'Postings to the period are blocked; corrections go through a CFO reopen or the next period.', href: `#/close/${close.id}/package`, tone: 'done' });
       }
     }
+    // Access changes an administrator asked for (roles with approval authority, SoD rules) wait for someone independent.
+    let accessForMe = 0;
+    if (can(p, 'access.approve')) {
+      for (const r of await tx.find('access_requests', { tenant_id: p.tenantId, status: 'pending' })) if (!(await decisionProblems(tx, p, r)).length) accessForMe++;
+      if (accessForMe) next.push({ id: 'access', title: `Decide ${accessForMe} access request${accessForMe === 1 ? '' : 's'}`, detail: 'An administrator asked for a role with approval authority or a control change. It takes effect only if someone independent approves it.', href: '#/admin?tab=access', count: accessForMe, tone: 'attention' });
+    }
+    if (!p.roles.length) next.push({ id: 'no-roles', title: 'You have no roles yet', detail: 'Your roles take effect when a Controller or CFO approves the request your administrator made. Sign out and in again once they have.', href: '#/', tone: 'info' });
     if (!next.length) next.push({ id: 'nothing', title: 'Nothing needs you right now', detail: 'Check the close cockpit for what others are working on.', href: close ? `#/close/${close.id}` : '#/', tone: 'done' });
-    const runs = await tx.find('agent_runs', { tenant_id: p.tenantId, parent_run_id: null }, { orderBy: [['created_at', 'desc']], limit: 5 });
-    const activity = await tx.find('audit_log', { tenant_id: p.tenantId }, { orderBy: [['seq', 'desc']], limit: 8 });
+    const runs = can(p, 'skill.view') ? await tx.find('agent_runs', { tenant_id: p.tenantId, parent_run_id: null }, { orderBy: [['created_at', 'desc']], limit: 5 }) : [];
+    const activity = can(p, 'close.view') ? await tx.find('audit_log', { tenant_id: p.tenantId }, { orderBy: [['seq', 'desc']], limit: 8 }) : [];
     return {
       user: { name: p.user.display_name, firstName: p.user.display_name.split(' ')[0], title: p.user.title, roles: p.roles.map((r) => r.name) },
       tenant: { name: tenant.name, isDemo: tenant.is_demo, reportingCurrency: tenant.reporting_currency },
@@ -139,6 +148,7 @@ export async function home(app: App, p: Principal) {
       next,
       myTasks,
       inbox: { pendingForMe, blockedForMe },
+      access: { pendingForMe: accessForMe },
       recentRuns: runs.map((r) => ({ id: r.id, skill: r.skill_key, status: r.status, summary: r.summary, at: r.finished_at ?? r.created_at, proposals: r.proposals_count })),
       activity: activity.map((a) => ({ seq: a.seq, at: a.occurred_at, actor: a.actor_label, actorType: a.actor_type, action: a.action, summary: a.summary })),
     };

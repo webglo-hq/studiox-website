@@ -4,10 +4,12 @@ import type { Db, Tx } from '../persistence/db';
 import { accountingPack, registerSkills } from '../packs/accounting/pack';
 import { buildAccountingScope, type AccountingScope } from '../packs/accounting/scope';
 import { LedgerLookups } from '../packs/accounting/domain/lookups';
+import { ROLES } from '../security/permissions';
 import type { Principal } from '../security/principal';
 import { SecretBox } from '../security/secretbox';
 import type { Actor, Clock, DomainContext } from '../shared/context';
 import { DomainError } from '../shared/errors';
+import type { OutboxTransport } from './outbox';
 import { RunQueue } from './runner';
 
 /**
@@ -26,6 +28,8 @@ export interface AppConfig {
   /** Cookie Secure flag (true behind HTTPS). */
   secureCookies: boolean;
   demoPassword?: string | null;
+  /** Message transport for real organizations (enrolment and reset links); demo organizations use their delivery log. */
+  outbox?: OutboxTransport | null;
 }
 
 export interface RequestMeta {
@@ -94,6 +98,20 @@ export class App {
 
   get liveModel(): string | null {
     return this.runtime.llm?.model ?? null;
+  }
+
+  /** Bring the system roles in line with their definitions in code (idempotent; runs at start-up). */
+  async ensureRoles(): Promise<void> {
+    await this.db.tx(async (tx) => {
+      for (const [i, r] of ROLES.entries()) {
+        const want = { name: r.name, description: r.description, permissions: r.permissions as string[], approval_limit_minor: r.approvalLimitMinor, is_read_only: !!r.readOnly, sort_order: i };
+        const row = await tx.findOne('roles', { key: r.key });
+        if (!row) await tx.insert('roles', { key: r.key, ...want });
+        else if (row.name !== want.name || row.description !== want.description || JSON.stringify(row.permissions) !== JSON.stringify(want.permissions) || row.approval_limit_minor !== want.approval_limit_minor || row.is_read_only !== want.is_read_only) {
+          await tx.update('roles', row.id, want);
+        }
+      }
+    });
   }
 
   /** Publish skills and install default policies for every tenant (idempotent; runs at start-up). */

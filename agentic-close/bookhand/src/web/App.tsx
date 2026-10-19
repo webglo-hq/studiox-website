@@ -24,6 +24,7 @@ import { api, ApiError, onUnauthorized, setCsrfToken, transportKind } from './li
 import { invalidate, type Me, navigate, SessionContext, storage, ToastContext, useApi, useHotkeys, useRoute, useToastState } from './lib/hooks';
 import { Avatar, Badge, Logo, Modal, Skeleton } from './components/ui';
 import { LoginScreen, MfaScreen } from './screens/Login';
+import { CredentialLinkScreen, MailboxScreen } from './screens/Enrol';
 import { HomeScreen } from './screens/Home';
 import { CockpitScreen } from './screens/Cockpit';
 import { InboxScreen } from './screens/Inbox';
@@ -50,6 +51,7 @@ function applyTheme(theme: string | null) {
 
 export function App() {
   const toasts = useToastState();
+  const route = useRoute();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const refresh = useCallback(async () => {
     try {
@@ -70,24 +72,40 @@ export function App() {
     void refresh();
     return onUnauthorized(() => setPhase({ kind: 'login' }));
   }, [refresh]);
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (opts: { stay?: boolean } = {}) => {
     await api.post('/api/auth/logout').catch(() => undefined);
     setPhase({ kind: 'login' });
-    navigate('/');
+    if (!opts.stay) navigate('/');
     invalidate();
   }, []);
-  const session = useMemo(() => ({ me: phase.kind === 'ready' ? phase.me : null, refresh, signOut }), [phase, refresh, signOut]);
+  const session = useMemo(() => ({ me: phase.kind === 'ready' ? phase.me : null, refresh, signOut: () => signOut() }), [phase, refresh, signOut]);
+  // Enrolment and reset links, and a demo organization's delivery log, open in any state: they are for people
+  // who are signed out (someone signed in as another person is refused by the API and offered to sign out).
+  const link = route.segments[0] === 'enrol' || route.segments[0] === 'reset' ? 'link' : route.segments[0] === 'mailbox' ? 'mailbox' : null;
+  const signedInAs = phase.kind === 'ready' ? phase.me.user.name : null;
   return (
     <ToastContext.Provider value={toasts}>
       <SessionContext.Provider value={session}>
-        {phase.kind === 'loading' && (
+        {link === 'link' && (
+          <CredentialLinkScreen
+            token={route.query.get('token') ?? ''}
+            signedInAs={signedInAs}
+            onSignOut={() => signOut({ stay: true })}
+            onFinished={async () => {
+              navigate('/');
+              await refresh();
+            }}
+          />
+        )}
+        {link === 'mailbox' && <MailboxScreen signedInAs={signedInAs} />}
+        {!link && phase.kind === 'loading' && (
           <div className="content" style={{ maxWidth: 480, margin: '15vh auto' }}>
             <Skeleton rows={3} />
           </div>
         )}
-        {phase.kind === 'login' && <LoginScreen onSignedIn={refresh} />}
-        {phase.kind === 'mfa' && <MfaScreen onDone={refresh} onCancel={signOut} />}
-        {phase.kind === 'ready' && <Shell me={phase.me} />}
+        {!link && phase.kind === 'login' && <LoginScreen onSignedIn={refresh} />}
+        {!link && phase.kind === 'mfa' && <MfaScreen onDone={refresh} onCancel={() => void signOut()} />}
+        {!link && phase.kind === 'ready' && <Shell me={phase.me} />}
         <div className="toasts" aria-live="polite" aria-atomic="false">
           {toasts.toasts.map((t) => (
             <div key={t.id} className={`toast${t.tone === 'error' ? ' error' : ''}`} role={t.tone === 'error' ? 'alert' : 'status'}>
@@ -107,7 +125,8 @@ interface NavItem {
   href: string;
   label: string;
   icon: ReactNode;
-  permission?: string;
+  /** Shown to anyone holding one of these permissions. */
+  permission?: string | string[];
   count?: number;
   match: (p: string) => boolean;
 }
@@ -132,11 +151,11 @@ const SHORTCUTS: Array<[string, string]> = [
 function Shell({ me }: { me: Me }) {
   const route = useRoute();
   const { signOut } = useContext(SessionContext);
-  const { data: home } = useApi<{ inbox: { pendingForMe: number }; close: { id: string } | null }>(me.permissions.includes('close.view') ? '/api/home' : null, { pollMs: 20_000 });
+  const { data: home } = useApi<{ inbox: { pendingForMe: number }; access: { pendingForMe: number }; close: { id: string } | null }>(me.permissions.includes('close.view') ? '/api/home' : null, { pollMs: 20_000 });
   const [navOpen, setNavOpen] = useState(false);
   const [help, setHelp] = useState(false);
   const [theme, setTheme] = useState<string | null>(storage.get('bh-theme'));
-  const can = (p?: string) => !p || me.permissions.includes(p);
+  const can = (p?: string | string[]) => !p || (Array.isArray(p) ? p : [p]).some((x) => me.permissions.includes(x));
   const closeId = home?.close?.id;
   const items: Array<{ section: string; items: NavItem[] }> = [
     {
@@ -164,7 +183,7 @@ function Shell({ me }: { me: Me }) {
         { href: '#/skills', label: 'Skills & policies', icon: <Boxes size={17} />, match: (p) => p.startsWith('/skills'), permission: 'skill.view' },
         { href: '#/ontology', label: 'Ontology', icon: <Network size={17} />, match: (p) => p.startsWith('/ontology'), permission: 'ontology.view' },
         { href: '#/audit', label: 'Audit log', icon: <ScrollText size={17} />, match: (p) => p.startsWith('/audit'), permission: 'audit.view' },
-        { href: '#/admin', label: 'Admin', icon: <Users size={17} />, match: (p) => p.startsWith('/admin'), permission: 'admin.users' },
+        { href: me.permissions.includes('admin.users') ? '#/admin' : '#/admin?tab=access', label: 'Admin', icon: <Users size={17} />, match: (p) => p.startsWith('/admin'), permission: ['admin.users', 'access.approve'], count: home?.access?.pendingForMe },
       ],
     },
   ];
@@ -207,7 +226,7 @@ function Shell({ me }: { me: Me }) {
   else if (s[0] === 'skills') page = <SkillsScreen />;
   else if (s[0] === 'ontology') page = <OntologyScreen termId={s[1] ? decodeURIComponent(s[1]) : null} />;
   else if (s[0] === 'audit') page = <AuditScreen />;
-  else if (s[0] === 'admin') page = <AdminScreen />;
+  else if (s[0] === 'admin') page = <AdminScreen initialTab={route.query.get('tab')} />;
   else if (s[0] === 'imports') page = <ImportsScreen />;
   else if (s[0] === 'settings') page = <SettingsScreen />;
   else page = <div className="empty"><h3>Page not found</h3><a href="#/">Go home</a></div>;

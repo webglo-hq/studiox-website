@@ -1,6 +1,8 @@
 /**
  * RBAC model: permission codes, system roles (with approval limits) and default segregation-of-duties rules.
- * Admins administer the system but hold no financial approval rights (IT/finance SoD).
+ * Admins administer the system but hold no financial approval rights (IT/finance SoD), and a grant that
+ * carries approval authority, like any SoD rule change, takes effect only when a second person with enough
+ * authority (access.approve) approves it.
  */
 
 export const PERMISSIONS = {
@@ -41,6 +43,7 @@ export const PERMISSIONS = {
   'admin.roles': 'Assign roles',
   'admin.sod': 'Edit segregation-of-duties rules',
   'admin.sessions': 'See and revoke sessions',
+  'access.approve': 'Approve role grants that carry approval authority, and segregation-of-duties rule changes, requested by an administrator',
 } as const;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -115,6 +118,7 @@ export const ROLES: RoleDefinition[] = [
       'audit.verify',
       'import.run',
       'connector.manage',
+      'access.approve',
     ],
     approvalLimitMinor: 50_000_000,
   },
@@ -141,6 +145,7 @@ export const ROLES: RoleDefinition[] = [
       'audit.view',
       'audit.verify',
       'materiality.set',
+      'access.approve',
     ],
     approvalLimitMinor: null,
   },
@@ -204,4 +209,28 @@ export const DEFAULT_SOD_RULES: SodRuleDefinition[] = [
 
 export function roleDefinition(key: string): RoleDefinition | undefined {
   return ROLES.find((r) => r.key === key);
+}
+
+/** Permissions that let a person approve, sign off, post or change controls: holding any of them is approval authority. */
+export const APPROVAL_AUTHORITY: readonly Permission[] = [
+  'proposal.decide',
+  'proposal.review_posthoc',
+  'je.approve',
+  'je.reverse',
+  'rec.review',
+  'flux.approve',
+  'package.approve',
+  'close.task.review',
+  'period.soft_close',
+  'period.lock',
+  'period.reopen',
+  'policy.edit',
+  'autonomy.set',
+  'materiality.set',
+  'access.approve',
+];
+
+/** The approval-authority permissions a role carries (empty = granting it needs no second approver). */
+export function authorityOf(permissions: readonly string[]): Permission[] {
+  return APPROVAL_AUTHORITY.filter((p) => permissions.includes(p));
 }

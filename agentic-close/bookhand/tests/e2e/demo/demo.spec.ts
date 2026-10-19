@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { approveAllICan, axeViolations, closeDialogs, go, signInAs } from '../support';
+import { addPersonAndEnrol, approveAllICan, axeViolations, closeDialogs, go, signInAs } from '../support';
 
 /**
  * The zero-install demo: one static index.html, no backend and no network. The full application (domain,
@@ -133,6 +133,18 @@ test('B-7, B-2, B-3: run the agents from My close, review in bulk with a confirm
   await expect(bs.getByRole('cell', { name: 'Total liabilities and equity' })).toBeVisible();
   await expect(bs.getByTestId('bs-footing')).toHaveText('Foots: assets = liabilities + equity');
   await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('BH-C1: an admin adds a person who enrols from their own delivery log; the role waits for the Controller', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
+  await signInAs(page, 'tom');
+  await addPersonAndEnrol(page, { name: 'Rosa Field', email: 'rosa.field@brambleway.example', role: 'Senior Accountant', password: 'quiet-harbour-lantern-42' });
+  await expect(page.getByText('You have no roles yet')).toBeVisible();
+  await signInAs(page, 'hannah');
+  await page.getByRole('link', { name: /Decide 1 access request/ }).click();
+  await page.getByRole('listitem').filter({ hasText: 'Grant Senior Accountant to Rosa Field' }).getByRole('button', { name: 'Approve' }).click();
+  await expect(page.getByRole('status').filter({ hasText: /^Approved: Grant Senior Accountant to Rosa Field/ })).toBeVisible();
 });
 
 test('works at phone width without horizontal scrolling and passes WCAG 2.2 AA checks', async ({ page }) => {

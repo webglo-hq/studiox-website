@@ -226,6 +226,40 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
   return { approved, closeId, complete: state.tasks.every((t) => t.key === 'lock' || t.status === 'done') };
 }
 
+/**
+ * As a signed-in administrator, add a person; then, signed out, open the person's demo delivery log, choose their
+ * password with the single-use enrolment link and sign in as them. The administrator never sees a credential.
+ */
+export async function addPersonAndEnrol(page: Page, p: { name: string; email: string; role: string; entity?: string; password: string }): Promise<void> {
+  await go(page, '#/admin');
+  await page.getByRole('button', { name: 'Add person' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add a person' });
+  await dialog.getByLabel('Name', { exact: true }).fill(p.name);
+  await dialog.getByLabel('Work email').fill(p.email);
+  await dialog.getByRole('checkbox', { name: /^Staff Accountant/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: new RegExp(`^${p.role}`) }).check();
+  if (p.entity) await dialog.getByLabel(`${p.role}: which entities`).selectOption(p.entity);
+  await dialog.getByRole('button', { name: 'Add person and send link' }).click();
+  await expect(page.getByRole('status').filter({ hasText: `${p.name} added. A single-use enrolment link went to ${p.email}` })).toBeVisible();
+  await expect(page.getByText(/temporary password/i)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('link', { name: 'Open your messages in the demo delivery log' }).click();
+  await page.getByLabel('Your email address').fill(p.email);
+  await page.getByRole('button', { name: 'Open my messages' }).click();
+  await page.getByRole('button', { name: 'Set my password' }).click();
+  await expect(page.getByRole('heading', { name: 'Set your password' })).toBeVisible();
+  await page.getByLabel('New password').fill(p.password);
+  await page.getByLabel('Repeat the password').fill(p.password);
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await expect(page.getByRole('heading', { name: 'Your password is set' })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to sign in' }).click();
+  await page.getByLabel('Work email').fill(p.email);
+  await page.getByLabel('Password', { exact: true }).fill(p.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+}
+
 /** WCAG 2.2 A/AA checks on the current screen; returns readable violations. */
 export async function axeViolations(page: Page, exclude: string[] = []): Promise<string[]> {
   // @axe-core/playwright types against its own playwright-core; the runtime object is the same page.

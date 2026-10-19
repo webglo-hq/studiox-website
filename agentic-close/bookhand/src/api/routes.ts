@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import * as access from '../app/usecases/access';
 import * as admin from '../app/usecases/admin';
 import * as agents from '../app/usecases/agents';
 import * as auth from '../app/usecases/auth';
@@ -21,6 +22,9 @@ const mode = z.object({ mode: z.enum(['offline', 'live']).optional() }).strict()
 const LineInput = z.object({ account: text(1, 20), debit: z.number().int().nonnegative().optional(), credit: z.number().int().nonnegative().optional(), department: text(0, 20).nullable().optional(), memo: text(0, 300).nullable().optional() }).strict();
 const DraftInput = z.object({ entity: text(2, 20), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), type: z.enum(['standard', 'adjusting', 'accrual', 'reclass']).default('adjusting'), description: text(5, 300), autoReverseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), lines: z.array(LineInput).min(2).max(100) }).strict();
 
+/** A role for everything (its key) or limited to one entity ({ role, entity: code or id }). */
+const GrantBody = z.union([text(2, 40), z.object({ role: text(2, 40), entity: text(1, 40).nullable().optional() }).strict()]);
+
 const q = (v: string | undefined) => (v === undefined || v === '' ? undefined : v);
 const qn = (v: string | undefined) => (v === undefined || v === '' ? undefined : Number(v));
 
@@ -40,10 +44,12 @@ export const ROUTES: RouteDef[] = [
       const tenant = (await app.read((tx) => tx.find('tenants', {}, { limit: 1 })))[0];
       if (!tenant?.is_demo) return { demo: false, users: [] };
       const users = await app.read(async (tx) => {
-        const list = await tx.find('users', { tenant_id: tenant.id, status: 'active' }, { orderBy: [['display_name', 'asc']] });
+        // People who have not enrolled yet (no password) cannot sign in, so they are not offered.
+        const list = (await tx.find('users', { tenant_id: tenant.id, status: 'active' }, { orderBy: [['display_name', 'asc']] })).filter((u) => u.password_hash);
         const grants = await tx.find('user_roles', { tenant_id: tenant.id });
         const roles = new Map((await tx.find('roles', {})).map((r) => [r.id, r]));
-        return list.map((u) => ({ email: u.email, name: u.display_name, title: u.title, hue: u.avatar_hue, role: roles.get(grants.find((g) => g.user_id === u.id)?.role_id ?? '')?.name ?? '' }));
+        const enrolled = new Set((await tx.find('credential_tokens', { tenant_id: tenant.id })).filter((t) => t.used_at).map((t) => t.user_id));
+        return list.map((u) => ({ email: u.email, name: u.display_name, title: u.title, hue: u.avatar_hue, role: roles.get(grants.find((g) => g.user_id === u.id)?.role_id ?? '')?.name ?? '', ownPassword: enrolled.has(u.id) }));
       });
       return { demo: true, company: tenant.name, password: app.config.demoPassword ?? null, users };
     },
@@ -92,6 +98,35 @@ export const ROUTES: RouteDef[] = [
       if (ctx.session!.state === 'mfa_pending') return { mfaRequired: true, csrfToken: ctx.session!.csrf_token };
       return auth.me(ctx.app, ctx.principal!, ctx.session!);
     },
+  },
+  // Enrolment and password-reset links: they work only for the person they were sent to, signed out (POST keeps the
+  // single-use token out of URLs and logs).
+  {
+    method: 'POST',
+    path: '/api/auth/credential-link/check',
+    auth: 'public',
+    rate: 'signIn',
+    rateOnFailure: 'login',
+    body: z.object({ token: z.string().min(1).max(200) }).strict(),
+    handler: (c) => access.inspectCredentialLink(c.app, String(c.body.token), c.principal, c.meta),
+  },
+  {
+    method: 'POST',
+    path: '/api/auth/credential-link',
+    auth: 'public',
+    rate: 'signIn',
+    rateOnFailure: 'login',
+    body: z.object({ token: z.string().min(1).max(200), password: z.string().min(1).max(256) }).strict(),
+    handler: (c) => access.redeemCredentialLink(c.app, String(c.body.token), String(c.body.password), c.principal, c.meta),
+  },
+  // A demo organization's delivery log: the messages addressed to one person, opened by that person and audited.
+  {
+    method: 'POST',
+    path: '/api/auth/delivery-log',
+    auth: 'public',
+    rate: 'signIn',
+    body: z.object({ to: text(3, 200) }).strict(),
+    handler: (c) => access.readDeliveryLog(c.app, String(c.body.to), c.principal, c.meta),
   },
   { method: 'POST', path: '/api/me/mfa/setup', handler: (c) => auth.setupMfa(c.app, c.principal!, c.meta) },
   { method: 'POST', path: '/api/me/mfa/enable', body: z.object({ code: z.string().trim().regex(/^\d{6}$/) }).strict(), handler: (c) => auth.enableMfa(c.app, c.principal!, String(c.body.code), c.meta) },
@@ -204,6 +239,8 @@ export const ROUTES: RouteDef[] = [
   {
     method: 'PUT',
     path: '/api/skills/:key/policy',
+    // Autonomy and policy are controls: changed by a person in the web app, never with an access token.
+    sessionOnly: true,
     body: z.object({ autonomy: z.enum(['L0', 'L1', 'L2', 'L3']).optional(), thresholds: z.record(z.string(), z.union([z.number(), z.boolean()])).optional(), rulesText: text(0, 8000).optional(), reason: text(5, 500) }).strict(),
     handler: (c) => agents.updateSkillPolicy(c.app, c.principal!, c.params.key!, c.body as agents.PolicyChangeInput, c.meta),
   },
@@ -221,12 +258,19 @@ export const ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/imports', handler: (c) => admin.listImports(c.app, c.principal!) },
   { method: 'POST', path: '/api/imports', body: z.object({ filename: text(1, 200), content: z.string().max(5_500_000), adapterKey: text(0, 40).optional() }).strict(), handler: (c) => admin.importFile(c.app, c.principal!, c.body as { filename: string; content: string; adapterKey?: string }, c.meta) },
   { method: 'GET', path: '/api/admin/users', handler: (c) => admin.listUsers(c.app, c.principal!) },
-  { method: 'POST', path: '/api/admin/users', body: z.object({ email: text(3, 200), name: text(2, 120), title: text(0, 120).optional(), roles: z.array(z.string()).min(1).max(5) }).strict(), handler: (c) => admin.createUser(c.app, c.principal!, c.body as never, c.meta) },
-  { method: 'PUT', path: '/api/admin/users/:id/roles', body: z.object({ roles: z.array(z.string()).max(5) }).strict(), handler: (c) => admin.setUserRoles(c.app, c.principal!, c.params.id!, c.body.roles as string[], c.meta) },
+  { method: 'POST', path: '/api/admin/users', body: z.object({ email: text(3, 200), name: text(2, 120), title: text(0, 120).optional(), roles: z.array(GrantBody).min(1).max(10), reason: text(0, 500).optional() }).strict(), handler: (c) => admin.createUser(c.app, c.principal!, c.body as never, c.meta) },
+  { method: 'PUT', path: '/api/admin/users/:id/roles', body: z.object({ roles: z.array(GrantBody).max(10), reason: text(0, 500).optional() }).strict(), handler: (c) => admin.setUserRoles(c.app, c.principal!, c.params.id!, c.body.roles as access.GrantInput[], c.meta, c.body.reason as string | undefined) },
   { method: 'PUT', path: '/api/admin/users/:id/status', body: z.object({ status: z.enum(['active', 'disabled']) }).strict(), handler: (c) => admin.setUserStatus(c.app, c.principal!, c.params.id!, c.body.status as 'active' | 'disabled', c.meta) },
   { method: 'POST', path: '/api/admin/users/:id/reset-password', handler: (c) => admin.resetPassword(c.app, c.principal!, c.params.id!, c.meta) },
   { method: 'GET', path: '/api/admin/sod-rules', handler: (c) => admin.listSodRules(c.app, c.principal!) },
   { method: 'PATCH', path: '/api/admin/sod-rules/:id', body: z.object({ enabled: z.boolean().optional(), severity: z.enum(['block', 'warn']).optional(), params: z.record(z.string(), z.unknown()).optional(), reason: text(5, 500) }).strict(), handler: (c) => admin.updateSodRule(c.app, c.principal!, c.params.id!, c.body as never, c.meta) },
+  { method: 'GET', path: '/api/admin/access-requests', handler: (c) => access.listAccessRequests(c.app, c.principal!) },
+  {
+    method: 'POST',
+    path: '/api/admin/access-requests/:id/decide',
+    body: z.object({ decision: z.enum(['approve', 'reject']), reason: text(0, 500).optional() }).strict(),
+    handler: (c) => access.decideAccessRequest(c.app, c.principal!, c.params.id!, c.body.decision as 'approve' | 'reject', c.body.reason as string | undefined, c.meta),
+  },
   { method: 'GET', path: '/api/admin/sessions', handler: (c) => admin.listSessions(c.app, c.principal!) },
   { method: 'DELETE', path: '/api/admin/sessions/:id', handler: (c) => admin.adminRevokeSession(c.app, c.principal!, c.params.id!, c.meta) },
 ];
