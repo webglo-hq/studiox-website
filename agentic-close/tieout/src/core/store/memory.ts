@@ -440,6 +440,7 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
     const je = this.table('journal_entries');
     const jl = this.table('journal_lines');
     const statuses = new Set(q.statuses ?? ['posted']);
+    const excluded = new Set(q.excludeEntryTypes ?? []);
     const entitySet = q.entityIds ? new Set(q.entityIds) : null;
     const accountSet = q.accountIds ? new Set(q.accountIds) : null;
     const groups = new Map<string, LineSum>();
@@ -448,7 +449,7 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
       : (je.indexes.get('tenant_id')?.get(tenantId) ?? []);
     for (const hid of headerIds) {
       const h = je.rows.get(hid);
-      if (!h || h.tenant_id !== tenantId || !statuses.has(h.status as string)) continue;
+      if (!h || h.tenant_id !== tenantId || !statuses.has(h.status as string) || excluded.has(h.entry_type as string)) continue;
       const date = h.posting_date as string;
       if (q.fromDate && date < q.fromDate) continue;
       if (q.toDate && date > q.toDate) continue;

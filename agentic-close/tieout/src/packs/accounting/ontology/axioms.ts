@@ -58,7 +58,7 @@ export interface RecFacts {
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 const fmt = (minor: number) => `${minor < 0 ? '-' : ''}${(Math.abs(minor) / 100).toFixed(2)}`;
-const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening']);
+const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening', 'closing']);
 
 const A = <F>(a: Axiom<F>) => a;
 
@@ -102,6 +102,17 @@ export const AXIOMS = [
     plainEnglish: 'Across the whole ledger, debit balances equal credit balances — so Assets = Liabilities + Equity.',
     citations: ['pacioli1494', 'conceptual-framework'],
     check: (f) => (f.debits !== undefined && f.credits !== undefined && f.debits !== f.credits ? [`trial balance out by ${fmt(f.debits - f.credits)}`] : []),
+  }),
+  // ---------------------------------------------------------------- statements
+  A<{ statement?: string; netIncomeMinor?: number; ledgerNetIncomeMinor?: number }>({
+    id: 'AX-FS-01', title: 'Income statement ties to the ledger', appliesTo: ['tie:IncomeStatement'], severity: 'error', enforcedBy: ['ontology', 'runtime'],
+    formal: '∀e, p: netIncome(IS(e, p)) = −Σ_{l ∈ lines(e, p), class(account(l)) ∈ {revenue, expense}, type(entry(l)) ≠ closing} (debit(l) − credit(l))',
+    plainEnglish: 'Net income on every income statement equals the income and expenses posted in the ledger for that period (year-end closing entries excluded). Presentation may regroup amounts, never change the total.',
+    citations: ['conceptual-framework', 'usgaap-taxonomy'],
+    check: (f) =>
+      f.netIncomeMinor !== undefined && f.ledgerNetIncomeMinor !== undefined && f.netIncomeMinor !== f.ledgerNetIncomeMinor
+        ? [`${f.statement ?? 'the income statement'} shows net income ${fmt(f.netIncomeMinor)} but the ledger shows ${fmt(f.ledgerNetIncomeMinor)}`]
+        : [],
   }),
   // ---------------------------------------------------------------- immutability
   A<{ before?: { status: string } ; changed?: readonly string[] }>({
@@ -381,16 +392,17 @@ export const AXIOMS = [
     citations: ['apqc-close'],
     check: (f) => (f.status === 'done' && (f.dependencyStatuses ?? []).some((s) => !['done', 'skipped'].includes(s)) ? ['finish the prerequisite tasks first'] : []),
   }),
-  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean }>({
+  A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean; untiedStatements?: number }>({
     id: 'AX-CL-02', title: 'Lock only a finished close', appliesTo: ['tie:LockedPeriod', 'tie:FinancialClose'], severity: 'error', enforcedBy: ['runtime', 'ui'],
-    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ ∃ final ClosePackage(p)',
-    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained and a close package exists.',
+    formal: 'lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p)',
+    plainEnglish: 'A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and a close package exists.',
     citations: ['sox404', 'coso2013'],
     check: (f) => {
       const out: string[] = [];
       if ((f.pendingProposals ?? 0) > 0) out.push(`${f.pendingProposals} proposals still need a decision`);
       if ((f.openRecs ?? 0) > 0) out.push(`${f.openRecs} reconciliations are not reviewed`);
       if ((f.unexplainedFlux ?? 0) > 0) out.push(`${f.unexplainedFlux} significant variances lack an approved explanation`);
+      if ((f.untiedStatements ?? 0) > 0) out.push(`${f.untiedStatements} income statement${f.untiedStatements === 1 ? ' does' : 's do'} not tie to the ledger (AX-FS-01)`);
       if ((f.openTasks ?? 0) > 0) out.push(`${f.openTasks} close tasks are not done`);
       if (f.finalPackage === false) out.push('generate the close package first');
       return out;

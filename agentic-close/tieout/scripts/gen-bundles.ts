@@ -63,6 +63,14 @@ function parseAlters(sql: string): { table: string; line: string }[] {
   return out;
 }
 
+/** `ALTER TABLE t ADD CONSTRAINT … CHECK (col IN (…));` replaces a column's allowed values. */
+function parseEnumChecks(sql: string): { table: string; column: string; values: string[] }[] {
+  const out: { table: string; column: string; values: string[] }[] = [];
+  for (const m of sql.matchAll(/ALTER TABLE ([a-z_][a-z0-9_]*) ADD CONSTRAINT [a-z_][a-z0-9_]* CHECK \(([a-z_][a-z0-9_]*) IN \(([^)]*)\)\);/g))
+    out.push({ table: m[1]!, column: m[2]!, values: m[3]!.split(',').map((s) => s.trim().replace(/^'|'$/g, '')) });
+  return out;
+}
+
 function parseColumn(name: string, line: string): Col {
   const cm = /^([a-z_][a-z0-9_]*) (TEXT|BIGINT|INT|NUMERIC(?:\(\d+,\d+\))?|BOOLEAN|DATE|TIMESTAMPTZ|JSONB)\b(.*)$/.exec(line);
   if (!cm) throw new Error(`gen: cannot parse column line in ${name}: ${line}`);
@@ -266,10 +274,17 @@ const migFiles = readdirSync(join(ROOT, 'migrations'))
   .sort()
   .map((f) => ({ id: f.replace(/\.sql$/, ''), sql: readFileSync(join(ROOT, 'migrations', f), 'utf8') }));
 const tables = migFiles.flatMap((f) => parseSql(f.sql));
-for (const a of migFiles.flatMap((f) => parseAlters(f.sql))) {
-  const t = tables.find((x) => x.name === a.table);
-  if (!t) throw new Error(`gen: ALTER TABLE for unknown table ${a.table}`);
-  t.columns.push(parseColumn(a.table, a.line));
+for (const f of migFiles) {
+  for (const a of parseAlters(f.sql)) {
+    const t = tables.find((x) => x.name === a.table);
+    if (!t) throw new Error(`gen: ALTER TABLE for unknown table ${a.table}`);
+    t.columns.push(parseColumn(a.table, a.line));
+  }
+  for (const e of parseEnumChecks(f.sql)) {
+    const col = tables.find((x) => x.name === e.table)?.columns.find((c) => c.name === e.column);
+    if (!col) throw new Error(`gen: CHECK constraint for unknown column ${e.table}.${e.column}`);
+    col.enumValues = e.values;
+  }
 }
 const stale: string[] = [];
 emit('src/schema/tables.generated.ts', genTables(tables), stale);

@@ -512,7 +512,7 @@ export interface JournalEntryRow {
   entity_id: string;
   period_id: string;
   je_number: string;
-  entry_type: 'standard' | 'adjusting' | 'accrual' | 'reversing' | 'recurring' | 'reclass' | 'elimination' | 'fx_revaluation' | 'opening';
+  entry_type: 'standard' | 'adjusting' | 'accrual' | 'reversing' | 'recurring' | 'reclass' | 'elimination' | 'fx_revaluation' | 'opening' | 'closing';
   status: 'draft' | 'pending_approval' | 'approved' | 'posted' | 'rejected' | 'void';
   posting_date: string;
   memo: string;
@@ -1957,7 +1957,7 @@ export const tableMeta = {
       {"name":"entity_id","type":"text","nullable":false,"references":{"table":"entities","onDelete":"restrict"}},
       {"name":"period_id","type":"text","nullable":false,"references":{"table":"periods","onDelete":"restrict"}},
       {"name":"je_number","type":"text","nullable":false},
-      {"name":"entry_type","type":"text","nullable":false,"enumValues":["standard","adjusting","accrual","reversing","recurring","reclass","elimination","fx_revaluation","opening"]},
+      {"name":"entry_type","type":"text","nullable":false,"enumValues":["standard","adjusting","accrual","reversing","recurring","reclass","elimination","fx_revaluation","opening","closing"]},
       {"name":"status","type":"text","nullable":false,"default":{"kind":"literal","value":"draft"},"enumValues":["draft","pending_approval","approved","posted","rejected","void"]},
       {"name":"posting_date","type":"date","nullable":false},
       {"name":"memo","type":"text","nullable":false},

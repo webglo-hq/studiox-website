@@ -62,6 +62,8 @@ export interface LineSumQuery {
   toDate?: string;
   /** Include only entries with these statuses; default ['posted']. */
   statuses?: readonly string[];
+  /** Leave out entries of these types (period activity excludes year-end closing entries). */
+  excludeEntryTypes?: readonly string[];
   groupBy: readonly ('account_id' | 'entity_id' | 'department' | 'period' | 'counterparty_entity_id' | 'txn_currency')[];
 }
 

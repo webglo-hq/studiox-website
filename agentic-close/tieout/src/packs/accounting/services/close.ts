@@ -3,11 +3,12 @@
  * (AX-CL-02) and the close package (trial balances, statements, commentary, reconciliations,
  * open items, agent activity).
  */
+import { invariant } from '../../../core/util/errors';
 import { periodEnd, periodLabel } from '../../../core/util/time';
 import type { CloseTaskRow, ProposalRow } from '../../../schema';
 import { formatWorkday, workdayOffset } from '../close/workdays';
 import { balancesAsOf, trialBalanceRows } from '../ledger/balances';
-import { consolidatedStatements } from '../ledger/statements';
+import { consolidatedStatements, incomeStatementTies } from '../ledger/statements';
 import type { ClosePackageContent } from '../model/types';
 import { closeOntology } from '../ontology';
 import { BankService } from './bank';
@@ -30,6 +31,8 @@ export interface Readiness {
   unexplainedFlux: number;
   openTasks: number;
   finalPackage: boolean;
+  /** income statements (each entity's and the consolidated one) whose net income differs from the ledger (AX-FS-01) */
+  untiedStatements: number;
   ready: boolean;
   messages: string[];
 }
@@ -93,14 +96,25 @@ export class CloseService {
     const tasks = cp ? await this.c.tx.find('close_tasks', { close_period_id: cp.id }) : [];
     const openTasks = tasks.filter((t) => t.key !== 'lock' && t.status !== 'done' && t.status !== 'skipped').length;
     const finalPackage = !!(await this.c.tx.findOne('close_packages', { period_key: periodKey, status: 'final' }));
-    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage });
-    return { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage, ready: out.passed, messages: out.messages };
+    const untied = (await incomeStatementTies(this.c.tx, await this.c.chart(), periodKey)).filter((t) => !t.ties);
+    const out = closeOntology().check('AX-CL-02', { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage, untiedStatements: untied.length });
+    return { pendingProposals, openRecs, unexplainedFlux, openTasks, finalPackage, untiedStatements: untied.length, ready: out.passed, messages: [...out.messages, ...untied.map((t) => t.message ?? `${t.statement} does not tie to the ledger`)] };
+  }
+
+  /** AX-FS-01 before anything is signed: every entity's income statement and the consolidated one tie to the ledger. */
+  async assertStatementsTie(periodKey: string) {
+    const ties = await incomeStatementTies(this.c.tx, await this.c.chart(), periodKey);
+    const bad = ties.filter((t) => !t.ties);
+    if (bad.length) throw invariant('AX-FS-01', bad.map((t) => t.message ?? `${t.statement} does not tie to the ledger`).join('; '), { statements: bad.map((t) => t.statement) });
+    return ties;
   }
 
   async packageContent(periodKey: string, generatedBy: string): Promise<ClosePackageContent> {
     const chart = await this.c.chart();
     const legal = chart.legalEntities();
     const end = periodEnd(periodKey);
+    // a package never carries an income statement that disagrees with the ledger
+    const ties = await this.assertStatementsTie(periodKey);
     const trialBalances: ClosePackageContent['trialBalances'] = [];
     for (const e of chart.entities) {
       const tb = trialBalanceRows(chart, await balancesAsOf(this.c.tx, [e.id], end));
@@ -162,6 +176,7 @@ export class CloseService {
       },
       signoffs: [],
       kpis: { revenueMinor: revenue, grossMarginPct: revenue ? Math.round(((revenue - cor) / revenue) * 1000) / 10 : null, opexMinor: opex, netIncomeMinor: cons.netIncomeMinor, cashMinor: cash },
+      statementChecks: ties.map((t) => ({ statement: t.statement, currency: t.currency, netIncomeMinor: t.netIncomeMinor!, ledgerNetIncomeMinor: t.ledgerNetIncomeMinor! })),
     };
   }
 }

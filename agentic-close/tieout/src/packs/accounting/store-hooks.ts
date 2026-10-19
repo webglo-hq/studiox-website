@@ -10,7 +10,7 @@ type Row = Record<string, unknown>;
 const fail = (axiom: string, msg: string, code = '23514') => {
   throw new StoreError(code, `${axiom}: ${msg}`);
 };
-const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening']);
+const ADJUSTING = new Set(['adjusting', 'accrual', 'reversing', 'reclass', 'elimination', 'fx_revaluation', 'opening', 'closing']);
 
 function postingChecks(je: Row, db: HookReader) {
   const period = db.get('periods', je.period_id as string);

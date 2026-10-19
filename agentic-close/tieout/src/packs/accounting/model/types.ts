@@ -73,4 +73,6 @@ export interface ClosePackageContent {
   agentActivity: { runs: number; proposals: number; autoApplied: number; approved: number; rejected: number; costMicros: number; mode: string };
   signoffs: { role: string; name: string; at: string }[];
   kpis: { revenueMinor: number; grossMarginPct: number | null; opexMinor: number; netIncomeMinor: number; cashMinor: number };
+  /** AX-FS-01 when the package was assembled: each income statement's net income against the ledger */
+  statementChecks?: { statement: string; currency: string; netIncomeMinor: number; ledgerNetIncomeMinor: number }[];
 }

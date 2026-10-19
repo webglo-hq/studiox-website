@@ -7,7 +7,7 @@
 
 <https://tieout.example/ontology/close> a owl:Ontology ;
   dcterms:title "Tieout Close Ontology" ;
-  owl:versionInfo "1.2.0" .
+  owl:versionInfo "1.3.0" .
 
 tie:Thing a owl:Class ;
   rdfs:label "Thing"@en ;
@@ -846,6 +846,15 @@ tie:OpeningEntry a owl:Class ;
   skos:definition "The entry that loads balances migrated from a prior system."@en ;
   skos:scopeNote "Opening balances are audited once and then become history."@en ;
   skos:example "Opening balances at 31 Aug 2025."@en .
+
+tie:ClosingEntry a owl:Class ;
+  rdfs:label "Closing entry"@en ;
+  rdfs:subClassOf tie:JournalEntry ;
+  skos:definition "The year-end entry that moves the year’s income and expense balances into retained earnings, leaving them at zero for the new year."@en ;
+  skos:scopeNote "It transfers profit; it is not income or expense of the month it is dated in, so period income statements and variance analysis leave it out (AX-FS-01)."@en ;
+  skos:example "FY2025 close at 31 Dec 2025: income and expense accounts to 3200 Retained earnings."@en ;
+  skos:altLabel "year-end close"@en ;
+  skos:altLabel "closing entry"@en .
 
 tie:AccountingPeriod a owl:Class ;
   rdfs:label "Accounting period"@en ;
@@ -2404,6 +2413,11 @@ tie:AX_DE_04 a tie:Axiom ;
   tie:formal "Σ_{a ∈ Accounts} debitBalance(a) = Σ_{a ∈ Accounts} creditBalance(a)" ;
   skos:definition "Across the whole ledger, debit balances equal credit balances — so Assets = Liabilities + Equity."@en .
 
+tie:AX_FS_01 a tie:Axiom ;
+  rdfs:label "Income statement ties to the ledger"@en ;
+  tie:formal "∀e, p: netIncome(IS(e, p)) = −Σ_{l ∈ lines(e, p), class(account(l)) ∈ {revenue, expense}, type(entry(l)) ≠ closing} (debit(l) − credit(l))" ;
+  skos:definition "Net income on every income statement equals the income and expenses posted in the ledger for that period (year-end closing entries excluded). Presentation may regroup amounts, never change the total."@en .
+
 tie:AX_IM_01 a tie:Axiom ;
   rdfs:label "Posted entries are immutable"@en ;
   tie:formal "∀e: status(e) = posted ⇒ □¬modified(e); corrections ≔ ∃r ∈ ReversingEntry: reverses(r, e)" ;
@@ -2556,8 +2570,8 @@ tie:AX_CL_01 a tie:Axiom ;
 
 tie:AX_CL_02 a tie:Axiom ;
   rdfs:label "Lock only a finished close"@en ;
-  tie:formal "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ ∃ final ClosePackage(p)" ;
-  skos:definition "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained and a close package exists."@en .
+  tie:formal "lock(p) ⇒ pending(p) = ∅ ∧ ∀r ∈ recs(p): reviewed(r) ∧ AX-FLX-01(p) ∧ AX-FS-01(p) ∧ ∃ final ClosePackage(p)" ;
+  skos:definition "A period locks only when there are no pending proposals above clearly trivial, every reconciliation is reviewed, significant variances are explained, every income statement ties to the ledger and a close package exists."@en .
 
 tie:AX_AGT_01 a tie:Axiom ;
   rdfs:label "Proposals are explained"@en ;

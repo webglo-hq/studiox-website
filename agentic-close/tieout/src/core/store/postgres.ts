@@ -304,6 +304,10 @@ export class PgStore<M, I = M> implements Store<M, I> {
       params.push(query.toDate);
       conds.push(`je."posting_date" <= $${params.length}`);
     }
+    if (query.excludeEntryTypes?.length) {
+      params.push([...query.excludeEntryTypes]);
+      conds.push(`NOT (je."entry_type" = ANY($${params.length}))`);
+    }
     const groups = query.groupBy.map((g) => {
       const expr = GROUP_SQL[g];
       if (!expr) throw new StoreError('42703', `cannot group by ${String(g)}`);

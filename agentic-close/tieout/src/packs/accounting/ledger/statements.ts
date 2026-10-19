@@ -2,12 +2,17 @@
  * Financial statements from the ledger: per entity (functional currency) and consolidated
  * (reporting currency) with ASC 830 translation — balance sheet at closing rate, P&L at monthly
  * average rates, equity at historical rates — CTA as the plug, plus posted eliminations.
+ *
+ * Every income statement ties to the ledger (AX-FS-01): its net income must equal the income and
+ * expenses posted in the period, or the statement is refused rather than shown.
  */
-import { periodEnd, periodKeyOf, periodRange, shiftPeriod } from '../../../core/util/time';
+import { invariant } from '../../../core/util/errors';
+import { periodEnd, periodKeyOf, periodLabel, periodRange, shiftPeriod } from '../../../core/util/time';
 import type { AccountRow, DbTx, FsLineItemRow } from '../../../schema';
 import type { StatementLine } from '../model/types';
+import { closeOntology } from '../ontology';
 import { fxRate } from '../fx/rates';
-import { activityByPeriod, balancesAsOf, type BalanceMap } from './balances';
+import { activityByPeriod, balancesAsOf, NOT_PERIOD_ACTIVITY, type BalanceMap } from './balances';
 import type { Chart } from './chart';
 import { convert } from './money';
 
@@ -19,10 +24,18 @@ export interface StatementSet {
   balanceSheet: StatementLine[];
   incomeStatement: StatementLine[];
   netIncomeMinor: number;
+  /** net income per the ledger (AX-FS-01); a statement is only returned when it equals netIncomeMinor */
+  ledgerNetIncomeMinor: number;
   checks: { balanced: boolean; differenceMinor: number };
 }
 
 const isPnl = (a: AccountRow) => a.account_class === 'revenue' || a.account_class === 'expense';
+/**
+ * Income-statement captions shown credit-positive: revenue and "Other income (expense), net".
+ * Every other caption is a cost, shown debit-positive. The caption decides the sign, not the
+ * account class, so however accounts are mapped to captions net income stays intact.
+ */
+const isIncomeCaption = (code: string) => code.startsWith('IS.REV') || code === 'IS.OTHER';
 /** Positive = in the account's presentation direction (assets/expenses debit; others credit). */
 const presented = (a: AccountRow, net: number) => (a.account_class === 'asset' || a.account_class === 'expense' ? net : -net);
 
@@ -86,7 +99,7 @@ interface PnlRow {
   netMinor: number;
 }
 
-function isLines(chart: Chart, fsLines: readonly FsLineItemRow[], rows: readonly PnlRow[], prior?: readonly PnlRow[]): { lines: StatementLine[]; netIncome: number } {
+function isLines(chart: Chart, fsLines: readonly FsLineItemRow[], rows: readonly PnlRow[], prior?: readonly PnlRow[]): { lines: StatementLine[]; netIncome: number; netIncomePrior: number } {
   const bucket = (rs: readonly PnlRow[]) => {
     const m = new Map<string, number>();
     for (const r of rs) {
@@ -95,8 +108,7 @@ function isLines(chart: Chart, fsLines: readonly FsLineItemRow[], rows: readonly
       const fs = fsLines.find((f) => f.id === a.fs_line_id);
       let code = fs?.code ?? 'IS.OTHER';
       if (code.startsWith('IS.OPEX')) code = FUNCTION_BY_DEPT[r.department ?? ''] ?? code;
-      const v = a.account_class === 'revenue' ? -r.netMinor : r.netMinor;
-      m.set(code, (m.get(code) ?? 0) + v);
+      m.set(code, (m.get(code) ?? 0) + (isIncomeCaption(code) ? -r.netMinor : r.netMinor));
     }
     return m;
   };
@@ -121,16 +133,71 @@ function isLines(chart: Chart, fsLines: readonly FsLineItemRow[], rows: readonly
   for (const c of opexCodes) line(c, 'Operating expenses');
   const opex = line('IS.T.OPEX', 'Operating expenses', true, 'Total operating expenses', 'us-gaap:OperatingExpenses', sumCodes(opexCodes));
   const oi = line('IS.T.OI', 'Operating income', true, 'Operating income (loss)', 'us-gaap:OperatingIncomeLoss', [gp[0] - opex[0], gp[1] - opex[1]]);
-  const other = line('IS.OTHER', 'Other', false, undefined, undefined, [-get(cur, 'IS.OTHER'), -get(pri, 'IS.OTHER')]);
+  const other = line('IS.OTHER', 'Other');
   const pti = line('IS.T.PTI', 'Other', true, 'Income (loss) before income taxes', 'us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', [oi[0] + other[0], oi[1] + other[1]]);
   const tax = line('IS.TAX', 'Other');
   const ni = line('IS.T.NI', 'Net income', true, 'Net income (loss)', 'us-gaap:NetIncomeLoss', [pti[0] - tax[0], pti[1] - tax[1]]);
-  return { lines, netIncome: ni[0] };
+  return { lines, netIncome: ni[0], netIncomePrior: ni[1] };
 }
 
+/** The month's income and expense activity by account and department (closing entries excluded). */
 async function pnlRows(tx: DbTx, entityIds: readonly string[], fromDate: string, toDate: string): Promise<PnlRow[]> {
-  const rows = await tx.sumLines({ entityIds, fromDate, toDate, groupBy: ['account_id', 'department'] });
+  const rows = await tx.sumLines({ entityIds, fromDate, toDate, groupBy: ['account_id', 'department'], excludeEntryTypes: NOT_PERIOD_ACTIVITY });
   return rows.map((r) => ({ accountId: r.account_id!, department: r.department ?? null, netMinor: r.debit_minor - r.credit_minor }));
+}
+
+/** Net income straight from the ledger, by its own query: −Σ(debit − credit) over income and expense accounts. */
+async function ledgerNetIncome(tx: DbTx, chart: Chart, entityIds: readonly string[], periodKey: string): Promise<number> {
+  const rows = await tx.sumLines({ entityIds, fromDate: `${periodKey}-01`, toDate: periodEnd(periodKey), groupBy: ['account_id'], excludeEntryTypes: NOT_PERIOD_ACTIVITY });
+  return rows.reduce((s, r) => (isPnl(chart.account(r.account_id!)) ? s - (r.debit_minor - r.credit_minor) : s), 0);
+}
+
+/** AX-FS-01: refuse an income statement whose net income differs from the ledger's. */
+function assertTies(statement: string, netIncomeMinor: number, ledgerNetIncomeMinor: number) {
+  const r = closeOntology().check('AX-FS-01', { statement, netIncomeMinor, ledgerNetIncomeMinor });
+  if (!r.passed) throw invariant('AX-FS-01', r.messages.join('; '), { statement, netIncomeMinor, ledgerNetIncomeMinor });
+}
+
+interface IncomeStatement {
+  lines: StatementLine[];
+  netIncomeMinor: number;
+  ledgerNetIncomeMinor: number;
+}
+
+/** One entity's income statement for the month (vs the prior month), both columns tied to the ledger. */
+async function entityIncomeStatement(tx: DbTx, chart: Chart, fsLines: readonly FsLineItemRow[], entityId: string, periodKey: string): Promise<IncomeStatement> {
+  const prior = shiftPeriod(periodKey, -1);
+  const [cur, pri] = await Promise.all([pnlRows(tx, [entityId], `${periodKey}-01`, periodEnd(periodKey)), pnlRows(tx, [entityId], `${prior}-01`, periodEnd(prior))]);
+  const is = isLines(chart, fsLines, cur, pri);
+  const [ledgerCur, ledgerPri] = await Promise.all([ledgerNetIncome(tx, chart, [entityId], periodKey), ledgerNetIncome(tx, chart, [entityId], prior)]);
+  const code = chart.entity(entityId).code;
+  assertTies(`the ${code} ${periodLabel(periodKey)} income statement`, is.netIncome, ledgerCur);
+  assertTies(`the ${code} ${periodLabel(prior)} income statement (prior-month column)`, is.netIncomePrior, ledgerPri);
+  return { lines: is.lines, netIncomeMinor: is.netIncome, ledgerNetIncomeMinor: ledgerCur };
+}
+
+/**
+ * The group's income statement for the month: each entity's activity at the month's average rate.
+ * Each entity's activity first ties to its own ledger; the group's ledger figure is then the sum of
+ * the same translated amounts, before any caption mapping.
+ */
+async function consolidatedIncomeStatement(tx: DbTx, chart: Chart, fsLines: readonly FsLineItemRow[], periodKey: string, reporting: string): Promise<IncomeStatement> {
+  const rows: PnlRow[] = [];
+  let ledgerNi = 0;
+  for (const e of chart.entities) {
+    const r = await pnlRows(tx, [e.id], `${periodKey}-01`, periodEnd(periodKey));
+    const activity = -r.filter((x) => isPnl(chart.account(x.accountId))).reduce((s, x) => s + x.netMinor, 0);
+    assertTies(`the ${e.code} ${periodLabel(periodKey)} activity`, activity, await ledgerNetIncome(tx, chart, [e.id], periodKey));
+    const rate = await fxRate(tx, e.functional_currency, reporting, periodEnd(periodKey), 'average');
+    for (const x of r) {
+      const t = { ...x, netMinor: convert(x.netMinor, rate) };
+      rows.push(t);
+      if (isPnl(chart.account(x.accountId))) ledgerNi -= t.netMinor;
+    }
+  }
+  const is = isLines(chart, fsLines, rows);
+  assertTies(`the consolidated ${periodLabel(periodKey)} income statement`, is.netIncome, ledgerNi);
+  return { lines: is.lines, netIncomeMinor: is.netIncome, ledgerNetIncomeMinor: ledgerNi };
 }
 
 /** Statements for one entity in its functional currency: BS at period end (vs prior period end), IS for the month (vs prior month). */
@@ -139,9 +206,8 @@ export async function entityStatements(tx: DbTx, chart: Chart, entityId: string,
   const prior = shiftPeriod(periodKey, -1);
   const [bal, balPrior] = await Promise.all([balancesAsOf(tx, [entityId], periodEnd(periodKey)), balancesAsOf(tx, [entityId], periodEnd(prior))]);
   const bs = bsLines(chart, fsLines, bal, balPrior);
-  const [cur, pri] = await Promise.all([pnlRows(tx, [entityId], `${periodKey}-01`, periodEnd(periodKey)), pnlRows(tx, [entityId], `${prior}-01`, periodEnd(prior))]);
-  const is = isLines(chart, fsLines, cur, pri);
-  return { currency: chart.entity(entityId).functional_currency, balanceSheet: bs.lines, incomeStatement: is.lines, netIncomeMinor: is.netIncome, checks: { balanced: bs.diff === 0, differenceMinor: bs.diff } };
+  const is = await entityIncomeStatement(tx, chart, fsLines, entityId, periodKey);
+  return { currency: chart.entity(entityId).functional_currency, balanceSheet: bs.lines, incomeStatement: is.lines, netIncomeMinor: is.netIncomeMinor, ledgerNetIncomeMinor: is.ledgerNetIncomeMinor, checks: { balanced: bs.diff === 0, differenceMinor: bs.diff } };
 }
 
 export interface ConsolidationResult extends StatementSet {
@@ -229,15 +295,41 @@ export async function consolidatedStatements(tx: DbTx, chart: Chart, periodKey: 
     }
   }
   const bs = bsLines(chart, fsLines, total);
-  // Consolidated P&L for the month: translated monthly activity at the month's average rate
-  const rows: PnlRow[] = [];
-  for (const e of chart.entities) {
-    const r = await pnlRows(tx, [e.id], `${periodKey}-01`, periodEnd(periodKey));
-    const rate = await fxRate(tx, e.functional_currency, reporting, periodEnd(periodKey), 'average');
-    for (const x of r) rows.push({ ...x, netMinor: convert(x.netMinor, rate) });
-  }
-  const is = isLines(chart, fsLines, rows);
-  return { currency: reporting, balanceSheet: bs.lines, incomeStatement: is.lines, netIncomeMinor: is.netIncome, checks: { balanced: Math.abs(bs.diff) <= 1, differenceMinor: bs.diff }, ctaMinor: cta, eliminationsMinor: elim, closingRate: closing, averageRate: average, translated };
+  const is = await consolidatedIncomeStatement(tx, chart, fsLines, periodKey, reporting);
+  return { currency: reporting, balanceSheet: bs.lines, incomeStatement: is.lines, netIncomeMinor: is.netIncomeMinor, ledgerNetIncomeMinor: is.ledgerNetIncomeMinor, checks: { balanced: Math.abs(bs.diff) <= 1, differenceMinor: bs.diff }, ctaMinor: cta, eliminationsMinor: elim, closingRate: closing, averageRate: average, translated };
+}
+
+export interface IncomeStatementTie {
+  statement: string;
+  entityCode: string | null;
+  currency: string;
+  netIncomeMinor: number | null;
+  ledgerNetIncomeMinor: number | null;
+  ties: boolean;
+  message: string | null;
+}
+
+/**
+ * AX-FS-01 for the close gates: the income statement of every entity (the eliminations ledger
+ * included) and the consolidated one, for the period. A statement that does not tie is reported
+ * here rather than thrown, so the gates can say which one.
+ */
+export async function incomeStatementTies(tx: DbTx, chart: Chart, periodKey: string, reporting = 'USD'): Promise<IncomeStatementTie[]> {
+  const fsLines = await tx.find('fs_line_items', {});
+  const out: IncomeStatementTie[] = [];
+  const attempt = async (statement: string, entityCode: string | null, currency: string, build: () => Promise<IncomeStatement>) => {
+    try {
+      const s = await build();
+      out.push({ statement, entityCode, currency, netIncomeMinor: s.netIncomeMinor, ledgerNetIncomeMinor: s.ledgerNetIncomeMinor, ties: true, message: null });
+    } catch (e) {
+      const details = (e as { details?: { axiomId?: string; netIncomeMinor?: number; ledgerNetIncomeMinor?: number } }).details;
+      if (details?.axiomId !== 'AX-FS-01') throw e;
+      out.push({ statement, entityCode, currency, netIncomeMinor: details.netIncomeMinor ?? null, ledgerNetIncomeMinor: details.ledgerNetIncomeMinor ?? null, ties: false, message: (e as Error).message });
+    }
+  };
+  for (const e of chart.entities) await attempt(`${e.code} income statement`, e.code, e.functional_currency, () => entityIncomeStatement(tx, chart, fsLines, e.id, periodKey));
+  await attempt('Consolidated income statement', null, reporting, () => consolidatedIncomeStatement(tx, chart, fsLines, periodKey, reporting));
+  return out;
 }
 
 export { periodKeyOf };

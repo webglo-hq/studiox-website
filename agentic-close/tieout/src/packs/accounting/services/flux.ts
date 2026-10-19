@@ -8,6 +8,7 @@
  */
 import { periodEnd, periodLabel, periodStart, shiftPeriod } from '../../../core/util/time';
 import type { AccountRow, FluxExplanationRow, JournalEntryRow } from '../../../schema';
+import { NOT_PERIOD_ACTIVITY } from '../ledger/balances';
 import type { FluxDriver } from '../model/types';
 import type { AcctContext } from './context';
 
@@ -113,9 +114,9 @@ export class FluxService {
     };
   }
 
-  /** Activity by account and by driver key for one period. */
+  /** Activity by account and by driver key for one period (year-end closing entries are not activity). */
   private async driverSums(entityId: string, periodKey: string, accountIds: Set<string>) {
-    const headers = await this.c.tx.find('journal_entries', { entity_id: entityId, status: 'posted', posting_date: { gte: periodStart(periodKey), lte: periodEnd(periodKey) } });
+    const headers = await this.c.tx.find('journal_entries', { entity_id: entityId, status: 'posted', entry_type: { notIn: NOT_PERIOD_ACTIVITY }, posting_date: { gte: periodStart(periodKey), lte: periodEnd(periodKey) } });
     const byId = new Map(headers.map((h) => [h.id, h]));
     const bills = new Map((await this.c.tx.find('bills', { entity_id: entityId })).map((b) => [b.bill_number, b]));
     const invoices = new Map((await this.c.tx.find('invoices', { entity_id: entityId, invoice_date: { gte: periodStart(shiftPeriod(periodKey, -1)), lte: periodEnd(periodKey) } })).map((i) => [i.invoice_number, i]));

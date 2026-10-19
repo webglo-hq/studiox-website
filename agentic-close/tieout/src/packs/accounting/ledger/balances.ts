@@ -16,6 +16,13 @@ export interface Balance {
 
 export type BalanceMap = Map<string, Balance>;
 
+/**
+ * Entry types that are not activity of the period they are dated in: the year-end close moves
+ * income and expense into retained earnings. Period income statements and flux leave them out;
+ * balances (and so the balance sheet) keep them.
+ */
+export const NOT_PERIOD_ACTIVITY: readonly string[] = ['closing'];
+
 function toMap(rows: { account_id?: string; debit_minor: number; credit_minor: number }[]): BalanceMap {
   const m: BalanceMap = new Map();
   for (const r of rows) {
