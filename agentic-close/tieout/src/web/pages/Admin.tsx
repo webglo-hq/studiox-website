@@ -1,18 +1,22 @@
 /**
- * Administration: people and roles (SoD-checked), segregation-of-duties controls, security
+ * Administration: people and roles (SoD-checked), segregation-of-duties controls, access requests
+ * (the second person who approves new approval authority or a control change), security
  * settings, materiality per entity, and the signed-in person's own account (password, MFA,
- * API tokens for the MCP server).
+ * API tokens for the MCP server). Invitations and password resets send the person a link; the
+ * administrator never sees a password or a link.
  */
 import { KeyRound, Plus, ShieldCheck, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, ApiError, setCsrf, type AdminData } from '../api';
+import { api, ApiError, setCsrf, type AccessRequest, type AccessRequests, type AdminData, type LinkSent } from '../api';
 import { RecoveryCodes } from '../components/RecoveryCodes';
-import { Avatar, Badge, Dialog, ErrorBox, Loading, Money, ReasonDialog, Segmented, Term } from '../components/ui';
+import { Avatar, Badge, Dialog, Empty, ErrorBox, Loading, Money, ReasonDialog, Segmented, Term } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
 import { dateTime, ROLE_LABEL } from '../lib/format';
 import { setQuery, useRoute } from '../lib/router';
 
-type Tab = 'people' | 'controls' | 'security' | 'materiality' | 'account';
+type Tab = 'people' | 'controls' | 'access' | 'security' | 'materiality' | 'account';
+/** what an access change returns when it waits for a second person */
+type Pending = { id: string; ref: string; summary: string } | null | undefined;
 
 export function Admin() {
   const route = useRoute();
@@ -20,12 +24,13 @@ export function Admin() {
   const { data, error, loading, reload } = useData(() => api<AdminData>('/admin'), []);
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading />;
+  const seesRequests = data.canManage.users || data.canManage.sod || data.canManage.access;
   return (
     <div className={loading ? 'skeleton' : undefined}>
       <div className="page-head">
         <div>
           <h1>Admin</h1>
-          <p className="lede">People, roles and the controls around them. Every change here is written to the audit log with who made it and why.</p>
+          <p className="lede">People, roles and the controls around them. Every change here is written to the audit log with who made it and why. New approval authority and control changes take effect only when a second person approves them.</p>
         </div>
       </div>
       <div style={{ marginBottom: 14 }}>
@@ -34,16 +39,18 @@ export function Admin() {
           value={tab}
           onChange={(v) => setQuery('tab', v === 'people' ? null : v)}
           options={[
-            { value: 'people', label: 'People & roles' },
-            { value: 'controls', label: 'SoD controls' },
-            { value: 'security', label: 'Security' },
-            { value: 'materiality', label: 'Materiality' },
-            { value: 'account', label: 'My account' },
+            { value: 'people' as Tab, label: 'People & roles' },
+            { value: 'controls' as Tab, label: 'SoD controls' },
+            ...(seesRequests ? [{ value: 'access' as Tab, label: data.pendingAccessRequests ? `Access requests (${data.pendingAccessRequests})` : 'Access requests' }] : []),
+            { value: 'security' as Tab, label: 'Security' },
+            { value: 'materiality' as Tab, label: 'Materiality' },
+            { value: 'account' as Tab, label: 'My account' },
           ]}
         />
       </div>
       {tab === 'people' ? <People data={data} /> : null}
       {tab === 'controls' ? <Controls data={data} /> : null}
+      {tab === 'access' && seesRequests ? <Requests /> : null}
       {tab === 'security' ? <Security data={data} /> : null}
       {tab === 'materiality' ? <Materiality data={data} /> : null}
       {tab === 'account' ? <Account data={data} /> : null}
@@ -60,18 +67,20 @@ function People({ data }: { data: AdminData }) {
   /** entity ids the roles are limited to; null = every entity */
   const [scope, setScope] = useState<string[] | null>(null);
   const legal = data.entities.filter((e) => e.kind === 'legal');
+  /** why the role change is needed (shown to the person who approves it) */
+  const [why, setWhy] = useState('');
   const [inviting, setInviting] = useState(false);
   const [invite, setInvite] = useState({ email: '', name: '', title: '', role: 'staff_accountant' });
-  const [temp, setTemp] = useState<{ title: string; password: string } | null>(null);
   const [disabling, setDisabling] = useState<AdminData['users'][number] | null>(null);
   const [signIn, setSignIn] = useState<AdminData['users'][number] | null>(null);
   const [resettingMfa, setResettingMfa] = useState<AdminData['users'][number] | null>(null);
+  const waits = (p: Pending) => (p ? ` ${p.summary} waits for a second person to approve it (${p.ref}, under Access requests).` : '');
 
   async function saveRoles() {
     if (!editing) return;
     try {
-      await api(`/admin/users/${editing.id}/roles`, { body: { roles, entityIds: scope } });
-      toast(`Roles updated for ${editing.name}.`);
+      const r = await api<{ pending?: Pending }>(`/admin/users/${editing.id}/roles`, { body: { roles, entityIds: scope, reason: why } });
+      toast(r.pending ? `Requested.${waits(r.pending)}` : `Roles updated for ${editing.name}.`);
       setEditing(null);
       bump();
     } catch (e) {
@@ -80,8 +89,8 @@ function People({ data }: { data: AdminData }) {
   }
   async function sendInvite() {
     try {
-      const r = await api<{ tempPassword: string }>('/admin/users', { body: invite });
-      setTemp({ title: 'Invitation created', password: r.tempPassword });
+      const r = await api<{ sent: LinkSent; pending: Pending }>('/admin/users', { body: invite });
+      toast(`Invitation sent to ${r.sent.to}. ${invite.name} chooses their own password with the link.${waits(r.pending)}`);
       setInviting(false);
       setInvite({ email: '', name: '', title: '', role: 'staff_accountant' });
       bump();
@@ -103,9 +112,9 @@ function People({ data }: { data: AdminData }) {
 
   async function resetPassword(u: AdminData['users'][number]) {
     try {
-      const r = await api<{ tempPassword: string }>(`/admin/users/${u.id}/password-reset`, { body: {} });
+      const r = await api<{ sent: LinkSent }>(`/admin/users/${u.id}/password-reset`, { body: {} });
       setSignIn(null);
-      setTemp({ title: `Temporary password for ${u.name}`, password: r.tempPassword });
+      toast(u.status === 'invited' ? `A new invitation link was sent to ${r.sent.to}.` : `A single-use link to choose a new password was sent to ${r.sent.to}. ${u.name} was signed out everywhere.`);
       bump();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Could not reset the password.', 'bad');
@@ -180,7 +189,7 @@ function People({ data }: { data: AdminData }) {
                   </td>
                   <td>{u.mfa ? <Badge tone="good">On</Badge> : <Badge tone="warn">Off</Badge>}</td>
                   <td className="hide-sm">{u.lastLoginAt ? dateTime(u.lastLoginAt) : <span className="muted">never</span>}</td>
-                  <td>{u.status === 'active' ? <Badge tone="good">Active</Badge> : <Badge tone="bad">{u.status}</Badge>}</td>
+                  <td>{u.status === 'active' ? <Badge tone="good">Active</Badge> : u.status === 'invited' ? <Badge tone="info" title="Has not chosen a password yet">Invited</Badge> : <Badge tone="bad">{u.status}</Badge>}</td>
                   {data.canManage.users ? (
                     <td className="r" style={{ whiteSpace: 'nowrap' }}>
                       {u.id === me.user.id ? (
@@ -196,6 +205,7 @@ function People({ data }: { data: AdminData }) {
                               setEditing(u);
                               setRoles(u.roles);
                               setScope(u.scope ? legal.filter((e) => u.scope!.includes(e.code)).map((e) => e.id) : null);
+                              setWhy('');
                             }}
                           >
                             Roles
@@ -284,7 +294,7 @@ function People({ data }: { data: AdminData }) {
         }
       >
         <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-          Combinations that break segregation of duties (for example, preparing and approving journal entries without limits) are refused.
+          Combinations that break segregation of duties (for example, preparing and approving journal entries without limits) are refused. Approval authority the person does not hold yet (approving entries, reconciliations, variances or payments, signing off or locking the close, or setting agent autonomy) takes effect once a second person approves it.
         </p>
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="sr-only">Roles</legend>
@@ -319,6 +329,10 @@ function People({ data }: { data: AdminData }) {
             </div>
           ) : null}
         </fieldset>
+        <label className="field" style={{ marginTop: 14 }}>
+          Why (shown to the person who approves new authority)
+          <input value={why} maxLength={300} onChange={(e) => setWhy(e.target.value)} placeholder="For example: covering for Jordan during the October close" />
+        </label>
       </Dialog>
 
       <Dialog
@@ -337,6 +351,9 @@ function People({ data }: { data: AdminData }) {
         }
       >
         <div className="stack">
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            They receive a link to choose their own password; it works once and expires after 72 hours. A role with approval authority starts once a second person approves it.
+          </p>
           <label className="field">
             Email
             <input type="email" autoComplete="off" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
@@ -363,22 +380,6 @@ function People({ data }: { data: AdminData }) {
       </Dialog>
 
       <Dialog
-        open={!!temp}
-        onClose={() => setTemp(null)}
-        title={temp?.title ?? ''}
-        actions={
-          <button className="btn primary" onClick={() => setTemp(null)}>
-            Done
-          </button>
-        }
-      >
-        <p>Share this one-time password with the person through a separate channel. It is shown only once, and Tieout asks them to choose their own password the first time they sign in with it.</p>
-        <p className="mono" style={{ fontSize: 18, userSelect: 'all' }}>
-          {temp?.password}
-        </p>
-      </Dialog>
-
-      <Dialog
         open={!!signIn}
         onClose={() => setSignIn(null)}
         title={`Sign-in help for ${signIn?.name ?? ''}`}
@@ -389,17 +390,31 @@ function People({ data }: { data: AdminData }) {
         }
       >
         <div className="stack">
-          <div className="stack" style={{ gap: 6 }}>
-            <strong>Forgotten password</strong>
-            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-              Issues a one-time temporary password and signs {signIn?.name ?? 'them'} out everywhere.
-            </p>
-            <div>
-              <button className="btn" onClick={() => signIn && void resetPassword(signIn)}>
-                Issue a temporary password
-              </button>
+          {signIn?.status === 'invited' ? (
+            <div className="stack" style={{ gap: 6 }}>
+              <strong>Invitation not accepted yet</strong>
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                Sends {signIn.name} a new invitation link; earlier links stop working. You never see the link.
+              </p>
+              <div>
+                <button className="btn" onClick={() => void resetPassword(signIn)}>
+                  Send a new invitation link
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="stack" style={{ gap: 6 }}>
+              <strong>Forgotten password</strong>
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                Their current password stops working, they are signed out everywhere, and they receive a single-use link to choose a new one (valid for 24 hours). You never see the link or a password.
+              </p>
+              <div>
+                <button className="btn" onClick={() => signIn && void resetPassword(signIn)}>
+                  Send a password-reset link
+                </button>
+              </div>
+            </div>
+          )}
           <div className="stack" style={{ gap: 6 }}>
             <strong>Lost authenticator</strong>
             <p className="muted" style={{ margin: 0, fontSize: 14 }}>
@@ -452,8 +467,8 @@ function Controls({ data }: { data: AdminData }) {
   const [toggling, setToggling] = useState<AdminData['sod'][number] | null>(null);
   async function toggle(code: string, enabled: boolean, reason: string) {
     try {
-      await api(`/admin/sod/${encodeURIComponent(code)}`, { body: { enabled, reason } });
-      toast(`${code} ${enabled ? 'enabled' : 'disabled'}. Recorded in the audit log.`);
+      const r = await api<{ pending: { ref: string } }>(`/admin/sod/${encodeURIComponent(code)}`, { body: { enabled, reason } });
+      toast(`Requested: turning ${code} ${enabled ? 'on' : 'off'} waits for a second person to approve it (${r.pending.ref}, under Access requests).`);
       bump();
     } catch (e) {
       toast(e instanceof ApiError ? e.message : 'Could not change the control.', 'bad');
@@ -468,7 +483,7 @@ function Controls({ data }: { data: AdminData }) {
           <Term id="tie:SegregationOfDuties">Segregation of duties</Term>
         </h2>
         <span className="right muted" style={{ fontSize: 13 }}>
-          Enforced by the app and, for maker-checker, by a database trigger as well.
+          Enforced by the app and, for maker-checker, by a database trigger as well. A change takes effect once a second person approves it.
         </span>
       </div>
       <div className="table-wrap">
@@ -509,12 +524,163 @@ function Controls({ data }: { data: AdminData }) {
       <ReasonDialog
         open={!!toggling}
         title={toggling?.enabled ? `Turn off ${toggling.code}?` : `Turn on ${toggling?.code ?? ''}?`}
-        label="Documented reason (at least 10 characters; auditors will read this)"
+        label="Documented reason (at least 10 characters; the approver and auditors will read this)"
         min={10}
-        confirm={toggling?.enabled ? 'Turn off control' : 'Turn on control'}
+        confirm={toggling?.enabled ? 'Request to turn off' : 'Request to turn on'}
         tone={toggling?.enabled ? 'danger' : 'primary'}
         onCancel={() => setToggling(null)}
         onConfirm={(reason) => toggling && void toggle(toggling.code, !toggling.enabled, reason)}
+      />
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ access requests (two people)
+const REQUEST_STATUS: Record<string, { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral' }> = {
+  pending: { label: 'Waiting', tone: 'warn' },
+  approved: { label: 'Approved', tone: 'good' },
+  rejected: { label: 'Rejected', tone: 'bad' },
+  cancelled: { label: 'Withdrawn', tone: 'neutral' },
+  superseded: { label: 'Replaced', tone: 'neutral' },
+};
+
+function Requests() {
+  const { toast, bump, version } = useApp();
+  const { data, error, reload } = useData(() => api<AccessRequests>('/access-requests'), [version]);
+  const [approving, setApproving] = useState<AccessRequest | null>(null);
+  const [note, setNote] = useState('');
+  const [rejecting, setRejecting] = useState<AccessRequest | null>(null);
+  async function decide(r: AccessRequest, action: 'approve' | 'reject' | 'cancel', body: Record<string, string> = {}) {
+    try {
+      await api(`/access-requests/${r.id}/${action}`, { body });
+      toast(action === 'approve' ? `${r.ref} approved: ${r.summary}. It applies now.` : action === 'reject' ? `${r.ref} rejected. Nothing changed.` : `${r.ref} withdrawn.`);
+      bump();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'Could not record the decision.', 'bad');
+    } finally {
+      setApproving(null);
+      setRejecting(null);
+    }
+  }
+  if (error) return <ErrorBox error={error} onRetry={reload} />;
+  if (!data) return <Loading />;
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Access requests</h2>
+        <span className="right muted" style={{ fontSize: 13 }}>
+          New approval authority and changes to SoD controls need a second person: never the requester or the person who gains access, and someone whose own authority covers it.
+        </span>
+      </div>
+      {data.items.length === 0 ? (
+        <Empty title="No access requests">When someone asks to give a person approval authority, or to change a control, it waits here for a second person.</Empty>
+      ) : (
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col">Request</th>
+                <th scope="col">Asked by</th>
+                <th scope="col">Status</th>
+                <th scope="col">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <strong>
+                      <span className="mono">{r.ref}</span> {r.summary}
+                    </strong>
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      Why: {r.reason}
+                    </div>
+                    {r.status === 'pending' && !r.canDecide && r.blockedBy.length ? (
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        You cannot decide this: {r.blockedBy.join(' ')}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td>
+                    {r.requestedBy}
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {dateTime(r.requestedAt)}
+                    </div>
+                  </td>
+                  <td>
+                    <Badge tone={REQUEST_STATUS[r.status]?.tone ?? 'neutral'}>{REQUEST_STATUS[r.status]?.label ?? r.status}</Badge>
+                    {r.decidedBy ? (
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        by {r.decidedBy}
+                        {r.note ? `: ${r.note}` : ''}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                    {r.canDecide ? (
+                      <>
+                        <button
+                          className="btn primary small"
+                          onClick={() => {
+                            setNote('');
+                            setApproving(r);
+                          }}
+                        >
+                          Approve<span className="sr-only"> {r.ref}</span>
+                        </button>{' '}
+                        <button className="btn ghost small" onClick={() => setRejecting(r)}>
+                          Reject<span className="sr-only"> {r.ref}</span>
+                        </button>
+                      </>
+                    ) : null}
+                    {r.canCancel ? (
+                      <button className="btn ghost small" onClick={() => void decide(r, 'cancel')}>
+                        Withdraw<span className="sr-only"> {r.ref}</span>
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Dialog
+        open={!!approving}
+        onClose={() => setApproving(null)}
+        title={`Approve ${approving?.ref ?? ''}?`}
+        actions={
+          <>
+            <button className="btn" onClick={() => setApproving(null)}>
+              Cancel
+            </button>
+            <button className="btn primary" onClick={() => approving && void decide(approving, 'approve', { note })}>
+              Approve and apply
+            </button>
+          </>
+        }
+      >
+        <p style={{ marginTop: 0 }}>
+          <strong>{approving?.summary}</strong>
+        </p>
+        <p className="muted" style={{ fontSize: 14 }}>
+          Asked by {approving?.requestedBy}. Why: {approving?.reason}
+        </p>
+        <label className="field">
+          Note for the audit log (optional)
+          <input data-autofocus value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="For example: confirmed with the board minutes" />
+        </label>
+      </Dialog>
+      <ReasonDialog
+        open={!!rejecting}
+        title={`Reject ${rejecting?.ref ?? ''}?`}
+        label="Why (the requester and auditors will read this)"
+        min={5}
+        confirm="Reject request"
+        onCancel={() => setRejecting(null)}
+        onConfirm={(reason) => rejecting && void decide(rejecting, 'reject', { reason })}
       />
     </section>
   );

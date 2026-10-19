@@ -191,6 +191,11 @@ export function Login() {
                   </a>
                 ) : null}
               </form>
+              {opts?.demo ? (
+                <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+                  Invited, or reset your password? In the demo, those links arrive in the <a href="#/mailbox">demo mailbox</a> instead of by email.
+                </p>
+              ) : null}
             </>
           ) : stage === 'newpw' ? (
             <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void choosePassword(e)}>

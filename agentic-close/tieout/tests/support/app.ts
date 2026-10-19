@@ -68,3 +68,17 @@ export class HttpClient {
     return this.call<T>('DELETE', path);
   }
 }
+
+/**
+ * Read the newest message to `email` in the demo mailbox, as its addressee would: from a browser
+ * that is signed out. Returns its text and the single-use link token in it, if any.
+ */
+export async function readMail(t: TestApp, email: string): Promise<{ text: string; token: string | null }> {
+  const reader = t.client();
+  const box = await reader.get<{ messages: { id: string; to: string }[] }>('/api/demo/mailbox');
+  const m = box.body.messages.find((x) => x.to === email);
+  if (!m) throw new Error(`no mail for ${email}`);
+  const opened = await reader.post<{ text: string }>(`/api/demo/mailbox/${m.id}/open`, {});
+  if (opened.status !== 200) throw new Error(`could not open mail for ${email}: ${JSON.stringify(opened.body)}`);
+  return { text: opened.body.text, token: /token=(tkl_[0-9a-f]{64})/.exec(opened.body.text)?.[1] ?? null };
+}

@@ -128,8 +128,8 @@ export interface Store<M, I = M> {
   /** Run `fn` in a serialisable unit of work scoped to one tenant. Rolls back on throw. */
   tx<R>(tenantId: string, fn: (tx: Tx<M, I>) => Promise<R>): Promise<R>;
   /**
-   * The only read that crosses tenants: which tenant a sign-in email, a session id or an API-token
-   * hash belongs to (each is unique across tenants). The row itself is then read inside that
+   * The only read that crosses tenants: which tenant a sign-in email, a session id, an API-token
+   * hash or a credential-link hash belongs to (each is unique across tenants). The row itself is then read inside that
    * tenant, so nothing ever switches tenant isolation off (migration 0010).
    */
   tenantOf(kind: DirectoryKind, key: string): Promise<string | null>;
@@ -138,7 +138,7 @@ export interface Store<M, I = M> {
   close(): Promise<void>;
 }
 
-export type DirectoryKind = 'user_email' | 'session' | 'api_token';
+export type DirectoryKind = 'user_email' | 'session' | 'api_token' | 'credential_link';
 
 export class StoreError extends Error {
   readonly code: string;

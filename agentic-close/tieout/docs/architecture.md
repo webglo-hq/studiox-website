@@ -94,7 +94,7 @@ sequenceDiagram
 | Passwords | scrypt (N=2¹⁵, r=8, p=3), PHC strings, rehash on login, lockout, per-IP and per-account rate limits | `src/core/auth/password.ts` |
 | MFA | TOTP (RFC 6238, wall-clock time) with replay protection; secrets AES-256-GCM encrypted at rest; ten one-time recovery codes stored as hashes; administrator reset with a documented reason | `src/core/auth/totp.ts`, `src/core/auth/recovery.ts`, `src/app/admin.ts` |
 | SSO | OpenID Connect code flow + PKCE, ID tokens verified against JWKS | `src/core/auth/oidc.ts` |
-| Authorization | RBAC (8 roles, 34 permissions), entity scoping, SoD rules, approval limits, maker-checker also as a DB trigger | `src/packs/accounting/controls`, `migrations/0002_accounting.sql` |
+| Authorization | RBAC (8 roles, 35 permissions), entity scoping, SoD rules, approval limits, maker-checker also as a DB trigger, a second person for new approval authority and SoD changes | `src/packs/accounting/controls`, `migrations/0002_accounting.sql` |
 | Tenant isolation | Store-level scoping plus PostgreSQL row-level security (FORCE) on every tenant table | `src/core/store/postgres.ts`, `migrations/0003_tenant_rls.sql` |
 | Integrity | Balanced, immutable entries; open periods; hash-chained append-only audit log | triggers in `migrations/`, `src/core/audit/chain.ts` |
 | Prompt injection | Untrusted-text scanning, redaction in titles, data-boundary wrapping, flagged items forced to a person | `src/core/agent/injection.ts` |

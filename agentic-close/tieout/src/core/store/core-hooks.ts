@@ -1,4 +1,4 @@
-/** MemoryStore emulation of the core schema's triggers (mirrors migrations/0001_core.sql and 0009). */
+/** MemoryStore emulation of the core schema's triggers and checks (mirrors migrations/0001_core.sql, 0009 and 0012). */
 import { computeAuditHash } from '../audit/chain';
 import { ZERO_HASH } from '../util/hash';
 import type { MemoryHooks } from './memory';
@@ -34,9 +34,11 @@ export const coreHooks: MemoryHooks = {
     users: (row) => {
       if (String(row.email) !== String(row.email).toLowerCase()) throw new StoreError('23514', 'email must be lower-case');
     },
+    access_requests: (row) => twoPeople(row),
   },
   beforeUpdate: {
     audit_log: forbid('audit_log', 'UPDATE'),
+    access_requests: (_old, next) => twoPeople(next),
     skill_policies: (_old, next, db) => oneCurrentPolicy(next, db),
     proposals: (_old, next) => proposalChecks(next),
   },
@@ -58,4 +60,11 @@ function proposalChecks(row: Record<string, unknown>) {
   if (Number(row.amount_minor) < 0) throw new StoreError('23514', 'proposal amount must be non-negative');
   if (row.status === 'rejected' && !row.decision_reason) throw new StoreError('23514', 'a rejection needs a reason');
   if (row.decided_by && row.decided_by === row.prepared_by) throw new StoreError('23514', 'AX-SOD-01: a proposal cannot be decided by its preparer');
+}
+
+/** migrations/0012: an access request is never decided by its requester, nor by the person it is for. */
+function twoPeople(row: Record<string, unknown>) {
+  if (row.decided_by && row.decided_by === row.requested_by) throw new StoreError('23514', 'new row for relation "access_requests" violates check constraint: decided by its requester');
+  if (row.decided_by && row.subject_user_id && row.decided_by === row.subject_user_id) throw new StoreError('23514', 'new row for relation "access_requests" violates check constraint: decided by the person it grants access to');
+  if (row.status === 'approved' && !row.decided_by) throw new StoreError('23514', 'new row for relation "access_requests" violates check constraint: approved without an approver');
 }

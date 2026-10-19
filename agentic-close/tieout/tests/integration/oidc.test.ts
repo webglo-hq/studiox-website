@@ -8,7 +8,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToBase64Url } from '../../src/core/util/base64';
 import { PEOPLE } from '../../src/packs/accounting/seed/company';
 import { SESSION_COOKIE } from '../../src/server/app';
-import { testApp, TEST_ORIGIN, type TestApp } from '../support/app';
+import { readMail, testApp, TEST_ORIGIN, type TestApp } from '../support/app';
 
 const ISSUER = 'https://idp.example.test';
 const CLIENT = 'tieout-web';
@@ -139,16 +139,18 @@ describe('single sign-on with OpenID Connect', () => {
     expect(items.some((i) => /single sign-on/.test(i.summary))).toBe(true);
   });
 
-  it('lets an invited person in through SSO and retires the temporary password', async () => {
+  it('lets an invited person in through SSO and retires the invitation link', async () => {
     const avery = t.client();
     await avery.login('avery');
-    const invited = await avery.post<{ tempPassword: string }>('/api/admin/users', { email: 'quinn.reyes@bramblewood.example', name: 'Quinn Reyes', role: 'fpa_analyst' });
+    const invited = await avery.post('/api/admin/users', { email: 'quinn.reyes@bramblewood.example', name: 'Quinn Reyes', role: 'fpa_analyst' });
     expect(invited.status).toBe(200);
+    const { token } = await readMail(t, 'quinn.reyes@bramblewood.example');
     const { res, session } = await signIn('quinn.reyes@bramblewood.example');
     expect(res.status).toBe(200);
-    // no "choose a new password" step for someone who signs in with the identity provider
+    // no password to choose for someone who signs in with the identity provider
     expect((await t.app.fetch(new Request(`${TEST_ORIGIN}/api/home`, { headers: { cookie: session! } }))).status).toBe(200);
-    const withTemp = await t.client().post('/api/auth/login', { email: 'quinn.reyes@bramblewood.example', password: invited.body.tempPassword });
-    expect(withTemp.status).toBe(401);
+    const late = await t.client().post<{ error: { message: string } }>('/api/auth/link', { token, password: 'quinn-sets-a-password-anyway' });
+    expect(late.status).toBe(404);
+    expect(late.body.error.message).toBe('Your account is already set up. Sign in instead.');
   });
 });

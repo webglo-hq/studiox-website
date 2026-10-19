@@ -35,6 +35,7 @@ export const PERMISSIONS = {
   'import.run': ['integrations', 'Upload and import source files'],
   'import.view': ['integrations', 'View connectors and import history'],
   'admin.users': ['admin', 'Invite users, assign roles, disable accounts'],
+  'access.approve': ['admin', 'Approve access grants and control changes another person requested'],
   'admin.sod': ['admin', 'Configure segregation-of-duties rules'],
   'admin.settings': ['admin', 'Edit tenant settings, materiality and approval limits'],
   'mcp.token': ['admin', 'Create personal API tokens for the MCP server'],
@@ -51,6 +52,13 @@ export interface RoleDef {
   approvalLimitMinor: number | null;
   permissions: Permission[];
 }
+
+/**
+ * Permissions added after the demo scenario was fixed. The seed gives their role grants explicit
+ * ids: drawing those ids from the scenario's seeded random stream would shift every amount it
+ * generates afterwards.
+ */
+export const LATE_PERMISSIONS: ReadonlySet<Permission> = new Set(['access.approve']);
 
 export const ROLES: RoleDef[] = [
   {
@@ -79,14 +87,14 @@ export const ROLES: RoleDef[] = [
     name: 'Controller',
     description: 'Owns the close: approves up to $250,000, sets agent autonomy, locks periods.',
     approvalLimitMinor: 25_000_000,
-    permissions: [...READ_ALL, 'je.create', 'je.approve', 'je.reverse', 'coding.approve', 'recon.prepare', 'recon.review', 'flux.explain', 'flux.approve', 'agent.run', 'close.manage', 'close.signoff', 'close.lock', 'close.package', 'skill.policy.edit', 'skill.autonomy.set', 'skill.eval.run', 'payment.approve', 'audit.view', 'audit.verify', 'import.run', 'mcp.token'],
+    permissions: [...READ_ALL, 'je.create', 'je.approve', 'je.reverse', 'coding.approve', 'recon.prepare', 'recon.review', 'flux.explain', 'flux.approve', 'agent.run', 'close.manage', 'close.signoff', 'close.lock', 'close.package', 'skill.policy.edit', 'skill.autonomy.set', 'skill.eval.run', 'payment.approve', 'audit.view', 'audit.verify', 'import.run', 'mcp.token', 'access.approve'],
   },
   {
     key: 'cfo',
     name: 'CFO',
     description: 'Final approver with no limit; signs the close package.',
     approvalLimitMinor: null,
-    permissions: [...READ_ALL, 'je.approve', 'je.reverse', 'recon.review', 'flux.approve', 'close.signoff', 'close.lock', 'close.package', 'skill.autonomy.set', 'skill.policy.edit', 'payment.approve', 'audit.view', 'audit.verify', 'agent.run', 'mcp.token'],
+    permissions: [...READ_ALL, 'je.approve', 'je.reverse', 'recon.review', 'flux.approve', 'close.signoff', 'close.lock', 'close.package', 'skill.autonomy.set', 'skill.policy.edit', 'payment.approve', 'audit.view', 'audit.verify', 'agent.run', 'mcp.token', 'access.approve'],
   },
   {
     key: 'fpa_analyst',

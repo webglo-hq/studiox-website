@@ -134,7 +134,7 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
 
   async tenantOf(kind: DirectoryKind, key: string): Promise<string | null> {
     // the in-memory store has no row-level security; the lookup reads the keyed table directly
-    const [table, column] = kind === 'user_email' ? ['users', 'email'] : kind === 'session' ? ['sessions', 'id'] : ['api_tokens', 'token_hash'];
+    const [table, column] = { user_email: ['users', 'email'], session: ['sessions', 'id'], api_token: ['api_tokens', 'token_hash'], credential_link: ['credential_links', 'token_hash'] }[kind];
     const row = this.findRows(table, { [column]: key } as Where<Row>, { limit: 1 }, null)[0];
     return row ? (row.tenant_id as string) : null;
   }

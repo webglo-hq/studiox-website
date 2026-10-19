@@ -101,6 +101,25 @@ writes).
 Approval limits route by USD equivalent at the closing rate (AX-SOD-04). Journal-entry maker-checker
 is also a database trigger.
 
+**Revised 2026-10-19 (independent review, TO-C1).** An administrator could invite a CFO, read the
+temporary password on screen, sign in as that CFO and approve entries: one person minted an approver.
+Now nobody handles another person's credential and nobody grants authority alone
+(`migrations/0012_access_control.sql`):
+
+* Invitations and password resets send the person a single-use link (72 hours for an invitation,
+  24 for a reset; only its SHA-256 is stored; a newer link replaces older ones) through an outbox
+  whose bodies are sealed with the application key. Production queues them for the email relay. The
+  demo delivers them to a demo mailbox on the sign-in page that opens a message only in a signed-out
+  browser and writes every opening to the audit log, so the demo stays usable without letting the
+  acting administrator use a link from their own session, or unnoticed. The administrator's screens
+  and API show where a link went, never the link.
+* A grant that gives someone approval authority they did not hold (approving entries, reconciliations,
+  variances or payments, signing off, packaging or locking the close, setting agent autonomy or
+  policy, approving access), or any change to an SoD rule, is an access request. It changes nothing
+  until a second person approves it: never the requester, never the person who gains the access
+  (both also CHECK constraints), and someone whose own authority covers what is granted (a
+  Controller cannot approve a CFO). Narrowing access and preparer roles apply at once.
+
 ## ADR-010 · Sessions and CSRF without client-readable secrets
 
 **Decision.** Server-side sessions: random 256-bit token in an HttpOnly, SameSite=Strict cookie; only
@@ -119,9 +138,10 @@ Until two-factor is finished, a session may call only `/api/auth/me`, logout, en
 password alone never yields an API token or a changed credential. Switching two-factor on issues ten
 one-time recovery codes (hashed, `migrations/0004_mfa_recovery.sql`); a lost authenticator is reset by
 an administrator with a documented reason, which signs the person out everywhere. TOTP is checked
-against wall-clock time, never the demo's shifted business clock. A temporary password (invitation or
-administrator reset) must be replaced at the next sign-in before the session can do anything else; a
-reset also retires the person's API tokens, and signing in through SSO retires the temporary password.
+against wall-clock time, never the demo's shifted business clock. An administrator reset sends the
+person a single-use link (ADR-009) and retires their password, sessions and API tokens; signing in
+through SSO completes an invitation and retires its link. (A temporary password from before migration
+0012 must still be replaced at the next sign-in before the session can do anything else.)
 
 ## ADR-012 · Tenant isolation in the database (row-level security)
 

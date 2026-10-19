@@ -82,3 +82,9 @@ export interface ClosePackageContent {
   highlights?: string[];
   readiness?: { ready: boolean; messages: string[] };
 }
+
+/** What an access request changes once a second person approves it (two-person rule). */
+export type AccessChange =
+  /** a person's complete set of roles, limited to some entities or (null) every entity */
+  | { kind: 'role_grant'; roles: string[]; entityIds: string[] | null; entityCodes: string[] | null }
+  | { kind: 'sod_rule'; code: string; enabled: boolean };

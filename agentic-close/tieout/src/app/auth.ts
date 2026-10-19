@@ -123,12 +123,14 @@ export async function oidcCallback(ctx: AppContext, params: { code: string | nul
   const email = String(claims.email ?? '').trim().toLowerCase();
   if (!email || claims.email_verified !== true) throw unauthenticated('Your identity provider did not confirm a verified email address.');
   const user = await userByEmail(ctx, email);
-  if (!user || user.status !== 'active' || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
+  if (!user || (user.status !== 'active' && user.status !== 'invited') || user.kind !== 'human') throw unauthenticated('There is no active Tieout account for that email. Ask an administrator to invite you.');
   return ctx.db.tx(user.tenant_id, async (tx) => {
     const now = ctx.clock.now().toISOString();
-    // signing in through the identity provider retires any temporary Tieout password
+    // signing in through the identity provider retires any temporary Tieout password, and it
+    // completes an invitation: the account becomes active and the invitation link stops working
     const retire = user.must_change_password ? { must_change_password: false, password_hash: await ctx.hasher.hash(`${secureToken(24)}-retired`) } : {};
-    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now, ...retire });
+    await tx.update('users', user.id, { failed_logins: 0, locked_until: null, last_login_at: now, ...retire, ...(user.status === 'invited' ? { status: 'active' as const } : {}) });
+    if (user.status === 'invited') for (const l of await tx.find('credential_links', { user_id: user.id, purpose: 'enrolment', used_at: { isNull: true }, revoked_at: { isNull: true } })) await tx.update('credential_links', l.id, { revoked_at: now });
     const actor = await resolveUserActor(tx, user.id);
     const tenant = await tx.get('tenants', user.tenant_id);
     const mfaRequired = (tenant?.settings.mfaRequiredRoles ?? []).some((r) => actor.roles.includes(r));

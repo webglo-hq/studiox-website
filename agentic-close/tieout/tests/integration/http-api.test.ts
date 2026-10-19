@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { adapter } from '../../src/integrations/adapters';
 import { PEOPLE } from '../../src/packs/accounting/seed/company';
 import { SESSION_COOKIE } from '../../src/server/app';
-import { testApp, TEST_ORIGIN, TEST_PASSWORD, type HttpClient, type TestApp } from '../support/app';
+import { readMail, testApp, TEST_ORIGIN, TEST_PASSWORD, type HttpClient, type TestApp } from '../support/app';
 
 const P = '2026-09';
 interface Item {
@@ -265,18 +265,18 @@ describe('HTTP API: entity scope', () => {
     const uk = admin.entities.find((e) => e.code === 'BWL-UK')!;
     const us = admin.entities.find((e) => e.code === 'BWL-US')!;
     const sam = admin.users.find((u) => u.name === 'Sam Rivera')!;
-    const invited = await avery.post<{ userId: string; tempPassword: string }>('/api/admin/users', { email: 'morgan.ellis@bramblewood.example', name: 'Morgan Ellis', title: 'IT Administrator, UK', role: 'admin' });
+    const invited = await avery.post<{ userId: string }>('/api/admin/users', { email: 'morgan.ellis@bramblewood.example', name: 'Morgan Ellis', title: 'IT Administrator, UK', role: 'admin' });
     expect(invited.status).toBe(200);
     expect((await avery.post(`/api/admin/users/${invited.body.userId}/roles`, { roles: ['admin'], entityIds: [uk.id] })).status).toBe(200);
 
+    // Morgan chooses a password with the invitation link sent to them (the inviter never sees one)
+    const { token } = await readMail(t, 'morgan.ellis@bramblewood.example');
+    expect((await t.client().post('/api/auth/link', { token, password: 'morgan-chooses-a-long-passphrase' })).status).toBe(200);
     const morgan = t.client();
     // a different client address than the rest of the suite (the Node server sets this header from the socket)
-    const login = await morgan.post<{ csrfToken: string }>('/api/auth/login', { email: 'morgan.ellis@bramblewood.example', password: invited.body.tempPassword }, { 'x-tieout-client-ip': '203.0.113.7' });
+    const login = await morgan.post<{ csrfToken: string }>('/api/auth/login', { email: 'morgan.ellis@bramblewood.example', password: 'morgan-chooses-a-long-passphrase' }, { 'x-tieout-client-ip': '203.0.113.7' });
     expect(login.status).toBe(200);
     morgan.csrf = login.body.csrfToken;
-    // an invitation's temporary password is replaced before anything else
-    expect((await morgan.get('/api/admin')).status).toBe(401);
-    expect((await morgan.post('/api/auth/password', { current: invited.body.tempPassword, next: 'morgan-chooses-a-long-passphrase' })).status).toBe(200);
     // people with access beyond the UK are out of reach: roles, sign-in resets, disabling
     const casey = admin.users.find((u) => u.name === 'Casey Morgan')!;
     expect((await morgan.post(`/api/admin/users/${sam.id}/roles`, { roles: ['staff_accountant'], entityIds: [uk.id] })).status).toBe(403);

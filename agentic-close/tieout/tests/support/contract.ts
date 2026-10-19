@@ -159,6 +159,24 @@ export function storeContract(getDb: () => Db) {
     expect(await db.tenantOf('api_token', 'f'.repeat(64))).toBeNull();
   });
 
+  it('TO-C1: refuses an access request decided by its requester, or by the person it grants access to', async () => {
+    const db = getDb();
+    const at = '2026-10-02T09:05:00.000Z';
+    const { req, casey, riley, alex } = await db.tx(T, async (tx) => {
+      const { casey, riley } = await fixtureIds(tx);
+      const alex = (await tx.findOne('users', { email: PEOPLE.find((p) => p.key === 'alex')!.email }))!.id;
+      const req = await tx.insert('access_requests', { ref: `AR-C${++seq}`, kind: 'role_grant', subject_user_id: riley, change: { kind: 'role_grant', roles: ['cfo'], entityIds: null, entityCodes: null }, summary: 'Riley Chen: CFO', reason: 'Store contract', requested_by: casey, requested_at: '2026-10-02T09:00:00.000Z', status: 'pending', decided_by: null, decided_at: null, decision_note: null });
+      return { req, casey, riley, alex };
+    });
+    for (const decider of [casey, riley]) await expect(db.tx(T, (tx) => tx.update('access_requests', req.id, { status: 'approved', decided_by: decider, decided_at: at }))).rejects.toThrow(/violates check constraint/);
+    await expect(db.tx(T, (tx) => tx.update('access_requests', req.id, { status: 'approved' }))).rejects.toThrow(/violates check constraint/);
+    expect((await db.tx(T, (tx) => tx.update('access_requests', req.id, { status: 'approved', decided_by: alex, decided_at: at }))).status).toBe('approved');
+    // a link is opened before anyone signs in: its token hash names the tenant
+    await db.tx(T, (tx) => tx.insert('credential_links', { user_id: riley, purpose: 'password_reset', token_hash: '9'.repeat(64), created_by: alex, created_at: at, expires_at: '2026-10-03T09:05:00.000Z', used_at: null, revoked_at: null }));
+    expect(await db.tenantOf('credential_link', '9'.repeat(64))).toBe(T);
+    expect(await db.tenantOf('credential_link', '8'.repeat(64))).toBeNull();
+  });
+
   it('scopes every read and write to one tenant', async () => {
     const db = getDb();
     expect(await db.tx('ten_someone_else', (tx) => tx.count('journal_entries', {}))).toBe(0);

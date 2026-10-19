@@ -1,18 +1,25 @@
 /**
  * Administration: people (invite, roles with entity scope, disable, two-factor and password
  * resets), SoD rules, tenant settings and materiality. Every change is audited.
+ *
+ * An administrator never handles a credential: invitations and password resets send the person a
+ * single-use link through the outbox (credentials.ts). And an administrator cannot create an
+ * approver alone: approval authority and SoD rule changes are requests that a second person
+ * approves (access.ts).
  */
 import { audit } from '../core/audit/audit';
 import type { TenantSettings } from '../core/tenancy';
 import { conflict, forbidden, notFound, sodViolation, validation } from '../core/util/errors';
-import { secureToken } from '../core/util/random';
 import type { MaterialitySettings } from '../packs/accounting/model/types';
 import { ROLES } from '../packs/accounting/controls/permissions';
+import { authorityOf, newAuthority } from '../packs/accounting/controls/access';
 import { evaluateAssignment } from '../packs/accounting/controls/sod';
 import { closeOntology } from '../packs/accounting/ontology';
 import type { DbTx } from '../schema';
+import { applyRoles, describeRoles, requestChange } from './access';
 import type { AppContext, RequestUser } from './context';
 import { requirePermission } from './context';
+import { sendLink } from './credentials';
 
 /** An administrator limited to some entities manages only people whose access lies within them. */
 async function assertCanManage(tx: DbTx, u: RequestUser, userId: string) {
@@ -29,9 +36,10 @@ async function revokeSessions(tx: DbTx, userId: string, now: string, reason: str
 /**
  * Set a person's roles and, optionally, the legal entities those roles apply to (entity scope).
  * No entities (or an empty list) means every entity. An administrator who is limited to some
- * entities can only grant access within them.
+ * entities can only grant access within them. A change that gives the person approval authority
+ * they did not hold waits for a second person (an access request); anything else applies now.
  */
-export async function assignRoles(ctx: AppContext, u: RequestUser, userId: string, roleKeys: string[], entityIds: string[] | null = null) {
+export async function assignRoles(ctx: AppContext, u: RequestUser, userId: string, roleKeys: string[], entityIds: string[] | null = null, reason = '') {
   requirePermission(u, 'admin.users');
   if (!Array.isArray(roleKeys) || roleKeys.some((k) => !ROLES.some((r) => r.key === k))) throw validation('Unknown role.');
   if (entityIds !== null && (!Array.isArray(entityIds) || entityIds.length > 50 || entityIds.some((e) => typeof e !== 'string'))) throw validation('Choose the entities this person may work on.');
@@ -44,16 +52,17 @@ export async function assignRoles(ctx: AppContext, u: RequestUser, userId: strin
     await assertCanManage(tx, u, userId);
     const ents = scope ? await tx.find('entities', { id: { in: scope } }) : [];
     if (scope && (ents.length !== scope.length || ents.some((e) => e.kind !== 'legal'))) throw validation('Access can only be limited to legal entities.');
-    const roles = await tx.find('roles', { key: { in: roleKeys } });
-    const perms = new Set(roles.length ? (await tx.find('role_permissions', { role_id: { in: roles.map((r) => r.id) } })).map((p) => p.permission_id) : []);
+    const roles = await tx.find('roles', {});
+    const before = (await tx.find('user_roles', { user_id: userId })).map((g) => ({ roleKey: roles.find((r) => r.id === g.role_id)?.key ?? '', entityId: g.scope_entity_id }));
+    const gains = newAuthority(before, { roles: roleKeys, entityIds: scope });
+    if (!gains.length) return applyRoles(ctx, tx, u.actor, userId, roleKeys, scope, u.ip);
+    // check the combination now, so an approver is never asked for something the rules refuse
+    const perms = new Set((await tx.find('role_permissions', { role_id: { in: roles.filter((r) => roleKeys.includes(r.key)).map((r) => r.id) } })).map((p) => p.permission_id));
     const conflicts = evaluateAssignment(await tx.find('sod_rules', { enabled: true }), roleKeys, perms);
     if (conflicts.length) throw sodViolation(conflicts.map((c) => `${c.code} ${c.name}: ${c.message}`).join(' '), { conflicts });
-    for (const g of await tx.find('user_roles', { user_id: userId })) await tx.delete('user_roles', g.id);
-    const now = ctx.clock.now().toISOString();
-    for (const r of roles) for (const sid of scope ?? [null]) await tx.insert('user_roles', { user_id: userId, role_id: r.id, scope_entity_id: sid, granted_by: u.actor.id, granted_at: now });
     const codes = scope ? ents.map((e) => e.code).sort() : null;
-    await audit(tx, u.actor, ctx.clock, { action: 'admin.roles.assign', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: roles set to ${roleKeys.join(', ') || 'none'} for ${codes ? codes.join(', ') : 'all entities'}`, data: { roles: roleKeys, entities: codes } }, u.ip);
-    return { userId, roles: roleKeys, entityScope: codes };
+    const r = await requestChange(ctx, tx, u, { subjectUserId: userId, change: { kind: 'role_grant', roles: roleKeys, entityIds: scope, entityCodes: codes }, summary: `${user.display_name}: ${describeRoles(roleKeys, codes)}`, reason: reason.trim() || `Requested by ${u.actor.label}` });
+    return { userId, pending: { id: r.id, ref: r.ref, summary: r.summary, needsApprovalFor: gains } };
   });
 }
 
@@ -96,34 +105,45 @@ export async function resetMfa(ctx: AppContext, u: RequestUser, userId: string, 
   });
 }
 
-/** Issue a one-time temporary password (delivered out of band) and sign the person out everywhere. */
+/**
+ * Forgotten (or exposed) password: the current one stops working, the person is signed out
+ * everywhere and their API tokens are retired, and they receive a single-use link to choose a new
+ * one. The administrator sees where the link went, never the link.
+ */
 export async function resetPassword(ctx: AppContext, u: RequestUser, userId: string) {
   requirePermission(u, 'admin.users');
   if (userId === u.actor.id) throw forbidden('Change your own password under My account.');
-  const tempPassword = `${secureToken(12)}-Tmp`;
-  const hash = await ctx.hasher.hash(tempPassword);
   return ctx.db.tx(u.tenantId, async (tx) => {
     const user = await tx.get('users', userId);
     if (!user) throw notFound('User', userId);
     await assertCanManage(tx, u, userId);
     const now = ctx.clock.now().toISOString();
-    await tx.update('users', userId, { password_hash: hash, failed_logins: 0, locked_until: null, must_change_password: true });
+    // someone who has not accepted their invitation yet gets a fresh invitation link instead
+    if (user.status === 'invited') {
+      const sent = await sendLink(ctx, tx, u, user, 'enrolment', `${u.actor.label} sent you a new link to set up your Tieout account. Earlier links no longer work.`);
+      await audit(tx, u.actor, ctx.clock, { action: 'admin.user.invite_resent', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: a new invitation link was sent to ${user.email}`, data: { expiresAt: sent.expiresAt } }, u.ip);
+      return { userId, sent };
+    }
+    await tx.update('users', userId, { password_hash: null, failed_logins: 0, locked_until: null, must_change_password: false });
     await revokeSessions(tx, userId, now, 'password reset by an administrator');
     // a forgotten (or exposed) password also retires the person's API tokens
     for (const t of await tx.find('api_tokens', { user_id: userId, revoked_at: { isNull: true } })) await tx.update('api_tokens', t.id, { revoked_at: now });
-    await audit(tx, u.actor, ctx.clock, { action: 'admin.user.password_reset', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: temporary password issued; signed out everywhere`, data: {} }, u.ip);
-    return { userId, tempPassword };
+    const sent = await sendLink(ctx, tx, u, user, 'password_reset', `${u.actor.label} reset your Tieout password. Your old password no longer works.`);
+    await audit(tx, u.actor, ctx.clock, { action: 'admin.user.password_reset', subjectType: 'user', subjectId: userId, summary: `${user.display_name}: password reset; a single-use link was sent to ${user.email}; signed out everywhere`, data: { expiresAt: sent.expiresAt } }, u.ip);
+    return { userId, sent };
   });
 }
 
-/** Invite a user; returns a one-time temporary password (delivered out of band in production). */
-export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email: string; name: string; title?: string; role: string }) {
+/**
+ * Invite a person: they receive a single-use link to choose their own password (the administrator
+ * never sees one). A role with approval authority waits for a second person to approve it; until
+ * then the person can sign in but holds no role.
+ */
+export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email: string; name: string; title?: string; role: string; reason?: string }) {
   requirePermission(u, 'admin.users');
   const email = String(input.email ?? '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw validation('Enter a valid email address.');
   if (!input.name || input.name.length > 120) throw validation('Enter a name.');
-  const tempPassword = `${secureToken(12)}-Tmp`;
-  const hash = await ctx.hasher.hash(tempPassword);
   // emails are unique across tenants (sign-in looks them up globally; the column is UNIQUE too).
   // Checked before the tenant transaction: a store that serialises transactions cannot nest them.
   if (await ctx.db.tenantOf('user_email', email)) throw conflict('A user with that email already exists.');
@@ -131,23 +151,31 @@ export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email
     const role = await tx.findOne('roles', { key: input.role });
     if (!role) throw validation('Unknown role.');
     const now = ctx.clock.now().toISOString();
-    const user = await tx.insert('users', { email, display_name: input.name.trim(), title: input.title ?? null, password_hash: hash, status: 'active', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: now, must_change_password: true });
-    // an administrator limited to some entities invites people with the same limit (never wider)
-    for (const sid of u.actor.entityScope ?? [null]) await tx.insert('user_roles', { user_id: user.id, role_id: role.id, scope_entity_id: sid, granted_by: u.actor.id, granted_at: now });
+    const user = await tx.insert('users', { email, display_name: input.name.trim(), title: input.title ?? null, password_hash: null, status: 'invited', kind: 'human', mfa_enabled: false, failed_logins: 0, locked_until: null, last_login_at: null, preferences: {}, created_at: now, must_change_password: false });
     await audit(tx, u.actor, ctx.clock, { action: 'admin.user.invite', subjectType: 'user', subjectId: user.id, summary: `Invited ${input.name} as ${role.name}`, data: { role: role.key } }, u.ip);
-    return { userId: user.id, tempPassword };
+    // an administrator limited to some entities invites people with the same limit (never wider)
+    const scope = u.actor.entityScope ? [...u.actor.entityScope] : null;
+    let pending: { id: string; ref: string; summary: string } | null = null;
+    if (authorityOf(role.key).length) {
+      const codes = scope ? (await tx.find('entities', { id: { in: scope } })).map((e) => e.code).sort() : null;
+      const r = await requestChange(ctx, tx, u, { subjectUserId: user.id, change: { kind: 'role_grant', roles: [role.key], entityIds: scope, entityCodes: codes }, summary: `${user.display_name}: ${describeRoles([role.key], codes)}`, reason: String(input.reason ?? '').trim() || `Invitation of ${user.display_name} by ${u.actor.label}` });
+      pending = { id: r.id, ref: r.ref, summary: r.summary };
+    } else await applyRoles(ctx, tx, u.actor, user.id, [role.key], scope, u.ip, 'invitation');
+    const sent = await sendLink(ctx, tx, u, user, 'enrolment', `${u.actor.label} invited you to Tieout as ${role.name}${pending ? ' (the role starts once a second person approves it)' : ''}.`);
+    return { userId: user.id, sent, pending };
   });
 }
 
+/** A change to a segregation-of-duties control waits for a second person (an access request). */
 export async function setSodRule(ctx: AppContext, u: RequestUser, code: string, enabled: boolean, reason: string) {
   requirePermission(u, 'admin.sod');
   if (!reason || reason.trim().length < 10) throw validation('Changing a control needs a documented reason (at least 10 characters).');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const rule = await tx.findOne('sod_rules', { code });
     if (!rule) throw notFound('SoD rule', code);
-    const updated = await tx.update('sod_rules', rule.id, { enabled, updated_by: u.actor.id, updated_at: ctx.clock.now().toISOString() });
-    await audit(tx, u.actor, ctx.clock, { action: 'admin.sod.update', subjectType: 'sod_rule', subjectId: rule.id, summary: `${code} ${enabled ? 'enabled' : 'DISABLED'}: ${reason.trim()}`, data: { enabled } }, u.ip);
-    return updated;
+    if (rule.enabled === enabled) throw conflict(`${code} is already ${enabled ? 'on' : 'off'}.`);
+    const r = await requestChange(ctx, tx, u, { subjectUserId: null, change: { kind: 'sod_rule', code, enabled }, summary: `${code} ${rule.name}: switch ${enabled ? 'on' : 'off'}`, reason: reason.trim() });
+    return { ...rule, pending: { id: r.id, ref: r.ref, summary: r.summary } };
   });
 }
 

@@ -13,8 +13,8 @@ const META = tableMeta as unknown as Record<string, TableMeta>;
 const GROUPS: { title: string; note: string; tables: string[] }[] = [
   {
     title: 'Tenancy, identity and controls',
-    note: 'Every tenant table carries tenant_id (row-level security, migrations 0003 and 0010); the tenant directory maps a sign-in email, session or API-token hash to its tenant, nothing more. Sessions store only a SHA-256 of the token; MFA secrets are AES-256-GCM encrypted; the audit log is hash-chained, append-only and re-hashed by the database on insert (AX-AUD-01).',
-    tables: ['tenants', 'tenant_directory', 'users', 'roles', 'permissions', 'role_permissions', 'user_roles', 'sessions', 'mfa_factors', 'mfa_recovery_codes', 'api_tokens', 'sod_rules', 'audit_log'],
+    note: 'Every tenant table carries tenant_id (row-level security, migrations 0003 and 0010); the tenant directory maps a sign-in email, session, API-token or credential-link hash to its tenant, nothing more. Sessions and invitation/reset links store only a SHA-256 of the token; MFA secrets and outbox message bodies are AES-256-GCM encrypted; a grant of approval authority or an SoD change is an access request that a second person decides (migration 0012); the audit log is hash-chained, append-only and re-hashed by the database on insert (AX-AUD-01).',
+    tables: ['tenants', 'tenant_directory', 'users', 'roles', 'permissions', 'role_permissions', 'user_roles', 'sessions', 'mfa_factors', 'mfa_recovery_codes', 'api_tokens', 'credential_links', 'outbox_messages', 'access_requests', 'sod_rules', 'audit_log'],
   },
   {
     title: 'Agents, skills and proposals',

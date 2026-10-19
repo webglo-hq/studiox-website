@@ -113,9 +113,10 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
   periods, maker-checker and the hash-chained audit log, which auditors can export and verify outside
   the app (`npm run verify:audit -- file.json`); row-level security isolates tenants.
 * **Enterprise auth**: scrypt, server-side sessions, CSRF + Origin checks, rate limits, RBAC (8 roles,
-  34 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
-  entity scoping, administrator resets (temporary passwords are replaced at the next sign-in), API
-  tokens for MCP.
+  35 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
+  entity scoping, invitations and password resets by single-use link (the administrator never sees
+  a credential; in the demo, links arrive in the demo mailbox on the sign-in page), a second person
+  approves any new approval authority or SoD change, API tokens for MCP.
 * **Integrations**: BAI2, ISO 20022 camt.053, OFX and CSV bank statements; card, ERP journal, AP and
   payroll files; idempotent by content hash with per-record provenance.
 * **MCP server** (`src/mcp`): Claude can read the close and start agent runs with a read-only token.
