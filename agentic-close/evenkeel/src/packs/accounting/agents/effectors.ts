@@ -110,10 +110,34 @@ async function applyRecMatch(t: ServiceContext, p: ProposalRecord, decision: Dec
   return { matchId: id, recsTouched: [m.reconciliationId] };
 }
 
-async function applyReconcilingItem(t: ServiceContext, p: ProposalRecord) {
+async function applyReconcilingItem(t: ServiceContext, p: ProposalRecord, decision: Decision) {
   const d = ReconcilingItemDraft.parse(p.payload);
-  const row = await t.db.insert('reconciling_item', { tenant_id: t.tenantId, reconciliation_id: d.reconciliationId!, item_type: d.itemType, side: d.side, amount: d.amount, description: d.description, origin_date: d.originDate, expected_clear_date: d.expectedClearDate ?? null, status: 'open', cleared_by: d.clearedBy ?? null, source_refs: d.sourceRefs, proposal_id: p.id, created_by_type: 'agent', created_at: t.clock.nowIso() });
-  return { reconcilingItemId: row.id, recsTouched: [d.reconciliationId] };
+  // If a correcting entry from the same run was already posted (people may approve in any
+  // order), the item is born resolved by that entry instead of lingering as open.
+  const refs = new Set(d.sourceRefs.map((r) => `${r.type}:${r.id}`));
+  const siblings = await t.db.find('proposal', { tenant_id: t.tenantId, run_id: p.runId, kind: 'journal_entry', status: { in: ['applied', 'auto_applied'] } });
+  const resolver = siblings.find((s) => (linksOf(s.payload).resolves ?? []).some((r) => refs.has(`${r.type}:${r.id}`)));
+  const resolvedBy = (resolver?.applied_ref as { journalEntryId?: string } | null)?.journalEntryId ?? null;
+  const row = await t.db.insert('reconciling_item', {
+    tenant_id: t.tenantId,
+    reconciliation_id: d.reconciliationId!,
+    item_type: d.itemType,
+    side: d.side,
+    amount: d.amount,
+    description: d.description,
+    origin_date: d.originDate,
+    expected_clear_date: d.expectedClearDate ?? null,
+    status: resolvedBy ? 'resolved' : 'open',
+    resolution_entry_id: resolvedBy,
+    resolved_at: resolvedBy ? t.clock.nowIso() : null,
+    resolved_by: resolvedBy ? decision.decidedBy : null,
+    cleared_by: d.clearedBy ?? null,
+    source_refs: d.sourceRefs,
+    proposal_id: p.id,
+    created_by_type: 'agent',
+    created_at: t.clock.nowIso(),
+  });
+  return { reconcilingItemId: row.id, recsTouched: [d.reconciliationId], resolvedBy };
 }
 
 async function applyFlux(t: ServiceContext, ctx: AgentCtx, p: ProposalRecord, decision: Decision) {
@@ -258,7 +282,7 @@ export async function applyProposal(ctx: AgentCtx, p: ProposalRecord, decision: 
         out = await applyRecMatch(t, p, decision);
         break;
       case 'reconciling_item':
-        out = await applyReconcilingItem(t, p);
+        out = await applyReconcilingItem(t, p, decision);
         break;
       case 'flux_explanation':
         out = await applyFlux(t, ctx, p, decision);

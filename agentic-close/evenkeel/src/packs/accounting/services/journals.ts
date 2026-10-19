@@ -11,6 +11,20 @@ import { sourceLabel } from './reports';
 
 /** Journal entry explorer, manual entries (maker-checker) and undo-by-reversal. */
 
+/** Entities, the chart of accounts and departments, for entry forms and filters. */
+export async function ledgerReference(ctx: ServiceContext) {
+  requirePermission(ctx, 'report.view');
+  const ents = [...(await entities(ctx)).values()];
+  const accs = [...(await accounts(ctx)).values()].filter((a) => a.is_active && a.is_postable);
+  const dims = [...(await dimensionById(ctx)).values()];
+  const deptType = await ctx.db.findOne('dimension_type', { tenant_id: ctx.tenantId, code: 'department' });
+  return {
+    entities: ents.map((e) => ({ id: e.id, code: e.code, name: e.name, currency: e.functional_currency, elimination: e.is_elimination })),
+    accounts: accs.map((a) => ({ id: a.id, code: a.code, name: a.name, accountClass: a.account_class, normalBalance: a.normal_balance, isControl: a.is_control_account, requiresDepartment: a.requires_department, concept: a.concept })).sort((x, y) => x.code.localeCompare(y.code)),
+    departments: dims.filter((d) => deptType && d.dimension_type_id === deptType.id).map((d) => ({ id: d.id, code: d.code, name: d.name })),
+  };
+}
+
 export interface EntrySummary {
   id: string;
   entryNumber: string;

@@ -29,9 +29,10 @@ export interface RunSummary {
   proposals: { total: number; auto: number; pending: number; applied: number; rejected: number; failed: number };
 }
 
-export async function listRuns(ctx: ServiceContext, f: { periodKey?: string; skillId?: string; status?: string; parentRunId?: string; limit?: number }): Promise<RunSummary[]> {
+export async function listRuns(ctx: ServiceContext, f: { id?: string; periodKey?: string; skillId?: string; status?: string; parentRunId?: string; limit?: number }): Promise<RunSummary[]> {
   requirePermission(ctx, 'close.view');
   const where: Record<string, unknown> = { tenant_id: ctx.tenantId };
+  if (f.id) where.id = f.id;
   if (f.periodKey) where.period_key = f.periodKey;
   if (f.skillId) where.skill_id = f.skillId;
   if (f.status) where.status = f.status;
@@ -87,7 +88,7 @@ export async function runTrace(ctx: ServiceContext, id: string) {
   requirePermission(ctx, 'close.view');
   const run = await ctx.db.get('agent_run', id);
   if (!run || run.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Run not found');
-  const [summary] = await listRuns(ctx, { periodKey: run.period_key ?? undefined, limit: 500 }).then((rs) => rs.filter((r) => r.id === id));
+  const [summary] = await listRuns(ctx, { id, limit: 1 });
   const steps = await ctx.db.find('agent_step', { run_id: id }, { orderBy: [['seq', 'asc']] });
   const calls = await ctx.db.find('tool_call', { run_id: id }, { orderBy: [['created_at', 'asc']] });
   const proposals = await ctx.db.find('proposal', { run_id: id }, { orderBy: [['created_at', 'asc']] });

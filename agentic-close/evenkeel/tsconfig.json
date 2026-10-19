@@ -18,6 +18,7 @@
     "forceConsistentCasingInFileNames": true,
     "useDefineForClassFields": true,
     "types": ["node", "vite/client"],
+    "paths": { "@ek/backend": ["./src/web/backend/select-server.ts"] },
     "noEmit": true
   },
   "include": ["src", "tests", "scripts", "skills", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"],

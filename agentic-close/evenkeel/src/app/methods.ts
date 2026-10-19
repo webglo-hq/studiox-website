@@ -15,7 +15,7 @@ import { myClose } from '../packs/accounting/services/home';
 import { getProposal, listProposals, undoProposal } from '../packs/accounting/services/inbox';
 import { listConnectors, listDocuments, uploadDocument } from '../packs/accounting/services/integrations';
 import { listIssues, updateIssue } from '../packs/accounting/services/issues';
-import { approveEntry, createManualEntry, entryDetail, listEntries, previewManualEntry, rejectEntry, reversePostedEntry } from '../packs/accounting/services/journals';
+import { approveEntry, createManualEntry, entryDetail, ledgerReference, listEntries, previewManualEntry, rejectEntry, reversePostedEntry } from '../packs/accounting/services/journals';
 import { exportOntology, glossary, graph, overview, search, term } from '../packs/accounting/services/ontology-view';
 import { approvePackage, createPackage, getPackage, listPackages } from '../packs/accounting/services/package';
 import { lockPeriod, lockReadiness, periodsOverview, reopenPeriod, softClose } from '../packs/accounting/services/periods';
@@ -42,16 +42,16 @@ export interface AppEnv {
   backgroundAgents: boolean;
 }
 
-interface MethodDef<I, O> {
-  input: z.ZodType<I>;
+interface MethodDef<S extends z.ZodType, O> {
+  input: S;
   mutates: boolean;
   /** heavier calls get a stricter rate limit on the server */
   expensive?: boolean;
   description: string;
-  handler: (ctx: ServiceContext, env: AppEnv, input: I) => Promise<O>;
+  handler: (ctx: ServiceContext, env: AppEnv, input: z.output<S>) => Promise<O>;
 }
 
-function m<I, O>(def: MethodDef<I, O>): MethodDef<I, O> {
+function m<S extends z.ZodType, O>(def: MethodDef<S, O>): MethodDef<S, O> {
   return def;
 }
 
@@ -141,6 +141,7 @@ export const METHODS = {
   'flux.approve': m({ input: z.object({ explanationId: Id }).strict(), mutates: true, description: 'Approve an explanation', handler: async (ctx, _e, i) => { await approveExplanation(ctx, i.explanationId); return { ok: true }; } }),
   'flux.reject': m({ input: z.object({ explanationId: Id, reason }).strict(), mutates: true, description: 'Send an explanation back', handler: async (ctx, _e, i) => { await rejectExplanation(ctx, i.explanationId, i.reason); return { ok: true }; } }),
 
+  'journals.reference': m({ input: empty, mutates: false, description: 'Entities, chart of accounts and departments', handler: (ctx) => ledgerReference(ctx) }),
   'journals.list': m({ input: z.object({ periodKey: PeriodKeyShape.optional(), entityCode: z.enum(['US', 'UK', 'CONSOL']).optional(), status: z.enum(['draft', 'pending_approval', 'posted', 'rejected']).optional(), source: z.enum(['manual', 'agent', 'import', 'system', 'subledger']).optional(), type: z.string().max(30).optional(), accountId: Id.optional(), q: z.string().max(80).optional(), limit: z.number().int().min(1).max(200).optional(), offset: z.number().int().min(0).optional() }).strict(), mutates: false, description: 'Journal entries', handler: (ctx, _e, i) => listEntries(ctx, i) }),
   'journals.get': m({ input: z.object({ id: Id }).strict(), mutates: false, description: 'Entry with lines, sources and audit trail', handler: (ctx, _e, i) => entryDetail(ctx, i.id) }),
   'journals.preview': m({ input: z.object({ draft: JournalEntryDraft }).strict(), mutates: false, description: 'Validate a draft against the ontology', handler: (ctx, _e, i) => previewManualEntry(ctx, i.draft) }),
@@ -213,7 +214,7 @@ export interface Caller {
 /** Invoke a method as a signed-in user. Errors are AppErrors with stable codes. */
 export async function invoke(env: AppEnv, caller: Caller, name: string, raw: unknown): Promise<unknown> {
   if (!isMethod(name)) throw new AppError('NOT_FOUND', `Unknown method ${name}`);
-  const def = METHODS[name] as unknown as MethodDef<unknown, unknown>;
+  const def = METHODS[name] as unknown as MethodDef<z.ZodType, unknown>;
   const parsed = def.input.safeParse(raw ?? {});
   if (!parsed.success) throw new AppError('VALIDATION', parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '));
   const actor = await loadActor(env.db, env.tenantId, caller.userId, { ip: caller.ip ?? null });
@@ -222,6 +223,6 @@ export async function invoke(env: AppEnv, caller: Caller, name: string, raw: unk
 }
 
 export function methodInfo(name: MethodName): { mutates: boolean; expensive: boolean; description: string } {
-  const d = METHODS[name] as unknown as MethodDef<unknown, unknown>;
+  const d = METHODS[name] as unknown as MethodDef<z.ZodType, unknown>;
   return { mutates: d.mutates, expensive: !!d.expensive, description: d.description };
 }

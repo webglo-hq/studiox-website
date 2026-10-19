@@ -231,7 +231,13 @@ export class AgentEngine {
   async decide(input: { proposalIds: string[]; decision: 'approve' | 'reject'; reason?: string | null; userId: string; background?: boolean }): Promise<{ results: DecisionOutcome[]; continued: RunResult | null; continuing: boolean }> {
     const actor = await humanDelegate(this.opts.db, this.opts.tenantId, input.userId);
     const results: DecisionOutcome[] = [];
-    for (const id of input.proposalIds) {
+    // Decide in the order the agents proposed, whatever order people selected them in, so an
+    // item and the entry that corrects it are applied as the agent sequenced them.
+    const rows = await this.opts.db.find('proposal', { tenant_id: this.opts.tenantId, id: { in: [...new Set(input.proposalIds)] } });
+    rows.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    const known = new Set(rows.map((r) => r.id));
+    const ordered = [...rows.map((r) => r.id), ...input.proposalIds.filter((id) => !known.has(id))];
+    for (const id of ordered) {
       try {
         const r = await decideProposal(this.runtime, { proposalId: id, decision: input.decision, reason: input.reason ?? null, actor });
         results.push({ proposalId: id, ok: true, status: r.proposal.status });

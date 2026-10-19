@@ -45,11 +45,16 @@ export async function calendar(ctx: ServiceContext): Promise<BusinessCalendar> {
 export async function currentPeriodKey(ctx: ServiceContext): Promise<string> {
   return memo(ctx, 'currentPeriod', async () => {
     const cycles = await ctx.db.find('close_cycle', { tenant_id: ctx.tenantId }, { orderBy: [['period_key', 'asc']] });
-    const open = cycles.find((c) => c.status !== 'closed');
+    if (!cycles.length) throw new AppError('NOT_FOUND', 'No close cycles exist yet.');
+    // The close people are working on: the earliest unfinished cycle that has a calendar.
+    // Once a month is locked and the next one has no calendar yet (it opens after month end),
+    // the locked month stays current so its final state can be reviewed.
+    const withTasks = new Set((await ctx.db.find('close_task', { tenant_id: ctx.tenantId, close_cycle_id: { in: cycles.map((c) => c.id) } })).map((t) => t.close_cycle_id));
+    const open = cycles.find((c) => c.status !== 'closed' && withTasks.has(c.id));
     if (open) return open.period_key;
-    const last = cycles[cycles.length - 1];
-    if (last) return addMonths(last.period_key, 1);
-    throw new AppError('NOT_FOUND', 'No close cycles exist yet.');
+    const lastClosed = [...cycles].reverse().find((c) => c.status === 'closed');
+    if (lastClosed) return lastClosed.period_key;
+    return cycles.find((c) => c.status !== 'closed')?.period_key ?? addMonths(cycles[cycles.length - 1]!.period_key, 1);
   });
 }
 

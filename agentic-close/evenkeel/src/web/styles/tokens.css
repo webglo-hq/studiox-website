@@ -1,0 +1,153 @@
+/*
+ * Evenkeel design tokens. Every colour, radius, shadow and type size in the app comes from
+ * here. Light is the default; dark follows the OS unless the person picks a theme
+ * (data-theme on <html>). All text pairs meet WCAG 2.2 AA (≥ 4.5:1; UI strokes ≥ 3:1).
+ */
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fonts/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fonts/newsreader/files/newsreader-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Newsreader Variable';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fonts/newsreader/files/newsreader-latin-wght-italic.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('@fonts/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+:root {
+  color-scheme: light;
+  --font-ui: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --bg: #f4f2eb;
+  --surface: #fcfbf8;
+  --surface-raised: #ffffff;
+  --sunken: #efece3;
+  --ink: #1b1a17;
+  --ink-2: #45433d;
+  --muted: #6a675f;
+  --line: #dedad0;
+  --line-strong: #8f8b80;
+  --accent: #2a49c4;
+  --accent-hover: #2340ad;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6eafa;
+  --good: #1c6a4a;
+  --good-soft: #e2f0e8;
+  --bad: #b3261e;
+  --bad-soft: #fae8e6;
+  --warn: #8a5300;
+  --warn-soft: #fbefd6;
+  --info: #1f5fae;
+  --info-soft: #e4eefa;
+  --focus: #2a49c4;
+  --scrim: rgba(27, 26, 23, 0.42);
+  --shadow-1: 0 1px 2px rgba(27, 26, 23, 0.06), 0 1px 1px rgba(27, 26, 23, 0.04);
+  --shadow-2: 0 8px 24px rgba(27, 26, 23, 0.1), 0 2px 6px rgba(27, 26, 23, 0.06);
+  --shadow-3: 0 24px 60px rgba(27, 26, 23, 0.18), 0 6px 16px rgba(27, 26, 23, 0.08);
+
+  --radius-s: 6px;
+  --radius: 10px;
+  --radius-l: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --text-xs: 0.75rem;
+  --text-s: 0.8125rem;
+  --text-m: 0.9375rem;
+  --text-l: 1.0625rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: 2.5rem;
+
+  --sidebar: 248px;
+  --topbar: 56px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #121311;
+    --surface: #1a1b18;
+    --surface-raised: #20211e;
+    --sunken: #151613;
+    --ink: #ecebe4;
+    --ink-2: #c7c4ba;
+    --muted: #a19e94;
+    --line: #2f302b;
+    --line-strong: #76736a;
+    --accent: #8ea6ff;
+    --accent-hover: #a7b9ff;
+    --accent-ink: #0d1330;
+    --accent-soft: #1d2547;
+    --good: #66c79b;
+    --good-soft: #16302a;
+    --bad: #f28b82;
+    --bad-soft: #3a1d1a;
+    --warn: #e9b44f;
+    --warn-soft: #33290f;
+    --info: #8ab8f0;
+    --info-soft: #16263a;
+    --focus: #a7b9ff;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #121311;
+  --surface: #1a1b18;
+  --surface-raised: #20211e;
+  --sunken: #151613;
+  --ink: #ecebe4;
+  --ink-2: #c7c4ba;
+  --muted: #a19e94;
+  --line: #2f302b;
+  --line-strong: #76736a;
+  --accent: #8ea6ff;
+  --accent-hover: #a7b9ff;
+  --accent-ink: #0d1330;
+  --accent-soft: #1d2547;
+  --good: #66c79b;
+  --good-soft: #16302a;
+  --bad: #f28b82;
+  --bad-soft: #3a1d1a;
+  --warn: #e9b44f;
+  --warn-soft: #33290f;
+  --info: #8ab8f0;
+  --info-soft: #16263a;
+  --focus: #a7b9ff;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
