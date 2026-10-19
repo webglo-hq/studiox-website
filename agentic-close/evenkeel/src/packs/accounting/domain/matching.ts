@@ -120,7 +120,7 @@ export function matchTransactions(bankIn: MatchItem[], ledgerIn: MatchItem[], op
         if ((best.ns >= opts.fuzzyMinScore || (unique && best.ns >= 0.25)) && decisive) {
           usedBank.add(b.id);
           usedLedger.add(best.l.id);
-          const conf = Math.max(0.5, Math.min(0.94, 0.62 + 0.32 * best.ns - 0.02 * best.dd + (unique ? 0.04 : 0)));
+          const conf = Math.max(0.5, Math.min(0.94, 0.62 + 0.32 * best.ns - 0.02 * best.dd + (unique ? 0.07 : 0)));
           matches.push({
             type: 'fuzzy',
             bank: [b],
