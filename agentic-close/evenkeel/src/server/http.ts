@@ -188,6 +188,12 @@ export function createHandler(deps: HttpDeps) {
       throw new HttpError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Wait a moment and try again.', { retryAfter: Math.max(ipWait, accWait) });
     }
     const user = await env.db.findOne('app_user', { tenant_id: env.tenantId, email });
+    // The lock is checked before the password: a locked account gives the same answer whatever
+    // was typed, so the lockout cannot be used to test passwords.
+    if (user?.locked_until && user.locked_until > now()) {
+      await recordAttempt(email, user.id, false, 'locked', req);
+      throw new HttpError(423, 'LOCKED', `Too many failed attempts. Try again after ${user.locked_until.slice(11, 16)} UTC.`);
+    }
     const valid = await verifyPassword(password, user?.password_hash);
     if (!user || !valid) {
       if (user) {
@@ -196,10 +202,6 @@ export function createHandler(deps: HttpDeps) {
       }
       await recordAttempt(email, user?.id ?? null, false, 'bad_credentials', req);
       throw new HttpError(401, 'UNAUTHENTICATED', 'Email or password is incorrect.');
-    }
-    if (user.locked_until && user.locked_until > now()) {
-      await recordAttempt(email, user.id, false, 'locked', req);
-      throw new HttpError(423, 'LOCKED', `Too many failed attempts. Try again after ${user.locked_until.slice(11, 16)} UTC.`);
     }
     if (user.status !== 'active') {
       await recordAttempt(email, user.id, false, 'disabled', req);

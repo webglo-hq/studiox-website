@@ -51,7 +51,7 @@ export async function draftEntry(db: EkDb, m: MiniTenant, lines: { account: stri
     entry_type: (over.entry_type as 'standard') ?? 'standard',
     memo: 'test',
     currency: 'USD',
-    source: 'manual',
+    source: (over.source as 'manual') ?? 'manual',
     prepared_by: (over.prepared_by as string) ?? m.userA,
     reverses_entry_id: (over.reverses_entry_id as string) ?? null,
   });
@@ -164,6 +164,28 @@ export function defineInvariantSuite(name: string, makeDb: () => Promise<EkDb>) 
         { account: m.cash, debit: 0, credit: 800 },
       ]);
       await expectCode(db.update('journal_entry', je.id, { status: 'posted', approved_by: m.userA }), /EK-SOD-01|maker_checker|23514/);
+    });
+
+    it('EK-m1: posts a manual entry only with an approver (mirror reversals and system entries excepted)', async () => {
+      const je = await draftEntry(db, m, [
+        { account: m.expense, debit: 950, credit: 0 },
+        { account: m.cash, debit: 0, credit: 950 },
+      ]);
+      await expectCode(db.update('journal_entry', je.id, { status: 'posted' }), /EK-SOD-01: manual entry/);
+      await expectCode(db.update('journal_entry', je.id, { status: 'posted', approved_by: m.userA }), /EK-SOD-01|maker_checker|23514/);
+      expect((await db.update('journal_entry', je.id, { status: 'posted', approved_by: m.userB })).status).toBe('posted');
+      // Undo by reversal mirrors the approved entry, so it needs no second approval.
+      const rev = await draftEntry(db, m, [
+        { account: m.expense, debit: 0, credit: 950 },
+        { account: m.cash, debit: 950, credit: 0 },
+      ], { reverses_entry_id: je.id, entry_type: 'reversing' });
+      expect((await db.update('journal_entry', rev.id, { status: 'posted' })).status).toBe('posted');
+      // System entries (e.g. an accrual's automatic reversal) post under their own policy.
+      const sys = await draftEntry(db, m, [
+        { account: m.expense, debit: 120, credit: 0 },
+        { account: m.cash, debit: 0, credit: 120 },
+      ], { source: 'system' });
+      expect((await db.update('journal_entry', sys.id, { status: 'posted' })).status).toBe('posted');
     });
 
     it('walks periods open → soft close → hard close and locks posting', async () => {

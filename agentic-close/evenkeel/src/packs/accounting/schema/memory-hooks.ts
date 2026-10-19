@@ -5,7 +5,7 @@ import type { HookContext, MemoryHooks } from '../../../framework/store/memory';
 import type { EkSchema } from './tables';
 
 /**
- * In-memory emulation of db/migrations/0002_invariants.sql. Same rules, same EK-codes, so
+ * In-memory emulation of db/migrations/0002_invariants.sql (and 0004). Same rules, same EK-codes, so
  * the browser demo and unit tests enforce exactly what Postgres enforces. A contract test
  * runs one invariant suite against both stores.
  */
@@ -63,6 +63,8 @@ function assertPostable(next: Row, ctx: Ctx): void {
     const got = ls.map((l) => key(l, false)).sort();
     if (want.join(',') !== got.join(',')) raise(`EK-JE-02: reversal ${String(next.entry_number)} must mirror ${String(o!.entry_number)} with debits and credits swapped`);
   }
+  // 0004: a manual entry posts only with an approver; mirror reversals are exempt.
+  if (next.source === 'manual' && next.approved_by === null && !reversal) raise(`EK-SOD-01: manual entry ${String(next.entry_number)} needs an approver other than its preparer before it posts`);
   next.total_debit = d;
   if (next.posted_at === null) next.posted_at = nowIso();
 }

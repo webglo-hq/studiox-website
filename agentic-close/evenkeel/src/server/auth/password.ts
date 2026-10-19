@@ -4,8 +4,12 @@ import { randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } 
  * Password hashing with scrypt (memory-hard KDF, RFC 7914) from Node's crypto module.
  * Format: scrypt$N$r$p$<salt b64url>$<hash b64url>. Parameters are stored per hash so they can
  * be raised later without breaking existing users (needsRehash()).
+ *
+ * Parameters follow the OWASP Password Storage Cheat Sheet: N=2^15 (32 MiB), r=8, p=3, one of
+ * its equivalent-cost settings to N=2^17, p=1, chosen for the smaller memory footprint per
+ * concurrent sign-in.
  */
-const DEFAULT = { N: 1 << 15, r: 8, p: 1, keylen: 64 };
+const DEFAULT = { N: 1 << 15, r: 8, p: 3, keylen: 64 };
 
 function scrypt(password: string, salt: Buffer, keylen: number, opts: ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => scryptCb(password.normalize('NFKC'), salt, keylen, opts, (err, key) => (err ? reject(err) : resolve(key))));
@@ -31,9 +35,11 @@ export async function verifyPassword(password: string, stored: string | null | u
   return ok && target === stored;
 }
 
+/** True when a stored hash is weaker than the current parameters (rehashed at the next sign-in). */
 export function needsRehash(stored: string): boolean {
-  const parts = stored.split('$');
-  return parts[0] !== 'scrypt' || Number(parts[1]) < DEFAULT.N || Number(parts[2]) < DEFAULT.r;
+  const [scheme, n, r, p] = stored.split('$');
+  const cost = (N: number, R: number, P: number) => N * R * P;
+  return scheme !== 'scrypt' || Number(r) < DEFAULT.r || !(cost(Number(n), Number(r), Number(p)) >= cost(DEFAULT.N, DEFAULT.r, DEFAULT.p));
 }
 
 /** A fixed, well-formed hash of a random value; only used to equalise timing. */
