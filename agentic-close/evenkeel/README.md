@@ -56,7 +56,7 @@ Each account gets a strong random password at seed time. It is printed once in t
 | miguel@kitewell.example | FP&A Analyst | Explains variances |
 | dana@kitewell.example | AP Specialist | Accounts payable |
 | alex@auditfirm.example | External Auditor | Read-only, everything |
-| taylor@kitewell.example | IT Administrator | Users, roles, segregation of duties |
+| taylor@kitewell.example | IT Administrator | Users, roles and the entities they cover, segregation of duties |
 
 ### The five-minute demo script
 
@@ -70,13 +70,15 @@ Each account gets a strong random password at seed time. It is printed once in t
    - an intercompany mismatch;
    - a bank memo that tries to instruct the agent.
 3. **Review and approve.** Each proposal in the Inbox shows the reason, confidence, evidence, deterministic checks and the exact lines.
-   - Bulk-approve the routine items, and reject one with a reason.
-   - Nobody approves work an agent prepared on their behalf: the reversal drafted for Priya waits for Casey. Material items need a controller or CFO.
+   - Bulk-approve the routine items, and reject one with a reason. *Select all* leaves out flagged and low-confidence items: open each one and approve it on its own.
+   - Nobody approves a run they started or work an agent prepared for them. Casey started the agents, so their proposals wait for Priya, or for Jordan where Priya owns the task. Material items need a controller or CFO.
+   - When approvals unblock the next tasks, Casey's My close says *Continue the close*.
 4. **Certify and review the reconciliations.**
    - Sam certifies the reconciliations that tie to zero; Priya reviews them.
    - In Flux review, the agent drafts explanations; someone other than the author approves them.
 5. **Disposition the exceptions, then sign and lock.**
-   - Generate the close package; Jordan approves it (its numbers are hashed).
+   - Jordan approves the close-package agent's draft from his Inbox.
+   - When the reviews are done, his My close says *Refresh and sign the close package*. The draft shows the close as it was when the agent prepared it, so he refreshes it and signs the current version. Its figures and the close status (reconciliation sign-offs, the checklist, exceptions) are hashed.
    - Casey locks September. The ledger now refuses any posting dated in it.
    - The Audit log verifies the hash chain end to end.
 
@@ -174,7 +176,7 @@ sequenceDiagram
   - HMAC CSRF tokens plus Origin checks; token-bucket rate limits.
   - TOTP two-step with replay protection; AES-GCM-sealed secrets.
   - A strict CSP.
-  - RBAC with eight roles and entity scoping.
+  - RBAC with eight roles and entity scoping, set per person in Admin and enforced on every read and change.
   - An OIDC/SAML provider seam.
   - Every mutation audited.
 - **Web:**
