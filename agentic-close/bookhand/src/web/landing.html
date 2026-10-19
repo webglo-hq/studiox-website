@@ -112,7 +112,8 @@
             <p class="lp-lede-sm">Agents are fast. The controls are what make them usable. Bookhand enforces the important ones in the database itself, so a bug or a clever prompt cannot route around them.</p>
           </div>
           <ul class="lp-checks">
-            <li><strong>Maker-checker everywhere.</strong> Nobody approves their own journal, reconciliation, flux explanation or task.</li>
+            <li><strong>Maker-checker everywhere.</strong> The database refuses an approval by whoever prepared the entry or started the agent run behind it; reconciliations, flux reviews and checklist tasks are signed off by a second person.</li>
+            <li><strong>Nobody grants themselves power.</strong> A role with approval authority, or a change to a control, takes effect only when an independent Controller or CFO approves it. Administrators never see anyone's password: people enrol with a single-use link sent to them.</li>
             <li><strong>Approval limits and SoD rules.</strong> Per-role limits; segregation-of-duties rules that block or warn, recorded on the approval.</li>
             <li><strong>Posted means posted.</strong> Balanced entries, immutable once posted, no postings into locked periods. Undo is a reversal.</li>
             <li><strong>Tamper-evident audit log.</strong> Every change by a person, agent or connector, hash-chained and verifiable in one click.</li>
@@ -160,7 +161,7 @@
               <ul>
                 <li>Unlimited entities and seats</li>
                 <li>Your PostgreSQL, your region</li>
-                <li>Single sign-on through your identity provider</li>
+                <li>Single sign-on through your identity provider <span class="lp-planned">planned</span></li>
                 <li>Custom skills and ontology extensions</li>
               </ul>
               <a class="lp-btn" href="#faq">Talk to us</a>

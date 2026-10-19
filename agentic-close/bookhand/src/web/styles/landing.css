@@ -434,6 +434,16 @@ p {
 .lp-tier li + li {
   margin-top: 6px;
 }
+.lp-planned {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
 
 /* faq */
 .lp-faq {
