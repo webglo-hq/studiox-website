@@ -27,6 +27,12 @@ let closeId = '';
 
 test('desktop: agents prepare, people review', async ({ page }) => {
   test.setTimeout(10 * 60_000);
+  await page.goto('/landing.html');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await shot(page, 'desktop-15-landing');
+  await page.evaluate(() => document.getElementById('pricing')?.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  await shot(page, 'desktop-16-landing-pricing');
+
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible();
   await shot(page, 'desktop-01-sign-in');
@@ -106,6 +112,9 @@ test('phone', async ({ browser }) => {
   await shot(page, 'phone-05-cockpit');
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await shot(page, 'phone-06-navigation');
+  await page.goto('/landing.html');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await shot(page, 'phone-07-landing');
   await context.close();
 });
 

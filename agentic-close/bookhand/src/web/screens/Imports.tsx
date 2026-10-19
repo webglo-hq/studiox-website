@@ -76,7 +76,7 @@ export function ImportsScreen() {
                 ))}
               </select>
             </div>
-            <input ref={input} type="file" className="sr-only" id="imp-file" accept=".csv,.txt,.bai,.bai2,.xml,.ofx,.qfx,.json" onChange={(e) => void onFile(e)} />
+            <input ref={input} type="file" className="sr-only" id="imp-file" aria-label="Statement or data file to import" tabIndex={-1} accept=".csv,.txt,.bai,.bai2,.xml,.ofx,.qfx,.json" onChange={(e) => void onFile(e)} />
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => input.current?.click()}>
               <Upload size={15} aria-hidden="true" /> {busy ? 'Importing...' : 'Choose file'}
             </button>

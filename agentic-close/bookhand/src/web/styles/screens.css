@@ -115,6 +115,17 @@
   padding: 8px 10px;
   overflow-wrap: anywhere;
 }
+.code-block {
+  font-family: var(--font-mono);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+}
 .quote {
   margin: 0;
   padding: 8px 12px;

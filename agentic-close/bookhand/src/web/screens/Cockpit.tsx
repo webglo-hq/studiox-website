@@ -131,7 +131,7 @@ export function CockpitScreen({ closeId }: { closeId: string | null }) {
               </header>
               <div className="stack" style={{ gap: 8 }}>
                 {tasks.map((t) => (
-                  <button key={t.id} type="button" className={`task-card status-${t.status}`} onClick={() => open(t.id)} aria-label={`${t.title}, ${label(t.status)}`}>
+                  <button key={t.id} type="button" className={`task-card status-${t.status}`} onClick={() => open(t.id)}>
                     <span className="row" style={{ alignItems: 'flex-start' }}>
                       <span className="grow" style={{ textAlign: 'left', fontWeight: 600, fontSize: 13 }}>
                         {t.title.replace(/ \((BW-[A-Z]+)\)$/, '')}

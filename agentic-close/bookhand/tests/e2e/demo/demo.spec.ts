@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { approveAllICan, axeViolations, closeDialogs, go, signInAs } from '../support';
 
 /**
@@ -88,7 +88,7 @@ test('works at phone width without horizontal scrolling and passes WCAG 2.2 AA c
   await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
   expect(await axeViolations(page)).toEqual([]);
   await signInAs(page, 'hannah');
-  for (const hash of ['#/', '#/inbox', '#/close', '#/recs', '#/ledger', '#/reports', '#/skills/transaction-coding', '#/ontology/bh:Accrual']) {
+  for (const hash of ['#/', '#/inbox', '#/close', '#/recs', '#/ledger', '#/reports', '#/skills/transaction-coding', '#/ontology/bh:Accrual', '#/settings']) {
     await go(page, hash);
     await page.waitForTimeout(400);
     await expect(page.locator('main')).toBeVisible();
@@ -107,4 +107,56 @@ test('runs inside a sandboxed iframe with an opaque origin (no storage, no same-
   await expect(frame.getByRole('heading', { name: /Good (morning|afternoon|evening), Maya/ })).toBeVisible();
   await frame.getByRole('link', { name: 'Reconciliations' }).click();
   await expect(frame.getByRole('heading', { name: 'Reconciliations', level: 1 })).toBeVisible();
+});
+
+test('every screen passes WCAG 2.2 AA checks in light and dark themes', async ({ page }) => {
+  test.setTimeout(8 * 60_000);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to close the books' })).toBeVisible({ timeout: 120_000 });
+  await signInAs(page, 'maya');
+  await page.getByRole('button', { name: 'Run close agents' }).first().click();
+  await expect(page.locator('.page-head').getByText('Completed')).toBeVisible({ timeout: 180_000 });
+  const runHash = await page.evaluate(() => window.location.hash);
+  await signInAs(page, 'hannah');
+  type Check = (p: Page) => Promise<unknown>;
+  const screens: Array<{ hash: string; ready: Check; open?: Check }> = [
+    { hash: '#/', ready: (p) => expect(p.getByRole('heading', { name: "What's next for you" })).toBeVisible() },
+    { hash: '#/close', ready: (p) => expect(p.getByRole('list', { name: 'Close calendar by workday' })).toBeVisible() },
+    { hash: '#/inbox', ready: (p) => expect(p.locator('table.inbox-table')).toBeVisible(), open: (p) => p.getByRole('button', { name: /HALCYON FREIGHT/ }).first().click() },
+    { hash: '#/recs', ready: (p) => expect(p.getByRole('heading', { name: 'Reconciliations', level: 1 })).toBeVisible() },
+    { hash: '#/flux', ready: (p) => expect(p.getByRole('heading', { name: 'Flux review', level: 1 })).toBeVisible() },
+    { hash: '#/ledger', ready: (p) => expect(p.getByRole('heading', { name: 'Journal entries', level: 1 })).toBeVisible(), open: (p) => p.locator('table tbody tr').first().click() },
+    { hash: '#/reports', ready: (p) => expect(p.getByRole('heading', { level: 1 })).toBeVisible() },
+    { hash: '#/imports', ready: (p) => expect(p.getByRole('heading', { level: 1 })).toBeVisible() },
+    { hash: '#/runs', ready: (p) => expect(p.getByRole('heading', { level: 1 })).toBeVisible() },
+    { hash: runHash, ready: (p) => expect(p.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible() },
+    { hash: '#/skills', ready: (p) => expect(p.getByRole('heading', { level: 1 })).toBeVisible() },
+    { hash: '#/skills/transaction-coding', ready: (p) => expect(p.getByLabel('Rules, one per line')).toBeVisible() },
+    { hash: '#/ontology/bh:DepositInTransit', ready: (p) => expect(p.getByRole('heading', { name: 'Deposit in transit' })).toBeVisible() },
+    { hash: '#/audit', ready: (p) => expect(p.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible() },
+    { hash: '#/settings', ready: (p) => expect(p.getByRole('heading', { name: 'Your settings', level: 1 })).toBeVisible() },
+  ];
+  const problems: string[] = [];
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    for (const s of screens) {
+      await closeDialogs(page);
+      await go(page, s.hash);
+      await s.ready(page);
+      await page.waitForTimeout(250);
+      for (const v of await axeViolations(page)) problems.push(`${theme} ${s.hash}: ${v}`);
+      if (s.open) {
+        await s.open(page);
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await page.waitForTimeout(250);
+        for (const v of await axeViolations(page)) problems.push(`${theme} ${s.hash} (drawer): ${v}`);
+      }
+    }
+  }
+  await closeDialogs(page);
+  await signInAs(page, 'tom');
+  await go(page, '#/admin');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  for (const v of await axeViolations(page)) problems.push(`dark #/admin: ${v}`);
+  expect(problems).toEqual([]);
 });

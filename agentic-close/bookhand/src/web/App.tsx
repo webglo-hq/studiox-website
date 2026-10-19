@@ -264,21 +264,25 @@ function Shell({ me }: { me: Me }) {
           </button>
           <span className="crumb">{crumb}</span>
           <span className="spacer" />
-          <Badge tone={me.mode.live ? 'violet' : ''} title={me.mode.live ? 'Agents call Claude; deterministic checks still verify every proposal' : 'No API key configured: agents use the deterministic offline engine'}>
-            {me.mode.live ? 'Live' : 'Offline'} agents
-          </Badge>
-          <button type="button" className="btn btn-ghost btn-icon" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
+          {/* On a phone the sidebar footer states the agent mode, and keyboard shortcuts do not apply. */}
+          <span className="hide-sm">
+            <Badge tone={me.mode.live ? 'violet' : ''} title={me.mode.live ? 'Agents call Claude; deterministic checks still verify every proposal' : 'No API key configured: agents use the deterministic offline engine'}>
+              {me.mode.live ? 'Live' : 'Offline'} agents
+            </Badge>
+          </span>
+          <button type="button" className="btn btn-ghost btn-icon hide-sm" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
             <Keyboard size={18} />
           </button>
           <button type="button" className="btn btn-ghost btn-icon" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <a href="#/settings" className="row" style={{ color: 'inherit' }} aria-label="Your settings">
+          <a href="#/settings" className="row" style={{ color: 'inherit' }}>
             <Avatar name={me.user.name} hue={me.user.hue} />
             <span className="small user-meta" style={{ lineHeight: 1.2 }}>
               <span style={{ display: 'block', fontWeight: 600 }}>{me.user.name}</span>
               <span className="muted">{me.roles.map((r) => r.name).join(', ')}</span>
             </span>
+            <span className="sr-only">Your settings</span>
           </a>
           <button type="button" className="btn btn-ghost btn-icon" onClick={() => void signOut()} aria-label="Sign out">
             <LogOut size={18} />

@@ -90,6 +90,11 @@ export function LoginScreen({ onSignedIn }: { onSignedIn: () => Promise<void> })
           <p className="tiny muted">
             <ShieldCheck size={12} aria-hidden="true" /> Passwords are hashed with scrypt; sessions are httpOnly cookies that rotate and expire; two-step sign-in is available in Settings.
           </p>
+          {transportKind() === 'http' && (
+            <p className="small">
+              <a href="/landing.html">What is Bookhand? Product and pricing</a>
+            </p>
+          )}
         </form>
       </main>
       <aside className="login-aside" aria-label="Demo accounts">

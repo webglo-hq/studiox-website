@@ -6,6 +6,7 @@ import { inlineDemoBundle } from './scripts/vite-inline-demo.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const src = fileURLToPath(new URL('./src', import.meta.url));
+const web = fileURLToPath(new URL('./src/web/', import.meta.url));
 
 export default defineConfig(({ mode }) => {
   const demo = mode === 'demo';
@@ -27,9 +28,8 @@ export default defineConfig(({ mode }) => {
       cssCodeSplit: !demo,
       sourcemap: false,
       chunkSizeWarningLimit: 4096,
-      rolldownOptions: demo
-        ? { output: { codeSplitting: false } }
-        : undefined,
+      // The server build also ships the static landing page; the demo is the app alone, in one file.
+      rolldownOptions: demo ? { output: { codeSplitting: false } } : { input: { main: `${web}index.html`, landing: `${web}landing.html` } },
     },
     server: {
       port: Number(process.env.WEB_PORT ?? 0) || undefined,
