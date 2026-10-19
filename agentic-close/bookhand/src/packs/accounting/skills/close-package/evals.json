@@ -1,0 +1,31 @@
+{
+  "skill": "close-package",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "package-for-approval",
+      "description": "Assembles the close package mid-close; with work still open it stays a blocked draft that nobody can approve",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:close-package:*",
+        "entity": null,
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Close package: September 2026 close$",
+            "kind": "task_update",
+            "status": "blocked"
+          }
+        ],
+        "counts": {
+          "total": 1,
+          "blocked": 1
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

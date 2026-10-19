@@ -1,0 +1,57 @@
+{
+  "skill": "accrual-detection",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "us-unrecorded-liabilities",
+      "description": "Finds the missing recurring bill, the received-not-invoiced PO and the late invoice; everything waits for approval at L1",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:accruals:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Accrue Nimbus Cloud Services \\$[\\d,]+\\.\\d\\d: recurring bill missing",
+            "kind": "journal_entry",
+            "status": "pending"
+          },
+          {
+            "title": "^Accrue Fieldnote Research \\$24,000\\.00: received not invoiced",
+            "status": "pending",
+            "amountMinor": 2400000
+          },
+          {
+            "title": "^Accrue Brightline Facilities \\$15,000\\.00: late invoice \\(cutoff\\)",
+            "status": "pending"
+          }
+        ],
+        "counts": {
+          "autoApplied": 0,
+          "blocked": 0
+        }
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "uk-nothing-to-accrue",
+      "description": "Does not invent accruals where none are needed",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:accruals:BW-UK",
+        "entity": "BW-UK",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "counts": {
+          "total": 0
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

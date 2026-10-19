@@ -1,7 +1,7 @@
 ---
 key: close-package
 name: Close package
-version: 1.2.0
+version: 1.3.0
 domain: accounting
 category: reporting
 summary: Assembles the close package (statements, entity trial balances, flux commentary, reconciliation status, exceptions, agent and approval record) for Controller and CFO approval.
@@ -28,7 +28,7 @@ One document a CFO or auditor can rely on: consolidated balance sheet and income
 
 ## How to work
 1. Call `close_status` to see what is still open.
-2. Call `propose_close_package`. In "why", list anything still open that the approver should know about; the package records the audit-chain head hash at generation time.
+2. Call `propose_close_package`. In "why", list anything still open; the package records the audit-chain head hash at generation time. A package generated while other close work is open is a draft: its proposal is blocked (check BLOCKERS) until that work is signed off and the package is regenerated.
 
 ## Output
 What the package contains and anything the approver must look at first.

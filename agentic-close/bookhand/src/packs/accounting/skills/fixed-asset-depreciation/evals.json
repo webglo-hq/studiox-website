@@ -1,0 +1,50 @@
+{
+  "skill": "fixed-asset-depreciation",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "us-register",
+      "description": "Depreciates the US fixed-asset register straight-line",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:depreciation:BW-US",
+        "entity": "BW-US",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Depreciation BW-US 2026-09 \\$10,026\\.09 \\(6 assets\\)",
+            "kind": "journal_entry",
+            "status": "auto_applied"
+          }
+        ],
+        "counts": {
+          "total": 1
+        }
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "uk-register-gbp",
+      "description": "Depreciates the UK register in GBP",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:depreciation:BW-UK",
+        "entity": "BW-UK",
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Depreciation BW-UK 2026-09 £1,700\\.00 \\(2 assets\\)",
+            "status": "auto_applied"
+          }
+        ]
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

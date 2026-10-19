@@ -18,7 +18,7 @@ import { adapterCases } from './helpers';
 
 configurePasswordHashing({ params: DEMO_SCRYPT });
 
-const CONFIG = { mode: 'demo' as const, secretKey: 'integration-test-secret-key-0001', sessionIdleMinutes: 30, sessionAbsoluteHours: 12, secureCookies: false };
+const CONFIG = { mode: 'demo' as const, secretKey: 'test'.repeat(8), sessionIdleMinutes: 30, sessionAbsoluteHours: 12, secureCookies: false };
 
 async function approveEverything(app: App, approvers: Principal[]): Promise<{ approved: number; stuck: string[] }> {
   let approved = 0;
@@ -90,6 +90,7 @@ for (const adapter of adapterCases({ server: false })) {
           await reviewAllReady(app, P.hannah!, seed.closeId);
         }
         const state = await closeDetail(app, P.hannah!, seed.closeId);
+        if (process.env.BH_DEBUG) console.log(`round ${rounds}: approved ${res.approved}; open tasks: ${state.tasks.filter((t) => t.status !== 'done').map((t) => `${t.key}=${t.status}`).join(', ')}`);
         if (state.tasks.every((t) => t.key === 'lock' || t.status === 'done')) break;
         if (res.approved === 0 && rounds > 3) break;
       }
@@ -117,6 +118,17 @@ for (const adapter of adapterCases({ server: false })) {
         const dbg = await app.read(async (tx) => ({ pk: await tx.find('close_packages', {}), props: (await tx.find('proposals', { kind: 'task_update' })).map((x) => ({ status: x.status, title: x.title, ver: x.verification })), tasks: (await tx.find('close_tasks', { close_id: seed.closeId })).map((t) => `${t.key} ${t.status} ${t.blocked_reason ?? ''}`) }));
         console.log(JSON.stringify({ pk: dbg.pk.map((x) => ({ v: x.version, s: x.status })), props: dbg.props, tasks: dbg.tasks }, null, 1));
       }
+      // The flux task is signed off by (or after) the Controller's approval of the analysis, never before it.
+      await app.read(async (tx) => {
+        const task = (await tx.find('close_tasks', { close_id: seed.closeId, key: 'flux' }))[0]!;
+        const analyses = await tx.find('flux_analyses', { close_id: seed.closeId });
+        expect(analyses.length).toBeGreaterThan(0);
+        for (const a of analyses) {
+          expect(a.status).toBe('approved');
+          expect(task.reviewed_at! >= a.approved_at!).toBe(true);
+        }
+        expect(task.status).toBe('done');
+      });
       const before = await closeDetail(app, P.hannah!, seed.closeId);
       expect(before.tasks.filter((t) => t.key !== 'lock' && t.status !== 'done').map((t) => `${t.title}: ${t.status} ${t.blockedReason ?? ''}`)).toEqual([]);
       const locked = await lockPeriod(app, P.hannah!, seed.closeId, 'September close complete');

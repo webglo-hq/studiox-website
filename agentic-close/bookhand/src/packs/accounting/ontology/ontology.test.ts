@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toGraph, toJsonLd, toTurtle } from '../../../ontology/export';
+import { schema } from '../../../persistence/schema';
 import { capitalizableMatches, closeOntology, FS_LINES } from './index';
 import type { JournalEntryContext, ResolvedAccount, ResolvedJournalEntry, TrialBalanceSubject } from './subjects';
 
@@ -190,7 +191,7 @@ describe('close ontology', () => {
 
   it('exports machine-readable Turtle and JSON-LD with a stable content hash', () => {
     const ttl = toTurtle(closeOntology);
-    expect(ttl).toContain('@prefix bh: <https://bookhand.dev/ontology/close#>');
+    expect(ttl).toContain('@prefix bh: <https://bookhand.example/ontology/close#>');
     expect(ttl).toContain('bh:Accrual a owl:Class');
     expect(ttl).toContain('rdfs:subClassOf bh:AdjustingEntry');
     const jsonld = toJsonLd(closeOntology);
@@ -199,5 +200,14 @@ describe('close ontology', () => {
     const g = toGraph(closeOntology);
     expect(g.nodes.length).toBe(closeOntology.classes().length);
     expect(g.edges.filter((e) => e.kind === 'subClassOf').length).toBeGreaterThan(140);
+  });
+
+  it('grounds the data model: every table names an ontology class and every class table exists', () => {
+    const tables = Object.values(schema);
+    const unmapped = tables.filter((t) => t.ontologyClass && !closeOntology.getClass(t.ontologyClass)).map((t) => `${t.name} -> ${t.ontologyClass}`);
+    expect(unmapped).toEqual([]);
+    const names = new Set<string>(tables.map((t) => t.name));
+    const dangling = closeOntology.classes().filter((c) => c.table && !names.has(c.table)).map((c) => `${c.id} -> ${c.table}`);
+    expect(dangling).toEqual([]);
   });
 });

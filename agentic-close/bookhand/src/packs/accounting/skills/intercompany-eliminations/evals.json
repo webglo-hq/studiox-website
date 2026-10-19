@@ -1,0 +1,33 @@
+{
+  "skill": "intercompany-eliminations",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "fees-and-balances",
+      "description": "Eliminates intercompany fees and balances in the elimination entity",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:eliminations:*",
+        "entity": null,
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Eliminate intercompany fees 2026-09: revenue \\$92,500\\.00",
+            "kind": "journal_entry"
+          },
+          {
+            "title": "^Eliminate intercompany balances 2026-09: \\$347,500\\.00 receivable",
+            "kind": "journal_entry"
+          }
+        ],
+        "counts": {
+          "total": 2
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

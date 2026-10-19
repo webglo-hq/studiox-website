@@ -28,7 +28,7 @@ export const MODULES: OntologySpec['modules'] = [
 ];
 
 export const closeOntologySpec: OntologySpec = {
-  iri: 'https://bookhand.dev/ontology/close',
+  iri: 'https://bookhand.example/ontology/close',
   prefix: 'bh',
   title: 'Bookhand Financial Close Ontology',
   version: ONTOLOGY_VERSION,
@@ -38,6 +38,7 @@ export const closeOntologySpec: OntologySpec = {
     { version: '1.0.0', date: '2026-10-19', notes: 'Initial release: REA, ledger, subledgers, recs, accruals, flux, IC, FX, controls, close, agents.' },
     { version: '1.1.0', date: '2026-10-19', notes: 'Bucketing profiles on account types; capitalization policy; untrusted text.' },
     { version: '1.2.0', date: '2026-10-19', notes: 'Executable axioms for reconciliations, flux, schedules, intercompany and proposals.' },
+    { version: '1.3.0', date: '2026-10-19', notes: 'Bank account, corporate card, flux line, agent step and run budget classes; every database table now maps to an ontology class.' },
   ],
   classes: [...coreClasses, ...accountClasses, ...closeClasses],
   relations,

@@ -4,8 +4,8 @@ import type { Row, TableName } from './schema';
 
 /**
  * Procedural invariants enforced by the memory adapter. Each mirrors a trigger in
- * db/migrations/0002_invariants.sql; tests/integration/invariant-parity runs the same violation suite against
- * both adapters and asserts identical error kinds.
+ * db/migrations/0002_invariants.sql; the conformance suite (tests/integration/conformance.ts, run by
+ * persistence.test.ts) drives the same violations through every adapter and asserts identical error kinds.
  */
 
 export interface GuardContext {

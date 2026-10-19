@@ -263,7 +263,7 @@ export const recurringTemplates = table(
     created_by: c.uuid().nullable().references('users', 'set null'),
     created_at: c.timestamp().defaultNow(),
   },
-  { area: AREA, description: 'Template for recurring journal entries (e.g. rent, management fee).', ontologyClass: 'bh:RecurringEntryTemplate' },
+  { area: AREA, description: 'Template for recurring journal entries (e.g. rent, management fee).', ontologyClass: 'bh:RecurringEntry' },
 );
 
 export const budgets = table(

@@ -1,0 +1,47 @@
+{
+  "skill": "subledger-tieout",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "us-ap-ties",
+      "description": "AP subledger agrees to the control account: no proposal",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:ap-tieout:BW-US",
+        "entity": "BW-US",
+        "period": "$period",
+        "ledger": "ap"
+      },
+      "expect": {
+        "status": "completed",
+        "summary": "2000 Accounts payable ties to the AP subledger at \\$77,399\\.00",
+        "counts": {
+          "total": 0
+        }
+      },
+      "fixture": "september-close"
+    },
+    {
+      "id": "us-ar-difference",
+      "description": "Finds the $25,000 manual journal that hit AR without a customer invoice",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:ar-tieout:BW-US",
+        "entity": "BW-US",
+        "period": "$period",
+        "ledger": "ar"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^1100 Accounts receivable is \\$25,000\\.00 above the AR subledger",
+            "kind": "anomaly",
+            "status": "pending"
+          }
+        ]
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

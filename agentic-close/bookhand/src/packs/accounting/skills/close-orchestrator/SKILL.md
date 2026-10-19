@@ -18,6 +18,7 @@ thresholds:
 materiality: none
 budgets: { maxSteps: 300, maxToolCalls: 60, maxTokens: 50000, maxCostUsd: 0.5 }
 spawns: ["*"]
+evals: evals.json
 execution: deterministic
 ---
 # Close orchestrator

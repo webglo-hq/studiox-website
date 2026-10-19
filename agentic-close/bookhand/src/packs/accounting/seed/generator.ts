@@ -859,14 +859,15 @@ export function generateScenario(): SeedDataset {
     book.entry({ entity: 'BW-UK', date: end, description: `Management fee from Brambleway US ${key}`, module: 'intercompany', icReference: icRef, counterparty: 'BW-US', currency: 'USD', fxRate: r, lines: [{ account: '6950', debit: ukGbp, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: ukUsd, memo: icRef }, { account: '2400', credit: ukGbp, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: -ukUsd, memo: icRef }] });
     ukIcPayableUsd += ukUsd;
     ukIcPayableGbp += ukGbp;
-    // Quarterly settlement on the 15th for the previous quarter (UK pays USD from GBP account)
+    // Quarterly settlement on the 15th for the previous quarter. The UK pays USD out of its GBP account: the bank
+    // converts, so the cash leg is a GBP movement and only the payable leg is denominated in USD.
     if ([1, 4, 7].includes(m.month)) {
       const settleUsd = 3 * 8_500_000;
       const settleDate = bizDay(ymd(m.year, m.month, 15));
       const sr = usdToGbp(settleDate);
       const gbpPaid = convertMinor(settleUsd, sr);
       const carryingShare = Math.round((ukIcPayableGbp * settleUsd) / ukIcPayableUsd);
-      book.entry({ entity: 'BW-UK', date: settleDate, description: `Intercompany settlement to Brambleway US (Q${Math.ceil((m.month - 1 || 12) / 3)})`, module: 'intercompany', counterparty: 'BW-US', currency: 'USD', fxRate: sr, icReference: `IC-SETTLE-${key}`, lines: [{ account: '2400', debit: gbpPaid, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: settleUsd, memo: 'Settle IC payable' }, { account: '1020', credit: gbpPaid, txnCurrency: 'USD', txnAmount: -settleUsd, memo: 'Wire to Brambleway US' }], cash: { lag: 0, bankText: `WIRE OUT BRAMBLEWAY SOFTWARE INC IC SETTLEMENT`, reference: `IC-SETTLE-${key}`, typeCode: 'ICDT-XBCT' } });
+      book.entry({ entity: 'BW-UK', date: settleDate, description: `Intercompany settlement to Brambleway US (Q${Math.ceil((m.month - 1 || 12) / 3)})`, module: 'intercompany', counterparty: 'BW-US', currency: 'USD', fxRate: sr, icReference: `IC-SETTLE-${key}`, lines: [{ account: '2400', debit: gbpPaid, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: settleUsd, memo: 'Settle IC payable' }, { account: '1020', credit: gbpPaid, memo: 'Wire to Brambleway US' }], cash: { lag: 0, bankText: `WIRE OUT BRAMBLEWAY SOFTWARE INC IC SETTLEMENT`, reference: `IC-SETTLE-${key}`, typeCode: 'ICDT-XBCT' } });
       const realized = carryingShare - gbpPaid;
       if (realized !== 0) {
         book.entry({ entity: 'BW-UK', date: settleDate, type: 'revaluation', description: 'Realized FX on intercompany settlement', module: 'fx', counterparty: 'BW-US', currency: 'USD', lines: realized > 0 ? [{ account: '2400', debit: realized, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: 0, memo: 'Carrying vs paid' }, { account: '7100', credit: realized, memo: 'Realized FX gain' }] : [{ account: '7100', debit: -realized, memo: 'Realized FX loss' }, { account: '2400', credit: -realized, counterparty: 'BW-US', txnCurrency: 'USD', txnAmount: 0, memo: 'Carrying vs paid' }] });

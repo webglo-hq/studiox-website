@@ -70,7 +70,8 @@ export async function assemblePackage(tx: Tx, ctx: DomainContext, lookups: Ledge
   const runs = await tx.find('agent_runs', { close_id: closeId });
   const exceptions = proposals.filter((p) => p.kind === 'anomaly' || p.risk_flags.length > 0).map((p) => ({ title: p.title, status: p.status, amount: p.amount_minor, kind: p.kind }));
   const chain = await verifyAuditChain(tx, ctx.tenantId);
-  const blockers = await closeBlockers(tx, lookups, closeId, { ignoreTaskKeys: ['close-package', 'lock'] });
+  // The package's own task, the lock that follows it and an earlier package proposal (superseded by this one) are not open work.
+  const blockers = await closeBlockers(tx, lookups, closeId, { ignoreTaskKeys: ['close-package', 'lock'], ignoreProposalKinds: ['task_update'] });
   return {
     version: 1,
     close: { id: close.id, name: close.name, periodEnd: close.period_end, status: close.status },

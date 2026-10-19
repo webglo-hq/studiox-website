@@ -99,6 +99,21 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * Snapshot copy for tests and skill evals (seed once, fork per case). Rows are deep-frozen, so they are
+   * shared; only the tables and indexes are copied.
+   */
+  clone(): MemoryStore {
+    if (this.undo) throw new Error('MemoryStore: cannot clone inside a transaction');
+    const copy = new MemoryStore({ clock: this.clock, guards: this.guards });
+    for (const [name, table] of this.rows) copy.rows.set(name, new Map(table));
+    for (const [name, list] of this.uniques) copy.uniques.set(name, list.map((u) => ({ ...u, map: new Map(u.map) })));
+    for (const [name, sec] of this.secondary) {
+      copy.secondary.set(name, new Map([...sec].map(([col, idx]) => [col, new Map([...idx].map(([key, ids]) => [key, new Set(ids)]))])));
+    }
+    return copy;
+  }
+
   // ------------------------------------------------------------------ transactions
 
   begin(): void {
@@ -496,8 +511,13 @@ export class MemoryDb implements Db {
   readonly store: MemoryStore;
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(opts: { clock?: () => string } = {}) {
-    this.store = new MemoryStore(opts);
+  constructor(opts: { clock?: () => string; store?: MemoryStore } = {}) {
+    this.store = opts.store ?? new MemoryStore(opts);
+  }
+
+  /** An independent copy of the current committed state (waits for running transactions to finish). */
+  fork(): Promise<MemoryDb> {
+    return this.exclusive(async () => new MemoryDb({ store: this.store.clone() }));
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {

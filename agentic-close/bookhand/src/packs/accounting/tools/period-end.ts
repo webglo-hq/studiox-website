@@ -57,6 +57,7 @@ export const periodEndTools: Tool[] = [
       const accrued = await x.tx.find('journal_entries', { entity_id: entity.id, period_id: period.id, entry_type: 'accrual', status: 'posted' });
       return {
         entity: entity.code,
+        currency: entity.functional_currency,
         period: input.period,
         periodEnd: period.end_date,
         reversalDate: x.pack.lookups.nextPeriod(period)?.start_date ?? null,
@@ -95,7 +96,7 @@ export const periodEndTools: Tool[] = [
           lines: due.map((d) => ({ id: d.lineId, period: d.periodKey, amount: d.amount, missed: d.periodKey < input.period })),
         });
       }
-      return { entity: entity.code, period: input.period, periodEnd: period.end_date, schedules: out };
+      return { entity: entity.code, currency: entity.functional_currency, period: input.period, periodEnd: period.end_date, schedules: out };
     },
     summarize: (o: { schedules: unknown[] }) => `${o.schedules.length} schedule(s) due`,
   },
@@ -140,7 +141,7 @@ export const periodEndTools: Tool[] = [
         const expenseAccount = lookups.accountsBySubtype(a.subtype === 'bh:PrepaidInsurance' ? 'bh:InsuranceExpense' : a.subtype === 'bh:PrepaidSoftware' ? 'bh:SoftwareExpense' : 'bh:OperatingExpense')[0];
         out.push({ account: a.number, accountName: a.name, glBalance: gl, scheduledRemaining: carried, unexplained, suggestedExpenseAccount: expenseAccount?.number ?? null, candidates });
       }
-      return { entity: entity.code, period: input.period, periodEnd: period.end_date, accounts: out };
+      return { entity: entity.code, currency: entity.functional_currency, period: input.period, periodEnd: period.end_date, accounts: out };
     },
     summarize: (o: { accounts: unknown[] }) => `${o.accounts.length} prepaid account(s) with unscheduled balances`,
   },
@@ -163,7 +164,7 @@ export const periodEndTools: Tool[] = [
           const a = assets.get(l.fixed_asset_id)!;
           return { id: l.id, assetNumber: a.asset_number, description: a.description, amount: l.amount_minor, department: a.department_id ? (x.pack.lookups.departments.get(a.department_id)?.code ?? null) : null, expenseAccount: x.pack.lookups.accountsById.get(a.depreciation_expense_account_id)?.number, accumulatedAccount: x.pack.lookups.accountsById.get(a.accumulated_depreciation_account_id)?.number, netBookValueAfter: l.net_book_value_minor };
         });
-      return { entity: entity.code, period: input.period, periodEnd: period.end_date, lines: out, total: out.reduce((s, l) => s + l.amount, 0) };
+      return { entity: entity.code, currency: entity.functional_currency, period: input.period, periodEnd: period.end_date, lines: out, total: out.reduce((s, l) => s + l.amount, 0) };
     },
     summarize: (o: { lines: unknown[]; total: number }) => `${o.lines.length} asset line(s), ${(o.total / 100).toFixed(2)}`,
   },
@@ -195,6 +196,7 @@ export const periodEndTools: Tool[] = [
       return {
         reconciliationId: refreshed.id,
         entity: entity.code,
+        currency: entity.functional_currency,
         ledger: input.ledger,
         controlAccount: `${control.number} ${control.name}`,
         gl: refreshed.gl_balance_minor,

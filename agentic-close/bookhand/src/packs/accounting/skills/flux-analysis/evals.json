@@ -1,0 +1,35 @@
+{
+  "skill": "flux-analysis",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "month-over-month-drivers",
+      "description": "Explains the material movements with drivers; the conference booth drives 6310 and missing hosting accrual shows in 5000",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:flux:*",
+        "entity": null,
+        "period": "$period",
+        "comparison": "prior_month"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Explain 6310 Events and conferences: \\+\\$68,600\\.00",
+            "kind": "flux_explanation",
+            "status": "pending"
+          },
+          {
+            "title": "^Explain 5000 Cloud hosting: -\\$36,618\\.00 \\(-100%\\)",
+            "kind": "flux_explanation"
+          }
+        ],
+        "counts": {
+          "blocked": 0
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

@@ -232,5 +232,5 @@ export function formatWorkday(wd: number): string {
 
 /** Short label used in the UI: WD3 for positive, WD-2 for negative. */
 export function workdayLabel(wd: number): string {
-  return wd > 0 ? `WD${wd}` : `WD${wd}`;
+  return `WD${wd}`;
 }

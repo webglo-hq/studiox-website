@@ -1,0 +1,22 @@
+{
+  "skill": "close-orchestrator",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "runs-every-ready-agent",
+      "description": "Runs every agent whose checklist dependencies are satisfied, wave by wave, as the staff accountant who started it, and proposes nothing itself",
+      "as": "maya",
+      "input": {
+        "closeId": "$closeId"
+      },
+      "expect": {
+        "status": "completed",
+        "summary": "^Ran 11 agents: \\d+ proposal\\(s\\), \\d+ auto-applied under policy, \\d+ waiting for your approval\\. Close progress: \\d+/27 tasks done",
+        "counts": {
+          "total": 0
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

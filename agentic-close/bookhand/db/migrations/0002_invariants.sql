@@ -1,6 +1,6 @@
 -- 0002_invariants.sql
 -- Business invariants enforced by the database itself (hand-written; mirrored by src/persistence/invariants.ts
--- for the in-memory adapter and proven equivalent by tests/integration/invariant-parity.test.ts).
+-- for the in-memory adapter; tests/integration/conformance.ts runs the same violation suite on every adapter).
 --
 -- Custom SQLSTATEs:  BH001 invariant violated | BH002 period locked | BH003 immutable row | BH004 audit chain
 

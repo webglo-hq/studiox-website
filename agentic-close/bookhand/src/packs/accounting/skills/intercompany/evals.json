@@ -1,0 +1,28 @@
+{
+  "skill": "intercompany",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "management-fee-mismatch",
+      "description": "Finds that the UK booked the management fee without the design-tool recharge and proposes a true-up",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:ic-rec:*",
+        "entity": null,
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "summary": "difference \\$7,500\\.00",
+        "proposals": [
+          {
+            "title": "^True up IC-2026-09-MGMT: BW-UK recorded \\$85,000\\.00, BW-US billed \\$92,500\\.00",
+            "kind": "journal_entry",
+            "status": "pending"
+          }
+        ]
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

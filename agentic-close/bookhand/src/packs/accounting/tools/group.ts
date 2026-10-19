@@ -107,11 +107,16 @@ export const groupTools: Tool[] = [
       const period = periodOf(x, entity.id, input.period);
       const fx = await x.pack.fx();
       const monetary = [...x.pack.lookups.accountsById.values()].filter((a) => a.is_monetary);
+      // A GL cash account mapped to a bank account is denominated in that bank account's currency: a USD wire paid
+      // out of a GBP account is a GBP movement (the bank converted), so there is nothing to remeasure on it.
+      const bankCurrency = new Map((await x.tx.find('bank_accounts', { entity_id: entity.id })).map((b) => [b.gl_account_id, b.currency] as const));
       const currencies = new Set<string>();
       const balances: Array<MonetaryBalance & { accountId: string }> = [];
       for (const a of monetary) {
+        const denominated = bankCurrency.get(a.id);
+        if (denominated === entity.functional_currency) continue;
         const lines = await x.tx.find('journal_lines', { entity_id: entity.id, account_id: a.id, entry_date: { lte: period.end_date } });
-        for (const c of new Set(lines.map((l) => l.txn_currency).filter((c) => c !== entity.functional_currency))) {
+        for (const c of new Set(lines.map((l) => l.txn_currency).filter((c) => c !== entity.functional_currency && (!denominated || c === denominated)))) {
           currencies.add(c);
           const b = await foreignBalance(x, entity.id, a.id, period.end_date, c);
           if (b.txn !== 0 || b.functional !== 0) balances.push({ accountId: a.id, accountNumber: a.number, accountName: a.name, txnBalance: b.txn, txnCurrency: c, functionalBalance: b.functional });

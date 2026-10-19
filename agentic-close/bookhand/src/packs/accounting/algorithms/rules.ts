@@ -7,7 +7,8 @@ import { normalizeText } from './text';
  *   "Never auto-post anything over $5,000"
  *   "Code Uber to 6200 for Sales"
  * and the compiler turns them into structured rules the skills enforce. Sentences it cannot parse are kept
- * as `unparsed` with a hint (in live mode the model can compile them into the same structures).
+ * as `unparsed` with a hint, and a policy containing one cannot be saved: every rule that is in force is
+ * one the deterministic compiler understood, in both offline and live modes.
  */
 
 export type CompiledRule =
@@ -38,6 +39,8 @@ function clean(s: string): string {
 
 export function compileRule(text: string): CompiledRule {
   const t = text.trim().replace(/\.$/, '');
+  // Bounded input keeps every pattern below linear-time territory (rules are short sentences anyway).
+  if (t.length > 300) return { kind: 'unparsed', text: text.slice(0, 300), hint: 'Keep each rule under 300 characters.' };
   let m: RegExpMatchArray | null;
 
   if ((m = t.match(/^(?:always\s+)?(?:code|map|book|post|categorize)\s+(.+?)\s+(?:to|as|under|into)\s+(?:account\s+)?(\d{4})((?:\s+(?!for\b|in\b|with\b)[a-z&]+)*)(?:\s+(?:for|in|with)\s+(?:the\s+)?([a-z&\- ]+?)(?:\s+department)?)?$/i))) {
@@ -76,7 +79,7 @@ export function compileRule(text: string): CompiledRule {
   return {
     kind: 'unparsed',
     text,
-    hint: 'Rephrase as e.g. "Always code Figma to 6420", "Never auto-post anything over $5,000", "Require approval for Copperline Legal", "Explain variances over 10% and $25,000". In live mode Claude compiles free-form rules.',
+    hint: 'Rephrase as e.g. "Always code Figma to 6420", "Never auto-post anything over $5,000", "Require approval for Copperline Legal", "Explain variances over 10% and $25,000".',
   };
 }
 

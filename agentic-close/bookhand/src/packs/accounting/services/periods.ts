@@ -20,7 +20,7 @@ export interface Blocker {
   href?: string;
 }
 
-export async function closeBlockers(tx: Tx, lookups: LedgerLookups, closeId: string, opts: { ignoreTaskKeys?: string[] } = {}): Promise<Blocker[]> {
+export async function closeBlockers(tx: Tx, lookups: LedgerLookups, closeId: string, opts: { ignoreTaskKeys?: string[]; ignoreProposalKinds?: string[] } = {}): Promise<Blocker[]> {
   const close = await tx.get('closes', closeId);
   if (!close) throw new DomainError('NOT_FOUND', 'close not found');
   const blockers: Blocker[] = [];
@@ -43,7 +43,7 @@ export async function closeBlockers(tx: Tx, lookups: LedgerLookups, closeId: str
       for (const r of rec) if (r.status !== 'reviewed') blockers.push({ kind: 'reconciliation', message: `${entity.code} ${a.number} ${a.name}: ${r.status.replace('_', ' ')}`, href: `#/recs/${r.id}` });
     }
   }
-  const pending = (await tx.find('proposals', { tenant_id: close.tenant_id, status: { in: ['pending', 'blocked'] } })).filter((p) => !p.period_id || periods.some((x) => x.id === p.period_id));
+  const pending = (await tx.find('proposals', { tenant_id: close.tenant_id, status: { in: ['pending', 'blocked'] } })).filter((p) => (!p.period_id || periods.some((x) => x.id === p.period_id)) && !opts.ignoreProposalKinds?.includes(p.kind));
   if (pending.length) blockers.push({ kind: 'proposal', message: `${pending.length} proposal(s) still await a decision`, href: '#/inbox' });
   const flux = await tx.find('flux_analyses', { close_id: closeId });
   if (!flux.length) blockers.push({ kind: 'flux', message: 'Flux analysis has not been generated', href: '#/flux' });

@@ -12,7 +12,7 @@ import type { BankWorkspace } from '../tools/bank';
  * writes rationales a reviewer can check.
  */
 
-const $ = (minor: number, currency = 'USD') => formatMoney(minor, { currency });
+const money = (minor: number, currency = 'USD') => formatMoney(minor, { currency });
 
 interface RunInput {
   closeId: string;
@@ -89,16 +89,16 @@ const transactionCoding: SkillEngine = {
       for (const s of suggestions) {
         if (!s.suggestion) {
           skipped++;
-          await agent.note(`No confident coding for ${s.merchant} ${$(s.amount, s.currency)}; left for a person`, { cardTransactionId: s.id }, 'decision');
+          await agent.note(`No confident coding for ${s.merchant} ${money(s.amount, s.currency)}; left for a person`, { cardTransactionId: s.id }, 'decision');
           continue;
         }
         const sg = s.suggestion;
         const source = sg.signals.includes('policy rule') ? 'rule' : sg.signals.some((x) => x.startsWith('history')) ? 'history' : 'agent';
         await tryPropose(agent, 'propose_transaction_coding', {
-          title: `Code ${s.merchant} ${$(s.amount, s.currency)} to ${sg.accountNumber} ${sg.accountName}${sg.departmentCode ? ` (${sg.departmentCode})` : ''}`,
+          title: `Code ${s.merchant} ${money(s.amount, s.currency)} to ${sg.accountNumber} ${sg.accountName}${sg.departmentCode ? ` (${sg.departmentCode})` : ''}`,
           why: `${sg.why}${s.memo ? ` Memo: "${s.memo}".` : ''} Cardholder ${s.cardholder ?? 'unknown'}.`,
           confidence: sg.confidence,
-          evidence: [{ type: 'card_transaction', id: s.id, label: `${s.merchant} ${s.date} ${$(s.amount, s.currency)}` }],
+          evidence: [{ type: 'card_transaction', id: s.id, label: `${s.merchant} ${s.date} ${money(s.amount, s.currency)}` }],
           key: `code:${s.id}`,
           cardTransactionId: s.id,
           accountNumber: sg.accountNumber,
@@ -109,13 +109,14 @@ const transactionCoding: SkillEngine = {
     }
     const review = await agent.call<{ findings: Array<{ id: string; date: string; merchant: string; memo: string | null; amount: number; codedAccount: string; codedNumber: string; codedBy: string | null; suggestedAccount: string; suggestedNumber: string; capitalizable: boolean; confidence: number; why: string; journalEntryId: string | null; journalEntryNumber: string | null; departmentCode: string | null; entity: string; assetClass: 'computer_equipment' | 'furniture_fixtures' | 'leasehold_improvements'; usefulLifeMonths: number }> }>('cards_review_posted', { entity: inp.entity, period: inp.period });
     const end = ctx.entities.find((e) => e.code === inp.entity)?.period?.end ?? ctx.close.periodEnd;
+    const cur = ctx.entities.find((e) => e.code === inp.entity)?.currency ?? ctx.reportingCurrency;
     for (const f of review.findings) {
-      const evidence: EvidenceRef[] = [{ type: 'card_transaction', id: f.id, label: `${f.merchant} ${f.date} ${$(f.amount)}` }, ...(f.journalEntryId ? [{ type: 'journal_entry', id: f.journalEntryId, label: `${f.journalEntryNumber} (posted to ${f.codedAccount})` }] : [])];
+      const evidence: EvidenceRef[] = [{ type: 'card_transaction', id: f.id, label: `${f.merchant} ${f.date} ${money(f.amount, cur)}` }, ...(f.journalEntryId ? [{ type: 'journal_entry', id: f.journalEntryId, label: `${f.journalEntryNumber} (posted to ${f.codedAccount})` }] : [])];
       const description = f.memo ? `${f.memo} (${f.merchant})` : f.merchant;
       if (f.capitalizable) {
         await tryPropose(agent, 'propose_capitalize_asset', {
-          title: `Capitalize ${f.merchant} ${$(f.amount)}: expensed to ${f.codedAccount}, belongs in ${f.suggestedAccount}`,
-          why: `This ${$(f.amount)} purchase on ${f.date} was ${f.codedBy === 'human' ? 'coded by a person' : 'coded'} to ${f.codedAccount} and posted (${f.journalEntryNumber}). ${f.why} It is above the $5,000 capitalization threshold (ASC 360 policy), so it should be recorded as an asset and depreciated over ${f.usefulLifeMonths} months instead of expensed this month; operating expense is overstated by ${$(f.amount)}.`,
+          title: `Capitalize ${f.merchant} ${money(f.amount, cur)}: expensed to ${f.codedAccount}, belongs in ${f.suggestedAccount}`,
+          why: `This ${money(f.amount, cur)} purchase on ${f.date} was ${f.codedBy === 'human' ? 'coded by a person' : 'coded'} to ${f.codedAccount} and posted (${f.journalEntryNumber}). ${f.why} It is above the capitalization threshold (ASC 360 policy), so it should be recorded as an asset and depreciated over ${f.usefulLifeMonths} months instead of expensed this month; operating expense is overstated by ${money(f.amount, cur)}.`,
           confidence: 0.92,
           evidence,
           key: `capitalize:${f.id}`,
@@ -145,7 +146,7 @@ const transactionCoding: SkillEngine = {
         });
       } else {
         await tryPropose(agent, 'propose_journal_entry', {
-          title: `Reclass ${f.merchant} ${$(f.amount)} from ${f.codedAccount} to ${f.suggestedAccount}`,
+          title: `Reclass ${f.merchant} ${money(f.amount, cur)} from ${f.codedAccount} to ${f.suggestedAccount}`,
           why: `${f.why} The posted coding (${f.codedAccount}) disagrees with rules and history.`,
           confidence: Math.min(0.85, f.confidence),
           evidence,
@@ -194,7 +195,7 @@ const bankReconciliation: SkillEngine = {
         const l = m.ledgerIds.map((id) => ledgerById.get(id)).filter(Boolean);
         const carried = l.some((x) => x!.carriedFromPriorPeriod);
         await tryPropose(agent, 'propose_rec_match', {
-          title: `${m.type === 'exact' ? 'Match' : m.type === 'fuzzy' ? 'Fuzzy match' : m.type === 'one_to_many' ? 'Match 1 bank line to several entries' : 'Match several bank lines to 1 entry'} ${$(Math.abs(m.bankAmount), cur)}: ${b[0]?.description.slice(0, 60) ?? ''}`,
+          title: `${m.type === 'exact' ? 'Match' : m.type === 'fuzzy' ? 'Fuzzy match' : m.type === 'one_to_many' ? 'Match 1 bank line to several entries' : 'Match several bank lines to 1 entry'} ${money(Math.abs(m.bankAmount), cur)}: ${b[0]?.description.slice(0, 60) ?? ''}`,
           why: `${m.explanation}${carried ? ' This clears an item outstanding at last month end.' : ''}`,
           confidence: m.confidence,
           evidence: [...b.map((x) => ({ type: 'bank_transaction', id: x!.id, label: `${x!.date} ${x!.description.slice(0, 80)}` })), ...l.map((x) => ({ type: 'journal_line', id: x!.id, label: `${x!.entryNumber} ${x!.date}` }))],
@@ -212,7 +213,7 @@ const bankReconciliation: SkillEngine = {
         const isCheck = /\bcheck\b|\bchk\b/i.test(`${l?.description ?? ''} ${l?.memo ?? ''}`);
         const kind = t.amount > 0 ? 'deposit_in_transit' : isCheck ? 'outstanding_check' : 'timing_difference';
         await tryPropose(agent, 'propose_reconciling_item', {
-          title: `${kind === 'deposit_in_transit' ? 'Deposit in transit' : kind === 'outstanding_check' ? 'Outstanding check' : 'Payment in transit'} ${$(Math.abs(t.amount), cur)} (${l?.entryNumber ?? ''})`,
+          title: `${kind === 'deposit_in_transit' ? 'Deposit in transit' : kind === 'outstanding_check' ? 'Outstanding check' : 'Payment in transit'} ${money(Math.abs(t.amount), cur)} (${l?.entryNumber ?? ''})`,
           why: `${t.explanation} Booked ${t.date}; ${t.clearedDate ? `the bank shows it on ${t.clearedDate}, after period end, so it is a timing difference, not an error.` : 'no clearing yet; follow up if it does not clear within 10 days.'}`,
           confidence: t.confidence,
           evidence: [{ type: 'journal_line', id: t.ledgerId, label: `${l?.entryNumber ?? ''} ${t.date}` }, ...(t.clearedBankId ? [{ type: 'bank_transaction', id: t.clearedBankId, label: `Cleared ${t.clearedDate}` }] : [])],
@@ -235,7 +236,7 @@ const bankReconciliation: SkillEngine = {
           const fee = b.kind === 'bank_fee';
           const amount = Math.abs(b.amount);
           await tryPropose(agent, 'propose_journal_entry', {
-            title: `Book ${fee ? 'bank fee' : 'interest income'} ${$(amount, cur)} (${b.description.slice(0, 40)})`,
+            title: `Book ${fee ? 'bank fee' : 'interest income'} ${money(amount, cur)} (${b.description.slice(0, 40)})`,
             why: `${b.explanation} The bank recorded it on ${b.date}; the books do not have it yet.`,
             confidence: b.confidence,
             evidence: [{ type: 'bank_transaction', id: b.bankId, label: `${b.date} ${b.description}` }],
@@ -254,7 +255,7 @@ const bankReconciliation: SkillEngine = {
           });
         } else {
           await tryPropose(agent, 'propose_reconciling_item', {
-            title: `Investigate unexplained bank ${b.amount < 0 ? 'debit' : 'credit'} ${$(Math.abs(b.amount), cur)}: ${b.description.slice(0, 60)}`,
+            title: `Investigate unexplained bank ${b.amount < 0 ? 'debit' : 'credit'} ${money(Math.abs(b.amount), cur)}: ${b.description.slice(0, 60)}`,
             why: `${b.explanation} No ledger entry, invoice, bill or payroll record explains it and no reference ties it to a counterparty. Leave it as an unexplained reconciling item and ask the bank for the originator details before booking anything.`,
             confidence: b.confidence,
             evidence: [{ type: 'bank_transaction', id: b.bankId, label: `${b.date} ${b.description}` }],
@@ -273,7 +274,7 @@ const bankReconciliation: SkillEngine = {
           void bank;
         }
       }
-      for (const u of r.unmatchedLedger) await agent.note(`Book item with no bank activity yet: ${u.description.slice(0, 80)} ${$(u.amount, cur)}`, { journalLineId: u.id }, 'observation');
+      for (const u of r.unmatchedLedger) await agent.note(`Book item with no bank activity yet: ${u.description.slice(0, 80)} ${money(u.amount, cur)}`, { journalLineId: u.id }, 'observation');
       lines.push(`${acct.bankAccount.name} (${acct.bankAccount.glAccount.split(' ')[0]}): ${r.matches.length} matches, ${r.timing.length} timing items, ${r.bankOnly.length} bank-only items, auto-match rate ${(r.stats.autoMatchRate * 100).toFixed(0)}%`);
     }
     return `Bank reconciliation ${inp.entity} ${inp.period}. ${lines.join('; ')}. ${tally(agent)}.`;
@@ -289,13 +290,13 @@ const subledgerTieout: SkillEngine = {
     const inp = input(agent);
     const ledger = inp.ledger ?? 'ap';
     await agent.plan([`Compare the ${ledger.toUpperCase()} subledger with its control account`, 'Trace any difference to entries that bypassed the subledger', 'Raise a finding if it does not tie']);
-    const t = await agent.call<{ reconciliationId: string; controlAccount: string; gl: number; subledger: number; difference: number; openDocuments: number; directEntriesToControlAccount: Array<{ id: string; entryNumber: string; date: string; description: string; total: number; source: string; externalRef: string | null; externalPreparedBy: string | null; externalApprovedBy: string | null; net: number }> }>('subledger_tieout', { entity: inp.entity, period: inp.period, ledger });
-    if (t.difference === 0) return `${t.controlAccount} ties to the ${ledger.toUpperCase()} subledger at ${$(Math.abs(t.gl))} (${t.openDocuments} open documents). No differences.`;
+    const t = await agent.call<{ reconciliationId: string; currency: string; controlAccount: string; gl: number; subledger: number; difference: number; openDocuments: number; directEntriesToControlAccount: Array<{ id: string; entryNumber: string; date: string; description: string; total: number; source: string; externalRef: string | null; externalPreparedBy: string | null; externalApprovedBy: string | null; net: number }> }>('subledger_tieout', { entity: inp.entity, period: inp.period, ledger });
+    if (t.difference === 0) return `${t.controlAccount} ties to the ${ledger.toUpperCase()} subledger at ${money(Math.abs(t.gl), t.currency)} (${t.openDocuments} open documents). No differences.`;
     const explaining = t.directEntriesToControlAccount.filter((e) => e.net !== 0);
     const explained = explaining.reduce((s, e) => s + e.net, 0) === t.difference;
     await tryPropose(agent, 'propose_anomaly', {
-      title: `${t.controlAccount} is ${$(Math.abs(t.difference))} ${t.difference > 0 ? 'above' : 'below'} the ${ledger.toUpperCase()} subledger`,
-      why: `The GL control account shows ${$(Math.abs(t.gl))} but open ${ledger === 'ap' ? 'bills' : 'invoices'} total ${$(Math.abs(t.subledger))}. ${explained ? `The difference is exactly ${explaining.map((e) => `${e.entryNumber}${e.externalRef ? ` (${e.externalRef})` : ''} "${e.description}" posted ${e.date} by ${e.source}${e.externalPreparedBy ? `, prepared by ${e.externalPreparedBy} and approved by ${e.externalApprovedBy}` : ''}`).join('; ')}, which posted straight to the control account with no subledger document.` : 'Entries posted directly to the control account do not fully explain it; investigate.'}`,
+      title: `${t.controlAccount} is ${money(Math.abs(t.difference), t.currency)} ${t.difference > 0 ? 'above' : 'below'} the ${ledger.toUpperCase()} subledger`,
+      why: `The GL control account shows ${money(Math.abs(t.gl), t.currency)} but open ${ledger === 'ap' ? 'bills' : 'invoices'} total ${money(Math.abs(t.subledger), t.currency)}. ${explained ? `The difference is exactly ${explaining.map((e) => `${e.entryNumber}${e.externalRef ? ` (${e.externalRef})` : ''} "${e.description}" posted ${e.date} by ${e.source}${e.externalPreparedBy ? `, prepared by ${e.externalPreparedBy} and approved by ${e.externalApprovedBy}` : ''}`).join('; ')}, which posted straight to the control account with no subledger document.` : 'Entries posted directly to the control account do not fully explain it; investigate.'}`,
       confidence: explained ? 0.9 : 0.6,
       evidence: [{ type: 'reconciliation', id: t.reconciliationId, label: `${ledger.toUpperCase()} tie-out ${inp.entity} ${inp.period}` }, ...explaining.map((e) => ({ type: 'journal_entry', id: e.id, label: e.entryNumber }))],
       key: `tieout:${inp.entity}:${ledger}:${inp.period}`,
@@ -308,7 +309,7 @@ const subledgerTieout: SkillEngine = {
       recommendedAction: explained ? 'Support the entry with a subledger document (invoice or bill) or reverse it; journal-entry review raises the reversal for an independent approver.' : 'Investigate the difference before certifying the tie-out.',
       resolution: { type: 'none' },
     });
-    return `${t.controlAccount} differs from the ${ledger.toUpperCase()} subledger by ${$(t.difference)}. ${tally(agent)}.`;
+    return `${t.controlAccount} differs from the ${ledger.toUpperCase()} subledger by ${money(t.difference, t.currency)}. ${tally(agent)}.`;
   },
 };
 
@@ -320,19 +321,19 @@ const accrualDetection: SkillEngine = {
   async offline(agent) {
     const inp = input(agent);
     await agent.plan(['Collect cutoff, received-not-invoiced and recurring-vendor signals', 'Propose auto-reversing accruals', 'Summarize']);
-    const s = await agent.call<{ periodEnd: string; reversalDate: string | null; accrualAccount: string | null; candidates: AccrualCandidate[]; alreadyAccrued: Array<{ description: string }> }>('ap_accrual_signals', { entity: inp.entity, period: inp.period });
+    const s = await agent.call<{ currency: string; periodEnd: string; reversalDate: string | null; accrualAccount: string | null; candidates: AccrualCandidate[]; alreadyAccrued: Array<{ description: string }> }>('ap_accrual_signals', { entity: inp.entity, period: inp.period });
     const min = Number(agent.policy.thresholds.minAccrualMinor ?? 100_000);
     let total = 0;
     for (const c of s.candidates) {
       if (c.amount < min) {
-        await agent.note(`Skipped ${c.vendorName} ${$(c.amount)}: below the ${$(min)} accrual minimum`, {}, 'decision');
+        await agent.note(`Skipped ${c.vendorName} ${money(c.amount, s.currency)}: below the ${money(min, s.currency)} accrual minimum`, {}, 'decision');
         continue;
       }
       if (s.alreadyAccrued.some((a) => a.description.includes(c.vendorName))) continue;
       total += c.amount;
       const label = c.signal === 'cutoff' ? 'late invoice (cutoff)' : c.signal === 'grni' ? 'received not invoiced' : 'recurring bill missing';
       await tryPropose(agent, 'propose_journal_entry', {
-        title: `Accrue ${c.vendorName} ${$(c.amount)}: ${label}`,
+        title: `Accrue ${c.vendorName} ${money(c.amount, s.currency)}: ${label}`,
         why: `${c.why} Accrue at ${s.periodEnd} and reverse on ${s.reversalDate ?? 'the first day of next period'} so the real bill is not double counted.`,
         confidence: c.signal === 'recurring_gap' ? Math.min(c.confidence, 0.85) : c.confidence,
         evidence: c.evidence,
@@ -351,7 +352,7 @@ const accrualDetection: SkillEngine = {
         sourceModule: 'ap',
       });
     }
-    return `Unrecorded-liability search ${inp.entity} ${inp.period}: ${s.candidates.length} candidate(s), ${$(total)} proposed for accrual with automatic reversal. ${tally(agent)}.`;
+    return `Unrecorded-liability search ${inp.entity} ${inp.period}: ${s.candidates.length} candidate(s), ${money(total, s.currency)} proposed for accrual with automatic reversal. ${tally(agent)}.`;
   },
 };
 
@@ -363,33 +364,33 @@ const prepaidAmortization: SkillEngine = {
   async offline(agent) {
     const inp = input(agent);
     await agent.plan(['Post scheduled amortization (including missed months)', 'Find prepaid balances without a schedule', 'Propose schedules with catch-up', 'Summarize']);
-    const due = await agent.call<{ periodEnd: string; schedules: Array<{ scheduleId: string; description: string; balanceAccount: string; plAccount: string; department: string | null; vendorId: string | null; lines: Array<{ id: string; period: string; amount: number; missed: boolean }> }> }>('prepaid_schedules_due', { entity: inp.entity, period: inp.period });
+    const due = await agent.call<{ currency: string; periodEnd: string; schedules: Array<{ scheduleId: string; description: string; balanceAccount: string; plAccount: string; department: string | null; vendorId: string | null; lines: Array<{ id: string; period: string; amount: number; missed: boolean }> }> }>('prepaid_schedules_due', { entity: inp.entity, period: inp.period });
     for (const s of due.schedules) {
       const total = s.lines.reduce((t, l) => t + l.amount, 0);
       const missed = s.lines.filter((l) => l.missed);
       await tryPropose(agent, 'propose_journal_entry', {
-        title: `Amortize ${s.description} ${$(total)}${missed.length ? ` incl. ${missed.length} missed month(s)` : ''}`,
-        why: `Straight-line schedule: ${s.lines.map((l) => `${l.period} ${$(l.amount)}`).join(', ')}. ${missed.length ? 'Earlier months were never posted, so they are caught up now.' : 'Routine monthly amortization.'}`,
+        title: `Amortize ${s.description} ${money(total, due.currency)}${missed.length ? ` incl. ${missed.length} missed month(s)` : ''}`,
+        why: `Straight-line schedule: ${s.lines.map((l) => `${l.period} ${money(l.amount, due.currency)}`).join(', ')}. ${missed.length ? 'Earlier months were never posted, so they are caught up now.' : 'Routine monthly amortization.'}`,
         confidence: missed.length ? 0.9 : 0.99,
-        evidence: [{ type: 'schedule', id: s.scheduleId, label: s.description }, ...s.lines.map((l) => ({ type: 'amortization_line', id: l.id, label: `${l.period} ${$(l.amount)}` }))],
+        evidence: [{ type: 'schedule', id: s.scheduleId, label: s.description }, ...s.lines.map((l) => ({ type: 'amortization_line', id: l.id, label: `${l.period} ${money(l.amount, due.currency)}` }))],
         key: `amort:${s.scheduleId}:${inp.period}`,
         entry: { entity: inp.entity, date: due.periodEnd, type: 'amortization', description: `Amortize ${s.description} (${inp.period})`, lines: [{ account: s.plAccount, debit: total, department: s.department, vendorId: s.vendorId, memo: s.description }, { account: s.balanceAccount, credit: total, vendorId: s.vendorId, memo: s.description }] },
         sourceModule: 'prepaid',
         links: { amortizationLineIds: s.lines.map((l) => l.id) },
       });
     }
-    const un = await agent.call<{ periodEnd: string; accounts: Array<{ account: string; accountName: string; glBalance: number; scheduledRemaining: number; unexplained: number; suggestedExpenseAccount: string | null; candidates: Array<{ billId: string; billNumber: string; vendorId: string; vendor: string; amount: number; serviceStart: string; serviceEnd: string; months: number; monthsElapsedThroughPeriod: number; monthly: number; catchUpAmount: number; department: string | null }> }> }>('prepaid_unscheduled_balances', { entity: inp.entity, period: inp.period });
+    const un = await agent.call<{ currency: string; periodEnd: string; accounts: Array<{ account: string; accountName: string; glBalance: number; scheduledRemaining: number; unexplained: number; suggestedExpenseAccount: string | null; candidates: Array<{ billId: string; billNumber: string; vendorId: string; vendor: string; amount: number; serviceStart: string; serviceEnd: string; months: number; monthsElapsedThroughPeriod: number; monthly: number; catchUpAmount: number; department: string | null }> }> }>('prepaid_unscheduled_balances', { entity: inp.entity, period: inp.period });
     for (const a of un.accounts) {
       if (!a.candidates.length) {
-        await agent.note(`${a.account} ${a.accountName} carries ${$(a.unexplained)} that no schedule or bill explains`, { account: a.account }, 'observation');
+        await agent.note(`${a.account} ${a.accountName} carries ${money(a.unexplained, un.currency)} that no schedule or bill explains`, { account: a.account }, 'observation');
         continue;
       }
       for (const c of a.candidates) {
         await tryPropose(agent, 'propose_prepaid_schedule', {
-          title: `Create prepaid schedule for ${c.vendor} ${c.billNumber} and catch up ${c.monthsElapsedThroughPeriod} month(s) (${$(c.catchUpAmount)})`,
-          why: `${a.account} ${a.accountName} carries ${$(a.glBalance)} but schedules only explain ${$(a.scheduledRemaining)}. Bill ${c.billNumber} from ${c.vendor} (${$(c.amount)}, service ${c.serviceStart} to ${c.serviceEnd}) was coded to prepaid without an amortization schedule, so ${c.monthsElapsedThroughPeriod} month(s) of expense through ${inp.period} were never recognized. Create a ${c.months}-month straight-line schedule (${$(c.monthly)} per month) and post the catch-up now.`,
+          title: `Create prepaid schedule for ${c.vendor} ${c.billNumber} and catch up ${c.monthsElapsedThroughPeriod} month(s) (${money(c.catchUpAmount, un.currency)})`,
+          why: `${a.account} ${a.accountName} carries ${money(a.glBalance, un.currency)} but schedules only explain ${money(a.scheduledRemaining, un.currency)}. Bill ${c.billNumber} from ${c.vendor} (${money(c.amount, un.currency)}, service ${c.serviceStart} to ${c.serviceEnd}) was coded to prepaid without an amortization schedule, so ${c.monthsElapsedThroughPeriod} month(s) of expense through ${inp.period} were never recognized. Create a ${c.months}-month straight-line schedule (${money(c.monthly, un.currency)} per month) and post the catch-up now.`,
           confidence: 0.93,
-          evidence: [{ type: 'bill', id: c.billId, label: `${c.billNumber} ${$(c.amount)}` }, { type: 'account', id: null, label: `${a.account} balance ${$(a.glBalance)}` }],
+          evidence: [{ type: 'bill', id: c.billId, label: `${c.billNumber} ${money(c.amount, un.currency)}` }, { type: 'account', id: null, label: `${a.account} balance ${money(a.glBalance, un.currency)}` }],
           key: `prepaid:${c.billId}`,
           schedule: {
             type: 'prepaid',
@@ -423,13 +424,13 @@ const depreciation: SkillEngine = {
   async offline(agent) {
     const inp = input(agent);
     await agent.plan(['Read depreciation due from the asset register', 'Propose the depreciation entry by department']);
-    const d = await agent.call<{ periodEnd: string; total: number; lines: Array<{ id: string; assetNumber: string; description: string; amount: number; department: string | null; expenseAccount: string; accumulatedAccount: string }> }>('fa_depreciation_due', { entity: inp.entity, period: inp.period });
+    const d = await agent.call<{ currency: string; periodEnd: string; total: number; lines: Array<{ id: string; assetNumber: string; description: string; amount: number; department: string | null; expenseAccount: string; accumulatedAccount: string }> }>('fa_depreciation_due', { entity: inp.entity, period: inp.period });
     if (!d.lines.length) return `No depreciation due for ${inp.entity} ${inp.period}.`;
     const byDept = new Map<string, number>();
     for (const l of d.lines) byDept.set(l.department ?? '', (byDept.get(l.department ?? '') ?? 0) + l.amount);
     await tryPropose(agent, 'propose_journal_entry', {
-      title: `Depreciation ${inp.entity} ${inp.period} ${$(d.total)} (${d.lines.length} assets)`,
-      why: `Straight-line depreciation from the fixed-asset register: ${d.lines.map((l) => `${l.assetNumber} ${$(l.amount)}`).join(', ')}.`,
+      title: `Depreciation ${inp.entity} ${inp.period} ${money(d.total, d.currency)} (${d.lines.length} assets)`,
+      why: `Straight-line depreciation from the fixed-asset register: ${d.lines.map((l) => `${l.assetNumber} ${money(l.amount, d.currency)}`).join(', ')}.`,
       confidence: 0.99,
       evidence: d.lines.map((l) => ({ type: 'depreciation_line', id: l.id, label: `${l.assetNumber} ${l.description}` })),
       key: `depr:${inp.entity}:${inp.period}`,
@@ -443,7 +444,7 @@ const depreciation: SkillEngine = {
       sourceModule: 'fixed_assets',
       links: { depreciationLineIds: d.lines.map((l) => l.id) },
     });
-    return `Depreciation ${inp.entity} ${inp.period}: ${$(d.total)} across ${d.lines.length} assets. ${tally(agent)}.`;
+    return `Depreciation ${inp.entity} ${inp.period}: ${money(d.total, d.currency)} across ${d.lines.length} assets. ${tally(agent)}.`;
   },
 };
 
@@ -472,10 +473,10 @@ const intercompany: SkillEngine = {
         const rate = await spotRate(agent, rec.txnCurrency, target?.currency ?? rec.txnCurrency, rec.date);
         const functional = Math.round(p.difference * rate);
         await tryPropose(agent, 'propose_journal_entry', {
-          title: `True up ${p.reference}: ${payEntity} recorded ${$(p.payable?.amountTxn ?? 0, rec.txnCurrency)}, ${rec.entityCode} billed ${$(rec.amountTxn, rec.txnCurrency)}`,
-          why: `${rec.entityCode} billed ${$(rec.amountTxn, rec.txnCurrency)} under ${p.reference} but ${payEntity} recorded ${$(p.payable?.amountTxn ?? 0, rec.txnCurrency)}; difference ${$(p.difference, rec.txnCurrency)}. The billing entry explains it: ${memo}. ${payEntity} should record the missing ${$(p.difference, rec.txnCurrency)} so both sides agree before elimination.`,
+          title: `True up ${p.reference}: ${payEntity} recorded ${money(p.payable?.amountTxn ?? 0, rec.txnCurrency)}, ${rec.entityCode} billed ${money(rec.amountTxn, rec.txnCurrency)}`,
+          why: `${rec.entityCode} billed ${money(rec.amountTxn, rec.txnCurrency)} under ${p.reference} but ${payEntity} recorded ${money(p.payable?.amountTxn ?? 0, rec.txnCurrency)}; difference ${money(p.difference, rec.txnCurrency)}. The billing entry explains it: ${memo}. ${payEntity} should record the missing ${money(p.difference, rec.txnCurrency)} so both sides agree before elimination.`,
           confidence: 0.82,
-          evidence: p.entries.map((e) => ({ type: 'journal_entry', id: e.entryId, label: `${e.entity} ${e.entryNumber} ${$(e.amountTxn, e.currency)}` })),
+          evidence: p.entries.map((e) => ({ type: 'journal_entry', id: e.entryId, label: `${e.entity} ${e.entryNumber} ${money(e.amountTxn, e.currency)}` })),
           key: `ic-trueup:${p.reference}`,
           entry: {
             entity: payEntity,
@@ -495,7 +496,7 @@ const intercompany: SkillEngine = {
         });
       } else {
         await tryPropose(agent, 'propose_anomaly', {
-          title: `Intercompany ${p.reference}: ${p.status.replace('_', ' ')} ${$(Math.abs(p.difference))}`,
+          title: `Intercompany ${p.reference}: ${p.status.replace('_', ' ')} ${money(Math.abs(p.difference))}`,
           why: `Both sides of ${p.reference} must agree. ${memo}`,
           confidence: 0.7,
           evidence: p.entries.map((e) => ({ type: 'journal_entry', id: e.entryId, label: e.entryNumber })),
@@ -512,7 +513,7 @@ const intercompany: SkillEngine = {
       }
     }
     const matched = r.pairs.filter((p) => p.status === 'matched').length;
-    return `Intercompany ${inp.period}: ${matched} of ${r.pairs.length} charge(s) agree; receivable ${$(r.balances.receivable)} vs payable ${$(r.balances.payableInAgreementCurrency)} (difference ${$(r.balances.difference)}). ${tally(agent)}.`;
+    return `Intercompany ${inp.period}: ${matched} of ${r.pairs.length} charge(s) agree; receivable ${money(r.balances.receivable)} vs payable ${money(r.balances.payableInAgreementCurrency)} (difference ${money(r.balances.difference)}). ${tally(agent)}.`;
   },
 };
 
@@ -543,8 +544,8 @@ const fxRevaluation: SkillEngine = {
           const counterparty = ctx.entities.find((x) => x.code !== e.code && x.kind === 'operating')?.code ?? null;
           const isIc = /intercompany|due to|due from/i.test(adj.accountName);
           await tryPropose(agent, 'propose_journal_entry', {
-            title: `Revalue ${e.code} ${c.currency} ${adj.accountName}: unrealized ${loss ? 'loss' : 'gain'} ${$(amt, b.functionalCurrency)}`,
-            why: `${adj.accountName} holds ${$(Math.abs(adj.txnBalance), c.currency)} carried at ${$(Math.abs(adj.carrying), b.functionalCurrency)}. At the ${b.periodEnd} closing rate (${c.closingRate} ${b.functionalCurrency} per ${c.currency}) it is ${$(Math.abs(adj.remeasured), b.functionalCurrency)}, so ASC 830 remeasurement books an unrealized ${loss ? 'loss' : 'gain'} of ${$(amt, b.functionalCurrency)}.`,
+            title: `Revalue ${e.code} ${c.currency} ${adj.accountName}: unrealized ${loss ? 'loss' : 'gain'} ${money(amt, b.functionalCurrency)}`,
+            why: `${adj.accountName} holds ${money(Math.abs(adj.txnBalance), c.currency)} carried at ${money(Math.abs(adj.carrying), b.functionalCurrency)}. At the ${b.periodEnd} closing rate (${c.closingRate} ${b.functionalCurrency} per ${c.currency}) it is ${money(Math.abs(adj.remeasured), b.functionalCurrency)}, so ASC 830 remeasurement books an unrealized ${loss ? 'loss' : 'gain'} of ${money(amt, b.functionalCurrency)}.`,
             confidence: 0.97,
             evidence: [{ type: 'account', id: null, label: `${adj.accountNumber} ${adj.accountName}` }, { type: 'fx_rate', id: null, label: `${c.currency}/${b.functionalCurrency} closing ${c.closingRate}` }],
             key: `reval:${e.code}:${inp.period}:${adj.accountNumber}:${c.currency}`,
@@ -559,7 +560,7 @@ const fxRevaluation: SkillEngine = {
             },
             sourceModule: 'fx',
           });
-          parts.push(`${e.code} ${adj.accountNumber} ${loss ? '-' : '+'}${$(amt, b.functionalCurrency)}`);
+          parts.push(`${e.code} ${adj.accountNumber} ${loss ? '-' : '+'}${money(amt, b.functionalCurrency)}`);
         }
       }
     }
@@ -579,8 +580,8 @@ const eliminations: SkillEngine = {
     if (e.alreadyPosted.length) return `Eliminations for ${inp.period} are already posted.`;
     if (e.entries.income) {
       await tryPropose(agent, 'propose_journal_entry', {
-        title: `Eliminate intercompany fees ${inp.period}: revenue ${$(e.revenue)} vs expense ${$(e.expenseUsd)}`,
-        why: `Intercompany revenue (${$(e.revenue)}) and the subsidiary's expense translated at the ${inp.period} average rate ${e.rates.average.toFixed(4)} (${$(e.expenseUsd)}) are eliminated in consolidation; the ${$(Math.abs(e.revenue - e.expenseUsd))} difference is translation (ASC 830), presented in FX.`,
+        title: `Eliminate intercompany fees ${inp.period}: revenue ${money(e.revenue)} vs expense ${money(e.expenseUsd)}`,
+        why: `Intercompany revenue (${money(e.revenue)}) and the subsidiary's expense translated at the ${inp.period} average rate ${e.rates.average.toFixed(4)} (${money(e.expenseUsd)}) are eliminated in consolidation; the ${money(Math.abs(e.revenue - e.expenseUsd))} difference is translation (ASC 830), presented in FX.`,
         confidence: 0.97,
         evidence: [{ type: 'calc', id: null, label: `Average rate ${e.rates.average.toFixed(4)}` }],
         key: `elim:is:${inp.period}`,
@@ -590,8 +591,8 @@ const eliminations: SkillEngine = {
     }
     if (e.entries.balance) {
       await tryPropose(agent, 'propose_journal_entry', {
-        title: `Eliminate intercompany balances ${inp.period}: ${$(e.receivable)} receivable vs ${$(e.payableUsd)} payable`,
-        why: `The parent's intercompany receivable (${$(e.receivable)}) and the subsidiary's payable translated at the closing rate ${e.rates.closing.toFixed(4)} (${$(e.payableUsd)}) eliminate; the difference goes to CTA. Reverses on the first day of next period.`,
+        title: `Eliminate intercompany balances ${inp.period}: ${money(e.receivable)} receivable vs ${money(e.payableUsd)} payable`,
+        why: `The parent's intercompany receivable (${money(e.receivable)}) and the subsidiary's payable translated at the closing rate ${e.rates.closing.toFixed(4)} (${money(e.payableUsd)}) eliminate; the difference goes to CTA. Reverses on the first day of next period.`,
         confidence: 0.97,
         evidence: [{ type: 'calc', id: null, label: `Closing rate ${e.rates.closing.toFixed(4)}` }],
         key: `elim:bs:${inp.period}`,
@@ -631,7 +632,7 @@ const jeReview: SkillEngine = {
         const entity = bill?.entity ?? ctx.entities.find((e) => e.kind === 'operating')!.code;
         const end = ctx.entities.find((e) => e.code === entity)?.period?.end ?? ctx.close.periodEnd;
         await tryPropose(agent, 'propose_anomaly', {
-          title: `Duplicate payment to ${dup.vendorName}: ${$(dup.amount)} paid twice for one invoice`,
+          title: `Duplicate payment to ${dup.vendorName}: ${money(dup.amount, ctx.entities.find((x) => x.code === entity)?.currency)} paid twice for one invoice`,
           why: `${f.why} The second bill (${bill?.billNumber}) was entered from the AP inbox with a reformatted invoice number, so the system treated it as new. Recover the cash: reclassify the duplicate payment to vendor refunds receivable, void the duplicate bill and ask ${dup.vendorName} for the refund.`,
           confidence: f.score,
           evidence: f.evidence,
@@ -655,7 +656,7 @@ const jeReview: SkillEngine = {
       if (f.flags.includes('sod_break') && f.entry) {
         const e = f.entry;
         await tryPropose(agent, 'propose_anomaly', {
-          title: `Reverse ${e.entryNumber}: ${$(e.total)} entry ${f.flags.includes('revenue_manual') ? 'crediting revenue ' : ''}prepared and approved by the same person`,
+          title: `Reverse ${e.entryNumber}: ${money(e.total, ctx.entities.find((x) => x.id === e.entityId)?.currency)} entry ${f.flags.includes('revenue_manual') ? 'crediting revenue ' : ''}prepared and approved by the same person`,
           why: `${f.why} Manual entries need an independent approver (maker-checker); this one had none, credits revenue with no invoice behind it, and posts straight to a control account. Reverse it until someone independent reviews support for the adjustment.`,
           confidence: f.score,
           evidence: f.evidence,
@@ -706,7 +707,7 @@ const fluxAnalysis: SkillEngine = {
       const d = await agent.call<{ drivers: Array<{ kind: string; label: string; amount_minor: number; evidence?: Array<{ type: string; id: string; label: string }> }>; coverage: number; draft: string; confidence: number }>('flux_drivers', { fluxLineId: l.id });
       const evidence: EvidenceRef[] = [{ type: 'flux_line', id: l.id, label: `${l.account} ${l.name}` }, ...d.drivers.flatMap((x) => (x.evidence ?? []).slice(0, 2))].slice(0, 12);
       await tryPropose(agent, 'propose_flux_explanation', {
-        title: `Explain ${l.account} ${l.name}: ${l.variance > 0 ? '+' : '-'}${$(Math.abs(l.variance))}${l.variancePct === null ? '' : ` (${(l.variancePct * 100).toFixed(0)}%)`}`,
+        title: `Explain ${l.account} ${l.name}: ${l.variance > 0 ? '+' : '-'}${money(Math.abs(l.variance))}${l.variancePct === null ? '' : ` (${(l.variancePct * 100).toFixed(0)}%)`}`,
         why: `Variance exceeds the policy thresholds. Drivers account for ${(d.coverage * 100).toFixed(0)}% of the change.`,
         confidence: d.confidence,
         evidence,

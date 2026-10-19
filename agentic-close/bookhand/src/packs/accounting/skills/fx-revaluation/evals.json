@@ -1,0 +1,30 @@
+{
+  "skill": "fx-revaluation",
+  "fixture": "september-close",
+  "cases": [
+    {
+      "id": "uk-usd-monetary-items",
+      "description": "Remeasures the UK entity's USD intercompany payable at the closing rate and leaves its GBP bank account alone, even though USD wires were paid out of it",
+      "input": {
+        "closeId": "$closeId",
+        "closeTaskId": "$task:fx-reval:*",
+        "entity": null,
+        "period": "$period"
+      },
+      "expect": {
+        "status": "completed",
+        "proposals": [
+          {
+            "title": "^Revalue BW-UK USD Due to Brambleway US: unrealized loss £1,479\\.34",
+            "kind": "journal_entry"
+          }
+        ],
+        "absent": ["Cash - Operating GBP"],
+        "counts": {
+          "total": 1
+        }
+      },
+      "fixture": "september-close"
+    }
+  ]
+}

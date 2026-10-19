@@ -680,7 +680,8 @@ const closePackage: ProposalHandler<S> = {
       { id: 'PKG-OPEN', label: 'Close is still open', passed: !!close && close.status !== 'closed', severity: 'error', message: 'close already locked' },
       { id: 'AX-TB-01', label: 'Consolidated trial balance balances', passed: content.statements?.consolidatedTb?.totalDebit === content.statements?.consolidatedTb?.totalCredit, severity: 'error', message: 'consolidated TB does not balance' },
       { id: 'BS-BALANCES', label: 'Balance sheet balances (assets = liabilities + equity)', passed: !!content.statements?.balanceSheet?.balances, severity: 'error', message: 'balance sheet does not balance' },
-      { id: 'BLOCKERS', label: 'No open blockers besides the package itself', passed: (content.openBlockers ?? []).length === 0, severity: 'warning', message: `${(content.openBlockers ?? []).length} open item(s): ${(content.openBlockers ?? []).slice(0, 3).join('; ')}` },
+      // A final package states that the close is complete; one generated over open work stays a draft.
+      { id: 'BLOCKERS', label: 'Everything else in the close is finished and signed off', passed: (content.openBlockers ?? []).length === 0, severity: 'error', message: `${(content.openBlockers ?? []).length} open item(s): ${(content.openBlockers ?? []).slice(0, 3).join('; ')}. Finish them, then regenerate the package.` },
     ];
   },
   async onCreate(proposal, scope) {

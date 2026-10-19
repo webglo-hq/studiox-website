@@ -35,17 +35,25 @@ export async function createPgDriver(connectionString: string, opts: { max?: num
     },
     async transaction(fn, txOpts) {
       const client = await pool.connect();
+      // One connection runs one statement at a time. Callers may issue reads concurrently inside a transaction
+      // (Promise.all), so statements are chained here explicitly instead of relying on node-postgres' implicit
+      // client queue (deprecated, removed in pg 9); COMMIT/ROLLBACK wait for anything still in flight.
+      let inFlight: Promise<unknown> = Promise.resolve();
       try {
         await client.query(txOpts?.readOnly ? 'BEGIN READ ONLY' : 'BEGIN');
         const result = await fn({
           async query<R>(text: string, params?: unknown[]) {
-            const r = await client.query(text, params);
+            const run = inFlight.then(() => client.query(text, params));
+            inFlight = run.catch(() => undefined);
+            const r = await run;
             return { rows: r.rows as R[] };
           },
         });
+        await inFlight;
         await client.query('COMMIT');
         return result;
       } catch (error) {
+        await inFlight;
         await client.query('ROLLBACK').catch(() => undefined);
         throw mapPgError(error);
       } finally {

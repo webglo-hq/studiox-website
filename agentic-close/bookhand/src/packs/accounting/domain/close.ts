@@ -21,6 +21,8 @@ export interface TemplateTask {
   skillKey: string | null;
   dependsOn: string[];
   evidenceRequired: boolean;
+  /** Starts only when every earlier task in the checklist is signed off (done), not merely prepared. */
+  startsAfterSignOff?: boolean;
 }
 
 /** The monthly close SOP as data (the checklist template). */
@@ -40,7 +42,7 @@ export const MONTHLY_CLOSE_TEMPLATE: TemplateTask[] = [
   { key: 'eliminations', title: 'Post consolidation eliminations', description: 'Eliminate intercompany revenue, expense and balances in the elimination entity (translated per ASC 830).', category: 'intercompany', workday: 4, scope: 'consolidated', ownerRole: 'senior_accountant', reviewerRole: 'controller', skillKey: 'intercompany-eliminations', dependsOn: ['ic-rec', 'fx-reval'], evidenceRequired: true },
   { key: 'bs-recs', title: 'Certify balance-sheet reconciliations', description: 'Every balance-sheet reconciliation prepared and independently reviewed.', category: 'review', workday: 4, scope: 'each_entity', ownerRole: 'senior_accountant', reviewerRole: 'controller', skillKey: null, dependsOn: ['bank-rec', 'ap-tieout', 'ar-tieout', 'prepaids', 'depreciation'], evidenceRequired: true },
   { key: 'flux', title: 'Flux analysis and commentary', description: 'Explain material variances against prior month and budget with driver-based commentary.', category: 'review', workday: 4, scope: 'consolidated', ownerRole: 'fpa_analyst', reviewerRole: 'controller', skillKey: 'flux-analysis', dependsOn: ['ap-tieout', 'ar-tieout', 'prepaids', 'depreciation', 'je-review', 'eliminations'], evidenceRequired: true },
-  { key: 'close-package', title: 'Prepare the close package', description: 'Trial balance, statements, commentary, reconciliation status and exceptions.', category: 'reporting', workday: 5, scope: 'consolidated', ownerRole: 'senior_accountant', reviewerRole: 'controller', skillKey: 'close-package', dependsOn: ['flux', 'bs-recs'], evidenceRequired: true },
+  { key: 'close-package', title: 'Prepare the close package', description: 'Trial balance, statements, commentary, reconciliation status and exceptions.', category: 'reporting', workday: 5, scope: 'consolidated', ownerRole: 'senior_accountant', reviewerRole: 'controller', skillKey: 'close-package', dependsOn: ['flux', 'bs-recs'], evidenceRequired: true, startsAfterSignOff: true },
   { key: 'lock', title: 'Lock the period', description: 'Soft-close, final review and hard-lock the period for every entity.', category: 'lock', workday: 5, scope: 'consolidated', ownerRole: 'controller', reviewerRole: 'cfo', skillKey: null, dependsOn: ['close-package'], evidenceRequired: false },
 ];
 
@@ -123,6 +125,7 @@ export interface TaskState {
 const DONE = new Set(['done', 'skipped']);
 /** Downstream work may start once the preparer is finished; reviewer sign-off gates the period lock instead. */
 const SATISFIES_DEPENDENCY = new Set(['done', 'skipped', 'ready_for_review']);
+const SIGNED_OFF_START = new Set(MONTHLY_CLOSE_TEMPLATE.filter((t) => t.startsAfterSignOff).map((t) => t.key));
 
 export async function taskStates(tx: Tx, closeId: string): Promise<TaskState[]> {
   const tasks = await tx.find('close_tasks', { close_id: closeId }, { orderBy: [['sort_order', 'asc']] });
@@ -130,7 +133,10 @@ export async function taskStates(tx: Tx, closeId: string): Promise<TaskState[]> 
   const deps = await tx.find('close_task_dependencies', { task_id: { in: tasks.map((t) => t.id) } });
   return tasks.map((task) => {
     const mine = deps.filter((d) => d.task_id === task.id).map((d) => d.depends_on_task_id);
-    const blockedBy = mine.map((id) => byId.get(id)!).filter((d) => d && !SATISFIES_DEPENDENCY.has(d.status));
+    // The close package summarizes the period, so it starts from signed-off work only.
+    const blockedBy = SIGNED_OFF_START.has(task.key)
+      ? tasks.filter((t) => t.sort_order < task.sort_order && !DONE.has(t.status))
+      : mine.map((id) => byId.get(id)!).filter((d) => d && !SATISFIES_DEPENDENCY.has(d.status));
     return { task, dependsOn: mine, ready: blockedBy.length === 0, blockedBy };
   });
 }
@@ -181,6 +187,10 @@ export async function completeTask(tx: Tx, ctx: DomainContext, taskId: string, o
   const st = states.find((s) => s.task.id === taskId)!;
   if (!st.ready) throw new DomainError('CONFLICT', `"${task.title}" is waiting on: ${st.blockedBy.map((b) => b.title).join(', ')}`);
   const next = task.reviewer_id ? 'ready_for_review' : 'done';
+  if (next === 'done') {
+    const problems = await signOffProblems(tx, task);
+    if (problems.length) throw new DomainError('CONFLICT', problems.join(' '), { problems });
+  }
   const updated = await tx.update('close_tasks', taskId, {
     status: next,
     started_at: task.started_at ?? ctx.clock.now(),
@@ -194,6 +204,21 @@ export async function completeTask(tx: Tx, ctx: DomainContext, taskId: string, o
   return updated;
 }
 
+/**
+ * What must be true, beyond dependencies, before a task can be signed off as done. The flux task's product is
+ * the Controller-approved flux analysis, so signing the task off without that approval would let the close
+ * package go out over unapproved variance commentary.
+ */
+export async function signOffProblems(tx: Tx, task: Row<'close_tasks'>): Promise<string[]> {
+  if (task.key === 'flux') {
+    const analyses = await tx.find('flux_analyses', { close_id: task.close_id });
+    if (!analyses.length) return ['The flux analysis has not been prepared yet.'];
+    const open = analyses.filter((a) => a.status !== 'approved');
+    if (open.length) return [`The Controller has not approved the flux analysis (${open.map((a) => a.comparison.replace('_', ' ')).join(', ')}) yet.`];
+  }
+  return [];
+}
+
 export async function reviewTask(tx: Tx, ctx: DomainContext, taskId: string, decision: 'approve' | 'send_back', note?: string): Promise<Row<'close_tasks'>> {
   const task = await tx.get('close_tasks', taskId);
   if (!task) throw new DomainError('NOT_FOUND', 'task not found');
@@ -204,6 +229,8 @@ export async function reviewTask(tx: Tx, ctx: DomainContext, taskId: string, dec
     await appendAudit(tx, ctx.tenantId, ctx.actor, { action: 'close_task.send_back', objectType: 'close_task', objectId: taskId, summary: `${task.title} sent back${note ? `: ${note}` : ''}` }, ctx.clock.now());
     return t;
   }
+  const problems = await signOffProblems(tx, task);
+  if (problems.length) throw new DomainError('CONFLICT', problems.join(' '), { problems });
   const t = await tx.update('close_tasks', taskId, { status: 'done', reviewed_at: ctx.clock.now(), reviewed_by: ctx.actor.userId });
   await tx.insert('signoffs', { tenant_id: ctx.tenantId, object_type: 'close_task', object_id: taskId, role: 'reviewer', user_id: ctx.actor.userId!, comment: note ?? null });
   await appendAudit(tx, ctx.tenantId, ctx.actor, { action: 'close_task.review', objectType: 'close_task', objectId: taskId, summary: `${task.title} reviewed and done` }, ctx.clock.now());
