@@ -112,7 +112,7 @@ export async function runCloseAgents(app: App, p: Principal, closeId: string, op
   if (close.status === 'closed') throw new DomainError('CONFLICT', 'This close is locked.');
   const active = await app.read((tx) => tx.find('agent_runs', { close_id: closeId, skill_key: 'close-orchestrator', status: { in: ['queued', 'running'] } }));
   if (active.length) return { runId: active[0]!.id, alreadyRunning: true };
-  const run = await app.runtime.start(p.tenantId, { skillKey: 'close-orchestrator', input: { closeId }, requestedBy: p.user.id, requestedByLabel: p.user.display_name, trigger: meta.requestId?.startsWith('mcp') ? 'mcp' : 'manual', closeId, mode: opts.mode });
+  const run = await app.runtime.start(p.tenantId, { skillKey: 'close-orchestrator', input: { closeId }, requestedBy: p.user.id, requestedByLabel: p.user.display_name, trigger: meta.channel === 'mcp' ? 'mcp' : meta.channel === 'api' ? 'api' : 'manual', closeId, mode: opts.mode });
   void app.queue.enqueue(run.id);
   return { runId: run.id, alreadyRunning: false };
 }

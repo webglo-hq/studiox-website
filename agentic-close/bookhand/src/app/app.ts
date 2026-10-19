@@ -32,6 +32,8 @@ export interface RequestMeta {
   requestId?: string;
   ip?: string;
   userAgent?: string;
+  /** How the request arrived: the web app (session cookie), an API client or the MCP server (access token). */
+  channel?: 'web' | 'api' | 'mcp';
 }
 
 export class App {
@@ -66,7 +68,8 @@ export class App {
   }
 
   actorOf(p: Principal, meta: RequestMeta = {}): Actor {
-    return { type: 'user', userId: p.user.id, label: p.user.display_name, roleKeys: p.roleKeys, requestId: meta.requestId, ip: meta.ip };
+    const via = meta.channel === 'mcp' ? ' (via MCP)' : meta.channel === 'api' ? ' (via API token)' : '';
+    return { type: 'user', userId: p.user.id, label: `${p.user.display_name}${via}`, roleKeys: p.roleKeys, requestId: meta.requestId, ip: meta.ip };
   }
 
   ctx(p: Principal, meta: RequestMeta = {}): DomainContext {

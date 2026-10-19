@@ -82,4 +82,16 @@ test('a staff accountant, a senior, the controller and the CFO close September e
   await go(page, '#/audit');
   await page.getByRole('button', { name: 'Verify the chain' }).click();
   await expect(page.getByText('Chain intact.')).toBeVisible();
+
+  // 7. She issues a read-only access token for an assistant (MCP): shown once, then revoked.
+  await go(page, '#/settings');
+  await page.locator('#tok-name').fill('Audit notebook');
+  await expect(page.locator('#tok-scope option[value="write"]')).toBeDisabled();
+  await page.getByRole('button', { name: 'Create token' }).click();
+  const tokenDialog = page.getByRole('dialog', { name: 'Access token: Audit notebook' });
+  await expect(tokenDialog.locator('code.secret')).toHaveText(/^bh_pat_/);
+  await expect(tokenDialog.getByText('"BOOKHAND_TOKEN"')).toBeVisible();
+  await tokenDialog.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Revoke' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Revoked "Audit notebook".' }).first()).toBeVisible();
 });

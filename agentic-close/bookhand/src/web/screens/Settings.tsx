@@ -1,9 +1,160 @@
-import { KeyRound, Monitor, Moon, ShieldCheck, Smartphone, Sun } from 'lucide-react';
-import { useContext, useMemo, useState } from 'react';
-import { api } from '../lib/api';
-import { money } from '../lib/format';
-import { SessionContext, storage, useAction, useMe } from '../lib/hooks';
-import { Avatar, Badge, Term } from '../components/ui';
+import { Bot, Copy, KeyRound, Monitor, Moon, ShieldCheck, Smartphone, Sun } from 'lucide-react';
+import { useCallback, useContext, useMemo, useState } from 'react';
+import { api, transportKind } from '../lib/api';
+import { date, money } from '../lib/format';
+import { SessionContext, storage, useAction, useApi, useMe } from '../lib/hooks';
+import { Avatar, Badge, Modal, StatusBadge, Term } from '../components/ui';
+
+interface TokenRow {
+  id: string;
+  name: string;
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+/** The token is shown once, with a ready-to-paste MCP client configuration. */
+function NewToken({ token, name, onClose }: { token: string; name: string; onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const origin = transportKind() === 'http' ? window.location.origin : 'http://127.0.0.1:8787';
+  const config = JSON.stringify({ mcpServers: { bookhand: { command: 'node', args: ['<path to bookhand>/dist/server/mcp.mjs'], env: { BOOKHAND_URL: origin, BOOKHAND_TOKEN: token } } } }, null, 2);
+  const copy = (what: string, text: string) =>
+    void navigator.clipboard?.writeText(text).then(
+      () => setCopied(what),
+      () => setCopied(null),
+    );
+  return (
+    <Modal
+      title={`Access token: ${name}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-primary" onClick={onClose}>
+          Done
+        </button>
+      }
+    >
+      <p className="small text-2">Copy it now: it is shown once and stored only as a hash. Anyone with it can act as you within its access, so keep it in a password manager or your MCP client&apos;s settings.</p>
+      <div className="row">
+        <code className="secret grow">{token}</code>
+        <button type="button" className="btn btn-sm" onClick={() => copy('token', token)}>
+          <Copy size={14} aria-hidden="true" /> {copied === 'token' ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <div className="label">MCP client configuration (Claude Desktop, Claude Code and others)</div>
+      <pre className="code-block small">{config}</pre>
+      <div className="row-wrap">
+        <button type="button" className="btn btn-sm" onClick={() => copy('config', config)}>
+          <Copy size={14} aria-hidden="true" /> {copied === 'config' ? 'Copied' : 'Copy configuration'}
+        </button>
+        {transportKind() === 'demo' && <span className="tiny muted">This in-browser demo has no server for an MCP client to reach; run Bookhand with npm run up.</span>}
+      </div>
+    </Modal>
+  );
+}
+
+function AccessTokens() {
+  const { data, reload } = useApi<{ tokens: TokenRow[]; lifetimes: number[]; canWrite: boolean }>('/api/me/tokens');
+  const { run, busy } = useAction();
+  const [name, setName] = useState('');
+  const [scope, setScope] = useState<'read' | 'write'>('read');
+  const [days, setDays] = useState(30);
+  const [created, setCreated] = useState<{ token: string; name: string } | null>(null);
+  const close = useCallback(() => setCreated(null), []);
+  const active = data?.tokens.filter((t) => t.status === 'active') ?? [];
+  return (
+    <section className="card card-pad stack" aria-labelledby="tokens-h">
+      <h2 id="tokens-h" style={{ fontSize: 15 }}>
+        <Bot size={16} aria-hidden="true" /> Access tokens for assistants and scripts
+      </h2>
+      <p className="small text-2">
+        Let Claude or another MCP client work the close as you: it gets exactly your roles, approval limit and segregation-of-duties rules, and everything it changes is in the audit log as made via MCP. A read-only token can look but never change anything. Tokens always expire.
+      </p>
+      <form
+        className="grid grid-3"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const r = await run(() => api.post<{ token: string; name: string }>('/api/me/tokens', { name: name.trim(), scope, expiresInDays: days }), 'Access token created.');
+          if (r) {
+            setCreated({ token: r.token, name: r.name });
+            setName('');
+            reload();
+          }
+        }}
+      >
+        <div className="field">
+          <label htmlFor="tok-name">Name</label>
+          <input id="tok-name" className="input" value={name} maxLength={60} placeholder="e.g. Claude Desktop" onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="tok-scope">Access</label>
+          <select id="tok-scope" className="select" value={scope} onChange={(e) => setScope(e.target.value as 'read' | 'write')}>
+            <option value="read">Read only</option>
+            <option value="write" disabled={data ? !data.canWrite : false}>
+              Read, run agents and decide
+            </option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="tok-days">Expires after</label>
+          <select id="tok-days" className="select" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            {(data?.lifetimes ?? [7, 30, 90, 365]).map((d) => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="row-wrap" style={{ gridColumn: '1 / -1' }}>
+          <span className="hint grow">{active.length} active token{active.length === 1 ? '' : 's'} (up to 10).</span>
+          <button type="submit" className="btn btn-primary" disabled={busy || name.trim().length < 2}>
+            Create token
+          </button>
+        </div>
+      </form>
+      {data && data.tokens.length > 0 && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Access</th>
+                <th className="hide-sm">Last used</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th>
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.tokens.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.name}</td>
+                  <td>{t.scopes.includes('write') ? 'Read and decide' : 'Read only'}</td>
+                  <td className="hide-sm">{t.lastUsedAt ? date(t.lastUsedAt, 'time') : 'Never'}</td>
+                  <td>{date(t.expiresAt)}</td>
+                  <td>
+                    <StatusBadge status={t.status === 'active' ? 'completed' : t.status === 'revoked' ? 'rejected' : 'superseded'} text={t.status === 'active' ? 'Active' : t.status === 'revoked' ? 'Revoked' : 'Expired'} />
+                  </td>
+                  <td className="num">
+                    {t.status === 'active' && (
+                      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void run(() => api.post(`/api/me/tokens/${t.id}/revoke`, {}), `Revoked "${t.name}".`).then(() => reload())}>
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {created && <NewToken token={created.token} name={created.name} onClose={close} />}
+    </section>
+  );
+}
 
 interface MfaSetup {
   secret: string;
@@ -57,7 +208,7 @@ export function SettingsScreen() {
       <div className="page-head">
         <div>
           <h1>Your settings</h1>
-          <div className="sub">Sign-in security, password and appearance.</div>
+          <div className="sub">Sign-in security, access tokens, password and appearance.</div>
         </div>
       </div>
       <div className="grid grid-2">
@@ -192,6 +343,7 @@ export function SettingsScreen() {
           </div>
         )}
       </section>
+      <AccessTokens />
       <section className="card card-pad stack" aria-labelledby="pw-h">
         <h2 id="pw-h" style={{ fontSize: 15 }}>
           <KeyRound size={16} aria-hidden="true" /> Change password

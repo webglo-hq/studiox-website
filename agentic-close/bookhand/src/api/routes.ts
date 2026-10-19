@@ -7,6 +7,7 @@ import { home } from '../app/usecases/home';
 import * as inbox from '../app/usecases/inbox';
 import * as ledger from '../app/usecases/ledger';
 import * as recs from '../app/usecases/recs';
+import * as tokens from '../app/usecases/tokens';
 import { closeOntology } from '../packs/accounting/ontology';
 import { DomainError } from '../shared/errors';
 import type { RouteDef } from './kernel';
@@ -95,6 +96,14 @@ export const ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/me/mfa/setup', handler: (c) => auth.setupMfa(c.app, c.principal!, c.meta) },
   { method: 'POST', path: '/api/me/mfa/enable', body: z.object({ code: z.string().trim().regex(/^\d{6}$/) }).strict(), handler: (c) => auth.enableMfa(c.app, c.principal!, String(c.body.code), c.meta) },
   { method: 'POST', path: '/api/me/mfa/disable', body: z.object({ code: z.string().trim().regex(/^\d{6}$/) }).strict(), handler: (c) => auth.disableMfa(c.app, c.principal!, String(c.body.code), c.meta) },
+  { method: 'GET', path: '/api/me/tokens', handler: (c) => tokens.listApiTokens(c.app, c.principal!) },
+  {
+    method: 'POST',
+    path: '/api/me/tokens',
+    body: z.object({ name: text(2, 60), scope: z.enum(['read', 'write']), expiresInDays: z.number().int() }).strict(),
+    handler: (c) => tokens.createApiToken(c.app, c.principal!, c.body as { name: string; scope: tokens.TokenScope; expiresInDays: number }, c.meta),
+  },
+  { method: 'POST', path: '/api/me/tokens/:id/revoke', handler: (c) => tokens.revokeApiToken(c.app, c.principal!, c.params.id!, c.meta) },
   { method: 'POST', path: '/api/me/password', rate: 'signIn', rateOnFailure: 'login', body: z.object({ current: z.string().min(1).max(256), next: z.string().min(1).max(256) }).strict(), handler: (c) => auth.changePassword(c.app, c.principal!, c.session!, String(c.body.current), String(c.body.next), c.meta) },
 
   // ------------------------------------------------------------------ home & close
@@ -202,7 +211,8 @@ export const ROUTES: RouteDef[] = [
 
   // ------------------------------------------------------------------ audit, imports, admin
   { method: 'GET', path: '/api/audit', handler: (c) => admin.auditLog(c.app, c.principal!, { action: q(c.query.action), objectType: q(c.query.objectType), objectId: q(c.query.objectId), actor: q(c.query.actor), limit: qn(c.query.limit), beforeSeq: qn(c.query.before) }) },
-  { method: 'POST', path: '/api/audit/verify', handler: (c) => admin.verifyAudit(c.app, c.principal!, c.meta) },
+  // Verifying recomputes hashes and records that it happened; read-only tokens (auditors) may do it.
+  { method: 'POST', path: '/api/audit/verify', tokenScope: 'read', handler: (c) => admin.verifyAudit(c.app, c.principal!, c.meta) },
   { method: 'GET', path: '/api/imports', handler: (c) => admin.listImports(c.app, c.principal!) },
   { method: 'POST', path: '/api/imports', body: z.object({ filename: text(1, 200), content: z.string().max(5_500_000), adapterKey: text(0, 40).optional() }).strict(), handler: (c) => admin.importFile(c.app, c.principal!, c.body as { filename: string; content: string; adapterKey?: string }, c.meta) },
   { method: 'GET', path: '/api/admin/users', handler: (c) => admin.listUsers(c.app, c.principal!) },

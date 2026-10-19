@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { App, RequestMeta } from '../app/app';
 import { principalFor } from '../app/usecases/auth';
+import { resolveApiToken } from '../app/usecases/tokens';
 import { isDbConstraintError } from '../persistence/db';
 import type { Row } from '../persistence/schema';
 import type { Permission } from '../security/permissions';
-import { requirePermission, type Principal } from '../security/principal';
+import { loadPrincipal, requirePermission, type Principal } from '../security/principal';
 import { RATE_LIMITS, RateLimiter, type RateLimitRule } from '../security/ratelimit';
 import { resolveSession } from '../security/sessions';
 import { DomainError, httpStatusFor, isDomainError } from '../shared/errors';
@@ -45,6 +46,8 @@ export interface ApiResponse {
 }
 
 export const SESSION_COOKIE = 'bh_session';
+/** Sign-in, account and administration endpoints accept the browser session only, never an access token. */
+const SESSION_ONLY = /^\/api\/(?:auth|me|admin)\/|^\/api\/session$/;
 
 export interface RouteContext {
   app: App;
@@ -70,6 +73,8 @@ export interface RouteDef {
   rate?: keyof typeof RATE_LIMITS;
   /** Charged only when the handler fails with 400/401/429 (wrong password or code); checked before it runs. */
   rateOnFailure?: keyof typeof RATE_LIMITS;
+  /** Scope an access token needs. Default: "read" for GET, "write" for anything else. */
+  tokenScope?: 'read' | 'write';
   body?: z.ZodType;
   handler(ctx: RouteContext & PublicRouteContext): Promise<unknown> | unknown;
 }
@@ -154,10 +159,31 @@ export class ApiKernel {
         charge = route.rateOnFailure;
       }
 
-      const meta: RequestMeta = { requestId, ip: req.ip, userAgent: req.headers['user-agent'] };
+      const meta: RequestMeta = { requestId, ip: req.ip, userAgent: req.headers['user-agent'], channel: 'web' };
       let session: Row<'sessions'> | null = null;
       let principal: Principal | null = null;
-      const token = req.cookies[SESSION_COOKIE];
+      let apiToken: Row<'api_tokens'> | null = null;
+      const authorization = (req.headers.authorization ?? '').trim();
+      const token = authorization ? null : req.cookies[SESSION_COOKIE];
+      if (authorization) {
+        // Access token (API clients and the MCP server): no cookies, so no CSRF; the owner's roles apply in full.
+        const bearer = /^Bearer ([A-Za-z0-9_-]{20,200})$/.exec(authorization)?.[1];
+        if (!bearer) throw new DomainError('UNAUTHENTICATED', 'Malformed Authorization header; send "Bearer <access token>".');
+        if (SESSION_ONLY.test(route.path)) throw new DomainError('FORBIDDEN', 'Access tokens cannot be used for sign-in, account or administration endpoints; use the web app.');
+        const gate = this.limiter.peek(`tokenfail:${req.ip}`, RATE_LIMITS.login);
+        if (!gate.allowed) throw new DomainError('RATE_LIMITED', `Too many invalid tokens; try again in ${gate.retryAfterSeconds} s.`, { retryAfterSeconds: gate.retryAfterSeconds });
+        apiToken = await this.app.tx((tx) => resolveApiToken(tx, bearer, this.app.clock.now()));
+        if (!apiToken) {
+          this.limiter.take(`tokenfail:${req.ip}`, RATE_LIMITS.login);
+          throw new DomainError('UNAUTHENTICATED', 'The access token is invalid, expired or revoked.');
+        }
+        const owner = apiToken;
+        principal = await this.app.read((tx) => loadPrincipal(tx, owner.tenant_id, owner.user_id));
+        const needs = route.tokenScope ?? (mutation ? 'write' : 'read');
+        if (needs === 'write' && !owner.scopes.includes('write')) throw new DomainError('FORBIDDEN', 'This access token is read-only.');
+        this.rate(`token:${owner.id}`, RATE_LIMITS.api);
+        meta.channel = req.headers['x-bookhand-client'] === 'mcp' ? 'mcp' : 'api';
+      }
       if (token) {
         const resolved = await this.app.tx((tx) => resolveSession(tx, token, this.app.clock.now(), { idleMinutes: this.app.config.sessionIdleMinutes, absoluteHours: this.app.config.sessionAbsoluteHours, rotateMinutes: 15, graceSeconds: 60 }));
         if (resolved) {
@@ -174,7 +200,7 @@ export class ApiKernel {
       if (mutation) {
         if (auth === 'public') {
           if (req.headers['x-requested-with'] !== 'bookhand') throw new DomainError('CSRF', 'Missing X-Requested-With header.');
-        } else {
+        } else if (!apiToken) {
           const header = req.headers['x-csrf-token'] ?? '';
           if (!session || !timingSafeEqual(header, session.csrf_token)) throw new DomainError('CSRF', 'Security token missing or expired; reload the page.');
         }
