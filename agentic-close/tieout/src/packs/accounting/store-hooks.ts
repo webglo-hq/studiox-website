@@ -109,8 +109,7 @@ export const accountingHooks: MemoryHooks = {
     },
     close_tasks: (old, next, db) => {
       taskRowChecks(next);
-      const done = (s: unknown) => s === 'done' || s === 'ready_for_review';
-      if (done(next.status) && !done(old.status)) {
+      if (next.status === 'done' && old.status !== 'done') {
         const deps = db.find('close_task_dependencies', { task_id: old.id });
         const open = deps.filter((d) => {
           const t = db.get('close_tasks', d.depends_on_task_id as string);

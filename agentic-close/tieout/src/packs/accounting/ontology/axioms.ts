@@ -377,9 +377,9 @@ export const AXIOMS = [
   A<{ status?: string; dependencyStatuses?: readonly string[] }>({
     id: 'AX-CL-01', title: 'Dependencies first', appliesTo: ['tie:CloseTask'], severity: 'error', enforcedBy: ['database', 'runtime'],
     formal: 'done(t) ⇒ ∀d: dependsOn(t, d) ⇒ done(d) ∨ skipped(d)',
-    plainEnglish: 'A task can’t be completed before the tasks it depends on.',
+    plainEnglish: 'A task can’t be signed off before the tasks it depends on (preparation can start early).',
     citations: ['apqc-close'],
-    check: (f) => (f.status && ['done', 'ready_for_review'].includes(f.status) && (f.dependencyStatuses ?? []).some((s) => !['done', 'skipped'].includes(s)) ? ['finish the prerequisite tasks first'] : []),
+    check: (f) => (f.status === 'done' && (f.dependencyStatuses ?? []).some((s) => !['done', 'skipped'].includes(s)) ? ['finish the prerequisite tasks first'] : []),
   }),
   A<{ pendingProposals?: number; openRecs?: number; unexplainedFlux?: number; openTasks?: number; finalPackage?: boolean }>({
     id: 'AX-CL-02', title: 'Lock only a finished close', appliesTo: ['tie:LockedPeriod', 'tie:FinancialClose'], severity: 'error', enforcedBy: ['runtime', 'ui'],

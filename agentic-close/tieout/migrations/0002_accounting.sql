@@ -813,12 +813,13 @@ CREATE TABLE close_task_dependencies (
   CHECK (task_id <> depends_on_task_id)
 );
 
--- AX-CL-01: a task cannot be completed while any dependency is unfinished
+-- AX-CL-01: a task cannot be signed off (done) while any dependency is unfinished.
+-- Preparation (in_progress / ready_for_review) may start early; sign-off waits for upstream.
 CREATE OR REPLACE FUNCTION tieout_close_task_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   open_deps INT;
 BEGIN
-  IF NEW.status IN ('done', 'ready_for_review') AND OLD.status NOT IN ('done', 'ready_for_review') THEN
+  IF NEW.status = 'done' AND OLD.status <> 'done' THEN
     SELECT count(*) INTO open_deps
       FROM close_task_dependencies d JOIN close_tasks t ON t.id = d.depends_on_task_id
      WHERE d.task_id = NEW.id AND t.status NOT IN ('done', 'skipped');
