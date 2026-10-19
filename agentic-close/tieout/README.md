@@ -107,8 +107,8 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
 * **Durable agent runtime** (`src/core/agent`): plan → act → observe → verify → propose → route →
   post → audit; idempotent, crash-resumable, budgeted, least-privilege; live Claude (`@anthropic-ai/sdk`,
   model per skill) or a deterministic offline engine with the same verifier and controls.
-* **Close ontology** (`src/packs/accounting/ontology`): 245 classes, 75 relations, 39 executable axioms,
-  264 terms, 41 sources; validates proposals, grounds prompts, drives coding signals, explains terms in
+* **Close ontology** (`src/packs/accounting/ontology`): 246 classes, 75 relations, 40 executable axioms,
+  265 terms, 41 sources; validates proposals, grounds prompts, drives coding signals, explains terms in
   the UI; exports as OWL in JSON-LD and Turtle (`docs/ontology/`).
 * **Ledger and controls**: double-entry ledger in minor units, multi-entity with consolidation (closing
   and average rates, CTA, eliminations), close checklist with workday calendar, reconciliations, flux,
