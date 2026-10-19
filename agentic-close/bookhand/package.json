@@ -35,8 +35,10 @@
     "ads:render": "tsx scripts/render-ads.ts",
     "mcp": "tsx src/server/mcp.ts",
     "audit:deps": "npm audit --audit-level=high",
-    "verify": "npm run typecheck && npm run lint && npm run test:unit && npm run test:evals && npm run test:integration && npm run test:e2e",
-    "db:generate": "tsx scripts/gen-schema-sql.ts"
+    "verify": "npm run typecheck && npm run lint && npm run test:unit && npm run test:evals && npm run test:integration && npm run build && npm run test:e2e && npm run build:demo && npm run test:e2e:demo && npm run audit:deps",
+    "db:generate": "tsx scripts/gen-schema-sql.ts",
+    "db:erd": "tsx scripts/gen-erd.ts",
+    "test:docs": "vitest run --project unit tests/unit/docs.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",

@@ -65,7 +65,8 @@ export async function createUser(app: App, p: Principal, input: { email: string;
   const tempPassword = `${randomToken(9)}-${randomToken(6)}`;
   const hash = await hashPassword(tempPassword);
   const user = await app.tx(async (tx) => {
-    if (await tx.findOne('users', { tenant_id: p.tenantId, email })) throw new DomainError('CONFLICT', 'A user with that email already exists.');
+    // Sign-in identifies a person by email alone, so an email belongs to one account across all organizations.
+    if (await tx.findOne('users', { email })) throw new DomainError('CONFLICT', 'That email address is already in use.');
     const u = await tx.insert('users', { tenant_id: p.tenantId, email, display_name: input.name.trim(), title: input.title?.trim() || null, password_hash: hash, avatar_hue: Math.floor(Math.random() * 360) });
     for (const key of input.roles) {
       const role = await tx.findOne('roles', { key });

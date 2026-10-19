@@ -1,4 +1,4 @@
-import { adoptSuggestion, approvalBlocks, approveProposal, rejectProposal, reviewAutoApplied } from '../../agents/framework/decisions';
+import { adoptSuggestion, approvalBlocks, approveProposal, rejectProposal, reviewAutoApplied, sodFindings } from '../../agents/framework/decisions';
 import type { AgentRuntime } from '../../agents/framework/runtime';
 import type { Tx, Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
@@ -6,6 +6,7 @@ import { reverseEntry } from '../../packs/accounting/domain/ledger';
 import { can, requirePermission, type Principal } from '../../security/principal';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
+import { continueClose } from './close';
 
 /** The agent inbox: proposals awaiting decisions, post-hoc review of auto-applied work, decision history. */
 
@@ -18,6 +19,7 @@ function rt(app: App): AgentRuntime<unknown> {
 export async function proposalSummary(tx: Tx, app: App, p: Principal, x: Row<'proposals'>, ctx: { users: Map<string, Row<'users'>>; entities: Map<string, Row<'entities'>> }) {
   const checks = (x.verification as Array<{ id: string; label: string; passed: boolean; severity: string; message?: string }>) ?? [];
   const blocks = x.status === 'pending' ? await approvalBlocks(tx, rt(app), p, x) : [];
+  const sodWarnings = x.status === 'pending' && blocks.length === 0 ? (await sodFindings(tx, rt(app), p, x)).filter((f) => f.severity === 'warn').map((f) => f.message) : [];
   const skill = x.skill_key ? app.runtime.listSkills().find((s) => s.manifest.key === x.skill_key)?.manifest.name ?? x.skill_key : null;
   return {
     id: x.id,
@@ -45,6 +47,7 @@ export async function proposalSummary(tx: Tx, app: App, p: Principal, x: Row<'pr
     postHocStatus: x.post_hoc_status,
     canApprove: x.status === 'pending' && blocks.length === 0,
     blocks: blocks.map((b) => b.message),
+    sodWarnings,
     canReject: ['pending', 'blocked', 'suggested'].includes(x.status) && can(p, x.required_permission as never) && !p.readOnly,
     canReviewPostHoc: x.status === 'auto_applied' && x.post_hoc_status === 'pending' && can(p, 'proposal.review_posthoc'),
     canAdopt: x.status === 'suggested' && !p.readOnly && can(p, 'proposal.decide'),
@@ -183,12 +186,19 @@ export async function proposalDetail(app: App, p: Principal, id: string) {
   });
 }
 
-export async function decide(app: App, p: Principal, id: string, decision: 'approve' | 'reject', reason: string | undefined, meta: RequestMeta = {}) {
+async function decideOne(app: App, p: Principal, id: string, decision: 'approve' | 'reject', reason: string | undefined, meta: RequestMeta) {
   requirePermission(p, 'proposal.view');
   return app.tx(async (tx) => {
     const ctx = app.ctx(p, meta);
     return decision === 'approve' ? approveProposal(tx, ctx, rt(app), p, id, reason) : rejectProposal(tx, ctx, rt(app), p, id, reason ?? '');
   });
+}
+
+/** Approve or reject one proposal; then let the close orchestrator pick up any tasks this unblocked. */
+export async function decide(app: App, p: Principal, id: string, decision: 'approve' | 'reject', reason: string | undefined, meta: RequestMeta = {}) {
+  const result = await decideOne(app, p, id, decision, reason, meta);
+  await continueClose(app, p.tenantId);
+  return result;
 }
 
 /** Bulk decisions run one transaction per item: one failure never rolls back the others. */
@@ -198,12 +208,13 @@ export async function decideBulk(app: App, p: Principal, ids: string[], decision
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const id of ids) {
     try {
-      await decide(app, p, id, decision, reason, meta);
+      await decideOne(app, p, id, decision, reason, meta);
       results.push({ id, ok: true });
     } catch (e) {
       results.push({ id, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
+  if (results.some((r) => r.ok)) await continueClose(app, p.tenantId);
   return { ok: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };
 }
 

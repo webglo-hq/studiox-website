@@ -1,6 +1,6 @@
 import { approvalBlocks } from '../../agents/framework/decisions';
 import type { AgentRuntime } from '../../agents/framework/runtime';
-import { closeProgress, taskStates } from '../../packs/accounting/domain/close';
+import { closeProgress, signOffProblems, taskStates } from '../../packs/accounting/domain/close';
 import { closeBlockers } from '../../packs/accounting/services/periods';
 import { certificationProblems } from '../../packs/accounting/services/recon';
 import { can, type Principal } from '../../security/principal';
@@ -75,7 +75,10 @@ export async function home(app: App, p: Principal) {
           if (drafted && can(p, 'flux.explain')) next.push({ id: `flux-${f.id}`, title: `Explain ${drafted} material variance${drafted === 1 ? '' : 's'}`, detail: 'Agent drafts are ready; accept or rewrite them.', href: '#/flux', count: drafted, tone: 'attention' });
           else if (!drafted && f.status !== 'approved' && can(p, 'flux.approve') && !lines.some((l) => l.explained_by === p.user.id)) next.push({ id: `flux-approve-${f.id}`, title: 'Approve the flux analysis', detail: `${lines.length} material variance${lines.length === 1 ? '' : 's'} explained.`, href: '#/flux', tone: 'attention' });
         }
-        const review = states.filter((s) => s.task.status === 'ready_for_review' && can(p, 'close.task.review') && s.task.completed_by !== p.user.id);
+        const review = [];
+        for (const s of states.filter((x) => x.task.status === 'ready_for_review' && can(p, 'close.task.review') && x.task.completed_by !== p.user.id)) {
+          if (!(await signOffProblems(tx, s.task)).length) review.push(s);
+        }
         if (review.length) next.push({ id: 'task-review', title: `Sign off ${review.length} completed task${review.length === 1 ? '' : 's'}`, detail: review.slice(0, 3).map((s) => s.task.title).join(', '), href: `#/close/${close.id}`, count: review.length, tone: 'info' });
         const bsRecs = states.filter((s) => s.task.key === 'bs-recs' && s.ready && !['done', 'ready_for_review', 'skipped'].includes(s.task.status));
         if (bsRecs.length && can(p, 'close.task.work') && recs.length && recs.every((r) => r.status === 'reviewed')) next.push({ id: 'bs-recs', title: 'Mark balance-sheet reconciliations certified', detail: 'All required reconciliations are reviewed.', href: `#/close/${close.id}`, tone: 'primary' });

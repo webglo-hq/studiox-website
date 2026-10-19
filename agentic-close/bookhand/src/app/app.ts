@@ -1,5 +1,5 @@
 import { AgentRuntime } from '../agents/framework/runtime';
-import type { LlmClient } from '../agents/llm/anthropic';
+import type { LlmClient } from '../agents/llm/types';
 import type { Db, Tx } from '../persistence/db';
 import { accountingPack, registerSkills } from '../packs/accounting/pack';
 import { buildAccountingScope, type AccountingScope } from '../packs/accounting/scope';

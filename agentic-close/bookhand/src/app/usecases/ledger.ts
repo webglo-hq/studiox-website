@@ -1,6 +1,7 @@
 import { appendAudit } from '../../audit/audit';
 import type { Where } from '../../persistence/db';
 import type { Row } from '../../persistence/schema';
+import { reviewTask, signOffProblems } from '../../packs/accounting/domain/close';
 import { createEntry, type EntryDraft, errorsOf, postEntry, reverseEntry, verifyDraft } from '../../packs/accounting/domain/ledger';
 import { balanceSheet, consolidatedTrialBalance, entityTrialBalance, incomeStatement } from '../../packs/accounting/domain/reporting';
 import { approveFlux, explainLine } from '../../packs/accounting/services/flux';
@@ -9,7 +10,7 @@ import { can, requirePermission, withinLimit, type Principal } from '../../secur
 import { DomainError } from '../../shared/errors';
 import { formatMoney } from '../../shared/money';
 import type { App, RequestMeta } from '../app';
-import { currentClose } from './close';
+import { continueClose, currentClose } from './close';
 
 /** Journal entries, trial balance, statements with drill-down, flux workpaper. */
 
@@ -309,5 +310,16 @@ export async function explainFlux(app: App, p: Principal, lineId: string, text: 
 }
 
 export async function approveFluxAnalysis(app: App, p: Principal, analysisId: string, comment: string | undefined, meta: RequestMeta = {}) {
-  return app.tx((tx) => approveFlux(tx, app.ctx(p, meta), p, analysisId, comment));
+  const approved = await app.tx(async (tx) => {
+    const ctx = app.ctx(p, meta);
+    const analysis = await approveFlux(tx, ctx, p, analysisId, comment);
+    // The Controller's approval is also the flux task's sign-off: one decision, recorded once on each object.
+    const task = await tx.findOne('close_tasks', { close_id: analysis.close_id, key: 'flux' });
+    if (task?.status === 'ready_for_review' && can(p, 'close.task.review') && task.completed_by !== p.user.id && !(await signOffProblems(tx, task)).length) {
+      await reviewTask(tx, ctx, task.id, 'approve', 'Signed off with the flux analysis approval');
+    }
+    return analysis;
+  });
+  await continueClose(app, p.tenantId, approved.close_id);
+  return approved;
 }

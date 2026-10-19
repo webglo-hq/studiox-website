@@ -1,9 +1,10 @@
 import { appendAudit } from '../../audit/audit';
 import type { Row } from '../../persistence/schema';
-import { closeProgress, completeTask, reviewTask, startTask, taskStates } from '../../packs/accounting/domain/close';
+import { closeProgress, completeTask, reviewTask, signOffProblems, startTask, taskStates } from '../../packs/accounting/domain/close';
 import { closeBlockers, lockClose, reopenPeriod } from '../../packs/accounting/services/periods';
 import { certificationProblems, recTypeFor } from '../../packs/accounting/services/recon';
-import { can, requirePermission, type Principal } from '../../security/principal';
+import { can, loadPrincipal, requirePermission, type Principal } from '../../security/principal';
+import { sha256Hex } from '../../shared/hash';
 import { dateToWorkday, formatWorkday, usBusinessCalendar, workdayToDate } from '../../shared/dates';
 import { DomainError } from '../../shared/errors';
 import type { App, RequestMeta } from '../app';
@@ -52,6 +53,8 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
     const businessDate = app.clock.businessDate();
     const blockers = await closeBlockers(tx, lookups, closeId);
     const skills = new Map(app.runtime.listSkills().map((s) => [s.manifest.key, s.manifest]));
+    const signOffGates = new Map<string, string[]>();
+    for (const s of states.filter((x) => x.task.status === 'ready_for_review')) signOffGates.set(s.task.id, await signOffProblems(tx, s.task));
     return {
       close: { id: close.id, name: close.name, periodEnd: close.period_end, status: close.status, targetWorkday: close.target_workday, closedAt: close.closed_at, fiscalYear: close.fiscal_year, periodNumber: close.period_number },
       businessDate,
@@ -92,7 +95,8 @@ export async function closeDetail(app: App, p: Principal, closeId: string) {
           reviewedAt: t.reviewed_at,
           reviewedBy: t.reviewed_by ? users.get(t.reviewed_by)?.display_name ?? null : null,
           canComplete: can(p, 'close.task.work') && !['done', 'skipped', 'ready_for_review'].includes(t.status) && s.ready,
-          canReview: can(p, 'close.task.review') && t.status === 'ready_for_review' && t.completed_by !== p.user.id,
+          canReview: can(p, 'close.task.review') && t.status === 'ready_for_review' && t.completed_by !== p.user.id && !signOffGates.get(t.id)?.length,
+          signOffBlockedBy: signOffGates.get(t.id) ?? [],
           canRun: !!t.skill_key && can(p, 'skill.run') && s.ready && !['done', 'skipped'].includes(t.status),
         };
       }),
@@ -111,6 +115,45 @@ export async function runCloseAgents(app: App, p: Principal, closeId: string, op
   const run = await app.runtime.start(p.tenantId, { skillKey: 'close-orchestrator', input: { closeId }, requestedBy: p.user.id, requestedByLabel: p.user.display_name, trigger: meta.requestId?.startsWith('mcp') ? 'mcp' : 'manual', closeId, mode: opts.mode });
   void app.queue.enqueue(run.id);
   return { runId: run.id, alreadyRunning: false };
+}
+
+/**
+ * Keep the close moving after people act. When approvals or sign-offs unblock checklist tasks that no agent
+ * has run yet, start the orchestrator again on behalf of whoever started the close agents (trigger
+ * "orchestrator"), limited to skills that person may run. Idempotent per set of newly ready tasks, so
+ * repeated triggers never start duplicate runs. Returns the run id when it started (or found) one.
+ */
+export async function continueClose(app: App, tenantId: string, closeId?: string | null): Promise<string | null> {
+  const close = closeId ? await app.read((tx) => tx.get('closes', closeId)) : await currentClose(app, tenantId);
+  if (!close || close.tenant_id !== tenantId || close.status === 'closed') return null;
+  const plan = await app.read(async (tx) => {
+    const runs = await tx.find('agent_runs', { close_id: close.id, skill_key: 'close-orchestrator' }, { orderBy: [['created_at', 'desc']], limit: 25 });
+    if (!runs.length || runs.some((r) => r.status === 'queued' || r.status === 'running')) return null;
+    const starter = runs.find((r) => r.trigger !== 'orchestrator' && r.requested_by) ?? runs.find((r) => r.requested_by);
+    if (!starter?.requested_by) return null;
+    const principal = await loadPrincipal(tx, tenantId, starter.requested_by);
+    if (principal.user.status !== 'active' || principal.readOnly || !can(principal, 'skill.run')) return null;
+    const states = await taskStates(tx, close.id);
+    const fresh = states.filter((s) => {
+      const t = s.task;
+      if (!t.skill_key || !s.ready || t.last_run_id || ['done', 'skipped', 'ready_for_review'].includes(t.status)) return false;
+      const manifest = app.runtime.listSkills().find((k) => k.manifest.key === t.skill_key)?.manifest;
+      return !!manifest && can(principal, manifest.permissions.run as never);
+    });
+    return fresh.length ? { principal, taskIds: fresh.map((s) => s.task.id).sort() } : null;
+  });
+  if (!plan) return null;
+  const run = await app.runtime.start(tenantId, {
+    skillKey: 'close-orchestrator',
+    input: { closeId: close.id },
+    requestedBy: plan.principal.user.id,
+    requestedByLabel: plan.principal.user.display_name,
+    trigger: 'orchestrator',
+    closeId: close.id,
+    idempotencyKey: `continue:${close.id}:${sha256Hex(plan.taskIds.join(','))}`,
+  });
+  if (run.status === 'queued') void app.queue.enqueue(run.id);
+  return run.id;
 }
 
 export async function runTask(app: App, p: Principal, taskId: string, opts: { mode?: 'offline' | 'live' } = {}) {
@@ -167,20 +210,24 @@ export async function completeCloseTask(app: App, p: Principal, taskId: string, 
   if (gate.length) throw new DomainError('CONFLICT', `Not every required reconciliation is certified: ${gate.slice(0, 4).join('; ')}`, { problems: gate });
   const pending = await app.read((tx) => tx.count('proposals', { close_task_id: taskId, status: { in: ['pending', 'blocked'] } }));
   if (pending) throw new DomainError('CONFLICT', `${pending} proposal(s) for this task still need a decision.`);
-  return app.tx(async (tx) => {
+  const done = await app.tx(async (tx) => {
     const ctx = app.ctx(p, meta);
     if (task.status === 'not_started' || task.status === 'blocked') await startTask(tx, ctx, taskId);
     return completeTask(tx, ctx, taskId, { note });
   });
+  await continueClose(app, p.tenantId, task.close_id);
+  return done;
 }
 
 export async function reviewCloseTask(app: App, p: Principal, taskId: string, decision: 'approve' | 'send_back', note: string | undefined, meta: RequestMeta = {}) {
   requirePermission(p, 'close.task.review', 'sign off close tasks');
-  return app.tx(async (tx) => {
+  const reviewed = await app.tx(async (tx) => {
     const task = await tx.get('close_tasks', taskId);
     if (!task || task.tenant_id !== p.tenantId) app.notFound('Task');
     return reviewTask(tx, app.ctx(p, meta), taskId, decision, note);
   });
+  await continueClose(app, p.tenantId, reviewed.close_id);
+  return reviewed;
 }
 
 /** Sign off every task waiting for this reviewer (bulk). */
@@ -196,6 +243,7 @@ export async function reviewAllReady(app: App, p: Principal, closeId: string, me
       results.push({ id: t.id, title: t.title, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
+  if (results.some((r) => r.ok)) await continueClose(app, p.tenantId, closeId);
   return { reviewed: results.filter((r) => r.ok).length, results };
 }
 

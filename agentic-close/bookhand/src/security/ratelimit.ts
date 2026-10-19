@@ -34,6 +34,15 @@ export class RateLimiter {
     return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(((cost - b.tokens) / rule.refillPerMinute) * 60)), remaining: 0 };
   }
 
+  /** Would one more token be available? Does not consume (used to gate before work whose failure is charged). */
+  peek(key: string, rule: RateLimitRule, cost = 1): RateLimitDecision {
+    const t = this.now();
+    const b = this.buckets.get(key);
+    if (!b) return { allowed: true, retryAfterSeconds: 0, remaining: rule.capacity };
+    const tokens = Math.min(rule.capacity, b.tokens + ((t - b.updated) / 60_000) * rule.refillPerMinute);
+    return tokens >= cost ? { allowed: true, retryAfterSeconds: 0, remaining: Math.floor(tokens) } : { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(((cost - tokens) / rule.refillPerMinute) * 60)), remaining: 0 };
+  }
+
   reset(key: string): void {
     this.buckets.delete(key);
   }
@@ -45,9 +54,15 @@ export class RateLimiter {
   }
 }
 
+/**
+ * - signIn: every sign-in or code attempt per IP (bounds password-hashing work).
+ * - login / mfa: FAILED attempts per IP; successful sign-ins are free, so switching between accounts on one
+ *   machine never locks anyone out, while guessing does. Per-account lockout (5 failures) is separate.
+ */
 export const RATE_LIMITS = {
   api: { capacity: 600, refillPerMinute: 600 },
   mutation: { capacity: 120, refillPerMinute: 120 },
+  signIn: { capacity: 30, refillPerMinute: 30 },
   login: { capacity: 8, refillPerMinute: 0.5 },
   mfa: { capacity: 6, refillPerMinute: 1 },
   agentRun: { capacity: 20, refillPerMinute: 10 },
