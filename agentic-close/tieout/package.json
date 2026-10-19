@@ -9,10 +9,10 @@
     "node": ">=22.6"
   },
   "scripts": {
-    "setup": "npm ci && npm run db:migrate && npm run db:seed",
-    "dev": "tsx watch src/server/main.ts",
-    "start": "npm run build:web && tsx src/server/main.ts",
-    "start:prod": "node dist/server/main.js",
+    "setup": "npm ci",
+    "dev": "tsx scripts/dev.ts",
+    "start": "npm run build:web && tsx src/server/node.ts",
+    "start:prod": "node dist/server/node.js",
     "build": "npm run build:web && npm run build:server",
     "build:web": "vite build --config vite.config.ts",
     "build:server": "tsx scripts/build-server.ts",

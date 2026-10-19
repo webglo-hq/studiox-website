@@ -181,6 +181,7 @@ export class BankService {
     const external = statement?.closing_balance_minor ?? 0;
     const items = rec ? await this.c.tx.find('reconciling_items', { reconciliation_id: rec.id }) : [];
     const open = items.filter((i) => i.status === 'open');
+    const covered = new Set(open.map((i) => i.related_item_id).filter((x): x is string => !!x));
     const adjExt = external + open.filter((i) => i.side === 'external').reduce((s, i) => s + i.amount_minor, 0);
     const adjLed = gl + open.filter((i) => i.side === 'ledger').reduce((s, i) => s + i.amount_minor, 0);
     const lines = await this.c.tx.find('bank_transactions', { bank_account_id: ba.id, txn_date: { gte: periodStart(periodKey), lte: periodEnd(periodKey) } });
@@ -199,8 +200,8 @@ export class BankService {
       unreconciledMinor: adjExt - adjLed,
       unexplainedMinor: open.filter((i) => i.kind === 'unexplained').reduce((s, i) => s + i.amount_minor, 0),
       matchedCount: lines.filter((l) => l.status === 'matched').length,
-      unmatchedBank: lines.filter((l) => l.status === 'unmatched').length,
-      unmatchedLedger: ledger.filter((l) => !l.matched).length,
+      unmatchedBank: lines.filter((l) => l.status === 'unmatched' && !covered.has(l.id)).length,
+      unmatchedLedger: ledger.filter((l) => !l.matched && !covered.has(l.id)).length,
       tiesOut: tie.passed,
     };
   }

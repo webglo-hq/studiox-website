@@ -50,7 +50,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.ts', 'tests/**/*.ts', 'src/server/main.ts', 'src/mcp/main.ts'],
+    files: ['scripts/**/*.ts', 'tests/**/*.ts', 'src/server/node.ts', 'src/server/bootstrap.ts', 'src/mcp/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
 );
