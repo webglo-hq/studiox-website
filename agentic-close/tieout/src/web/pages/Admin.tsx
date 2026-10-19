@@ -183,32 +183,37 @@ function People({ data }: { data: AdminData }) {
                   <td>{u.status === 'active' ? <Badge tone="good">Active</Badge> : <Badge tone="bad">{u.status}</Badge>}</td>
                   {data.canManage.users ? (
                     <td className="r" style={{ whiteSpace: 'nowrap' }}>
-                      <button
-                        className="btn ghost small"
-                        onClick={() => {
-                          setEditing(u);
-                          setRoles(u.roles);
-                          setScope(u.scope ? legal.filter((e) => u.scope!.includes(e.code)).map((e) => e.id) : null);
-                        }}
-                      >
-                        Roles
-                      </button>
-                      {u.id !== me.user.id ? (
-                        <button className="btn ghost small" onClick={() => setSignIn(u)}>
-                          Sign-in
-                        </button>
-                      ) : null}
-                      {u.id !== me.user.id ? (
-                        u.status === 'active' ? (
-                          <button className="btn ghost small" onClick={() => setDisabling(u)}>
-                            Disable
+                      {u.id === me.user.id ? (
+                        // nobody changes their own roles, sign-in or status (segregation of duties)
+                        <span className="muted" style={{ fontSize: 13 }}>
+                          You
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            className="btn ghost small"
+                            onClick={() => {
+                              setEditing(u);
+                              setRoles(u.roles);
+                              setScope(u.scope ? legal.filter((e) => u.scope!.includes(e.code)).map((e) => e.id) : null);
+                            }}
+                          >
+                            Roles
                           </button>
-                        ) : (
-                          <button className="btn ghost small" onClick={() => void setStatus(u, 'active')}>
-                            Enable
+                          <button className="btn ghost small" onClick={() => setSignIn(u)}>
+                            Sign-in
                           </button>
-                        )
-                      ) : null}
+                          {u.status === 'active' ? (
+                            <button className="btn ghost small" onClick={() => setDisabling(u)}>
+                              Disable
+                            </button>
+                          ) : (
+                            <button className="btn ghost small" onClick={() => void setStatus(u, 'active')}>
+                              Enable
+                            </button>
+                          )}
+                        </>
+                      )}
                     </td>
                   ) : null}
                 </tr>

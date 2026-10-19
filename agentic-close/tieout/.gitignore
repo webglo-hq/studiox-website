@@ -18,7 +18,10 @@ playwright-report/
 blob-report/
 coverage/
 .eval-reports/
+
+# Scratch files (local experiments, logs)
 .tmp/
+*.log
 
 # Local environment
 .env

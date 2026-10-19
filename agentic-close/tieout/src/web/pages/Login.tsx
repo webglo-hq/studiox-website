@@ -49,6 +49,21 @@ export function Login() {
     }
   }
 
+  /** Leave a half-finished two-factor sign-in (ends the pending session). */
+  async function startOver() {
+    try {
+      await api('/auth/logout', { body: {} });
+    } catch {
+      /* the pending session may already have expired */
+    }
+    setStage('password');
+    setCode('');
+    setUseRecovery(false);
+    setEnrol(null);
+    setError(null);
+    await refresh();
+  }
+
   async function verify(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -211,6 +226,9 @@ export function Login() {
                   {useRecovery ? 'Use my authenticator app instead' : 'Lost your authenticator? Use a recovery code'}
                 </button>
               ) : null}
+              <button className="linklike" type="button" onClick={() => void startOver()}>
+                Sign in as someone else
+              </button>
             </form>
           )}
         </div>

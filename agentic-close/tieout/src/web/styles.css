@@ -657,6 +657,17 @@ textarea {
   border-radius: var(--radius-sm);
   min-height: 40px;
   padding: 8px 11px;
+  max-width: 100%; /* long option labels must not widen the page on a phone */
+}
+input[type='checkbox'],
+input[type='radio'] {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin: 2px;
+  padding: 0;
+  flex: none;
+  accent-color: var(--accent);
 }
 textarea {
   min-height: 84px;
@@ -674,9 +685,14 @@ textarea:focus-visible {
 }
 .segmented {
   display: inline-flex;
+  max-width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow-x: auto; /* many options on a phone: the strip scrolls, the page does not */
+}
+.segmented button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .segmented button {
   border: 0;

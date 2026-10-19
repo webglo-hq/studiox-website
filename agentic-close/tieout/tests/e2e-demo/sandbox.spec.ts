@@ -39,7 +39,8 @@ test('fits a phone screen without horizontal scrolling', async ({ browser, baseU
   await phone.goto(baseURL!);
   await phone.getByRole('button', { name: /Sam Rivera/ }).click();
   await expect(phone.getByRole('heading', { level: 1, name: 'Welcome back, Sam.' })).toBeVisible();
-  for (const route of ['/home', '/inbox', '/recs', '/flux', '/journal', '/close']) {
+  const routes = ['/home', '/close', '/inbox', '/recs', '/flux', '/journal', '/reports', '/reports?view=tb', '/runs', '/skills', '/skills/bank-reconciliation', '/ontology', '/ontology?view=axioms', '/audit', '/admin', '/admin?tab=account', '/imports'];
+  for (const route of routes) {
     await phone.evaluate((h) => void (window.location.hash = h), route);
     await phone.waitForTimeout(400);
     const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
