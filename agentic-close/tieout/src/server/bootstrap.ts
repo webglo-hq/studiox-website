@@ -95,8 +95,9 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     seeded = true;
   };
   if (demo) {
-    const existing = await db.system((sys) => sys.findGlobal('tenants', { id: DEMO_TENANT_ID }));
-    if (!existing.length) {
+    // a tenant can always read its own row (row-level security: tenants.id = the transaction's tenant)
+    const existing = await db.tx(DEMO_TENANT_ID, (tx) => tx.get('tenants', DEMO_TENANT_ID));
+    if (!existing) {
       log('seeding the fictional Bramblewood Labs demo (first run)…');
       const t0 = Date.now();
       await seedNow();

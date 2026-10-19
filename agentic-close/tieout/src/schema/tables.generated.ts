@@ -1140,6 +1140,11 @@ export interface MfaRecoveryCodeRow {
   used_at: string | null;
 }
 
+export interface TenantDirectoryRow {
+  id: string;
+  tenant_id: string;
+}
+
 export interface DbTables {
   schema_migrations: SchemaMigrationRow;
   tenants: TenantRow;
@@ -1218,6 +1223,7 @@ export interface DbTables {
   flux_explanations: FluxExplanationRow;
   close_packages: ClosePackageRow;
   mfa_recovery_codes: MfaRecoveryCodeRow;
+  tenant_directory: TenantDirectoryRow;
 }
 
 /** Columns that may be omitted on insert (defaulted, nullable, or set by the store). */
@@ -1299,6 +1305,7 @@ export interface DbOptionalOnInsert {
   flux_explanations: 'id' | 'tenant_id' | 'drivers' | 'proposal_id' | 'approved_by' | 'approved_at' | 'rejection_reason' | 'created_at' | 'covered_current_minor' | 'covered_comparative_minor';
   close_packages: 'id' | 'tenant_id' | 'generated_at' | 'agent_run_id';
   mfa_recovery_codes: 'id' | 'tenant_id' | 'created_at' | 'used_at';
+  tenant_directory: 'id' | 'tenant_id';
 }
 
 export const tableMeta = {
@@ -2745,6 +2752,15 @@ export const tableMeta = {
       {"name":"code_hash","type":"text","nullable":false},
       {"name":"created_at","type":"timestamptz","nullable":false,"default":{"kind":"now"}},
       {"name":"used_at","type":"timestamptz","nullable":true},
+    ],
+  },
+  tenant_directory: {
+    name: 'tenant_directory',
+    tenantScoped: true,
+    uniques: [],
+    columns: [
+      {"name":"id","type":"text","nullable":false,"primaryKey":true},
+      {"name":"tenant_id","type":"text","nullable":false,"references":{"table":"tenants","onDelete":"cascade"}},
     ],
   },
 } satisfies Record<keyof DbTables, TableMeta>;

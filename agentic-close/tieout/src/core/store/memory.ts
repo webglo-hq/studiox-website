@@ -16,11 +16,11 @@ import {
   type AuditAppend,
   type AuditRecord,
   type ColumnMeta,
+  type DirectoryKind,
   type FindOptions,
   type LineSum,
   type LineSumQuery,
   type Store,
-  type SystemTx,
   type TableMeta,
   type TableMetaMap,
   type Tx,
@@ -128,28 +128,11 @@ export class MemoryStore<M, I = M> implements Store<M, I> {
     });
   }
 
-  async system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R> {
-    return this.serialise(async () => {
-      this.undo = [];
-      try {
-        const sys: SystemTx<M> = {
-          findGlobal: async (table, where, opts) => this.findRows(table, where as Where<Row>, opts as FindOptions<Row>, null) as never,
-          insertGlobal: async (table, row) => {
-            const tid = ((row as Row).tenant_id as string | undefined) ?? null;
-            return this.insertRow(table, row as Row, tid) as never;
-          },
-          updateGlobal: async (table, id, patch) => this.updateRow(table, id, patch as Row, null) as never,
-        };
-        const r = await fn(sys);
-        this.undo = null;
-        return r;
-      } catch (e) {
-        const undo = this.undo ?? [];
-        this.undo = null;
-        for (let i = undo.length - 1; i >= 0; i--) undo[i]!();
-        throw e;
-      }
-    });
+  async tenantOf(kind: DirectoryKind, key: string): Promise<string | null> {
+    // the in-memory store has no row-level security; the lookup reads the keyed table directly
+    const [table, column] = kind === 'user_email' ? ['users', 'email'] : kind === 'session' ? ['sessions', 'id'] : ['api_tokens', 'token_hash'];
+    const row = this.findRows(table, { [column]: key } as Where<Row>, { limit: 1 }, null)[0];
+    return row ? (row.tenant_id as string) : null;
   }
 
   private serialise<R>(fn: () => Promise<R>): Promise<R> {

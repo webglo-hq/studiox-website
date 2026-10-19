@@ -126,7 +126,7 @@ export async function inviteUser(ctx: AppContext, u: RequestUser, input: { email
   const hash = await ctx.hasher.hash(tempPassword);
   // emails are unique across tenants (sign-in looks them up globally; the column is UNIQUE too).
   // Checked before the tenant transaction: a store that serialises transactions cannot nest them.
-  if ((await ctx.db.system((sys) => sys.findGlobal('users', { email }))).length) throw conflict('A user with that email already exists.');
+  if (await ctx.db.tenantOf('user_email', email)) throw conflict('A user with that email already exists.');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const role = await tx.findOne('roles', { key: input.role });
     if (!role) throw validation('Unknown role.');

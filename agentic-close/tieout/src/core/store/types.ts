@@ -127,16 +127,16 @@ export interface Store<M, I = M> {
   readonly kind: 'postgres' | 'memory';
   /** Run `fn` in a serialisable unit of work scoped to one tenant. Rolls back on throw. */
   tx<R>(tenantId: string, fn: (tx: Tx<M, I>) => Promise<R>): Promise<R>;
-  /** Cross-tenant system operations (login lookup, migrations bookkeeping). Use sparingly. */
-  system<R>(fn: (sys: SystemTx<M>) => Promise<R>): Promise<R>;
+  /**
+   * The only read that crosses tenants: which tenant a sign-in email, a session id or an API-token
+   * hash belongs to (each is unique across tenants). The row itself is then read inside that
+   * tenant, so nothing ever switches tenant isolation off (migration 0010).
+   */
+  tenantOf(kind: DirectoryKind, key: string): Promise<string | null>;
   close(): Promise<void>;
 }
 
-export interface SystemTx<M> {
-  findGlobal<T extends keyof M & string>(table: T, where: Where<M[T]>, opts?: FindOptions<M[T]>): Promise<M[T][]>;
-  insertGlobal<T extends keyof M & string>(table: T, row: Partial<M[T]>): Promise<M[T]>;
-  updateGlobal<T extends keyof M & string>(table: T, id: string, patch: Partial<M[T]>): Promise<M[T]>;
-}
+export type DirectoryKind = 'user_email' | 'session' | 'api_token';
 
 export class StoreError extends Error {
   readonly code: string;

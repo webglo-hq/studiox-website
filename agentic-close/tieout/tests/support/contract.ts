@@ -4,6 +4,8 @@
  */
 import { expect, it } from 'vitest';
 import { audit, SYSTEM_ACTOR } from '../../src/core/audit/audit';
+import { computeAuditHash } from '../../src/core/audit/chain';
+import type { AuditAppend } from '../../src/core/store/types';
 import { DomainError, forbidden } from '../../src/core/util/errors';
 import { systemClock } from '../../src/core/util/time';
 import type { Db, DbTx, JournalEntryRow } from '../../src/schema';
@@ -25,7 +27,7 @@ async function fixtureIds(tx: DbTx) {
 }
 
 /** Insert a draft entry with the given lines (committed), returning its id. */
-async function draft(db: Db, opts: { lines: [number, number][]; period: 'open' | 'locked'; approvedBySelf?: boolean }): Promise<string> {
+export async function draft(db: Db, opts: { lines: [number, number][]; period: 'open' | 'locked'; approvedBySelf?: boolean }): Promise<string> {
   return db.tx(T, async (tx) => {
     const f = await fixtureIds(tx);
     const period = opts.period === 'open' ? f.open : f.locked;
@@ -96,6 +98,20 @@ export function storeContract(getDb: () => Db) {
     await expect(db.tx(T, (tx) => tx.update('journal_lines', line.id, { debit_minor: 1 }))).rejects.toThrow(/AX-IM-01/);
   });
 
+  it('TO-M1: a line moves neither out of a posted entry nor into one (AX-IM-01)', async () => {
+    const db = getDb();
+    const posted = await draft(db, { lines: [[4_000, 0], [0, 4_000]], period: 'open' });
+    await post(db, posted);
+    const other = await draft(db, { lines: [[1_000, 0], [0, 1_000]], period: 'open' });
+    const leaving = (await db.tx(T, (tx) => tx.findOne('journal_lines', { journal_entry_id: posted })))!;
+    await expect(db.tx(T, (tx) => tx.update('journal_lines', leaving.id, { journal_entry_id: other, line_no: 9 }))).rejects.toThrow(/AX-IM-01/);
+    const joining = (await db.tx(T, (tx) => tx.findOne('journal_lines', { journal_entry_id: other })))!;
+    await expect(db.tx(T, (tx) => tx.update('journal_lines', joining.id, { journal_entry_id: posted, line_no: 9 }))).rejects.toThrow(/AX-IM-01/);
+    // the posted entry is exactly as it was posted
+    const lines = await db.tx(T, (tx) => tx.find('journal_lines', { journal_entry_id: posted }, { orderBy: [['line_no', 'asc']] }));
+    expect(lines.map((l) => [l.debit_minor, l.credit_minor])).toEqual([[4_000, 0], [0, 4_000]]);
+  });
+
   it('refuses postings into a locked period (AX-PD-01)', async () => {
     const db = getDb();
     await expect(post(db, await draft(db, { lines: [[7_000, 0], [0, 7_000]], period: 'locked' }))).rejects.toThrow(/AX-PD-01/);
@@ -113,6 +129,34 @@ export function storeContract(getDb: () => Db) {
     expect(last.summary).toBe('Contract test event');
     await expect(db.tx(T, (tx) => tx.update('audit_log', last.id, { summary: 'nothing happened' }))).rejects.toThrow(/AX-AUD-01/);
     await expect(db.tx(T, (tx) => tx.delete('audit_log', last.id))).rejects.toThrow(/AX-AUD-01/);
+  });
+
+  it('TO-DB-AUDIT: refuses an event that continues the chain with a hash that does not match it (AX-AUD-01)', async () => {
+    const db = getDb();
+    await db.tx(T, (tx) => audit(tx, SYSTEM_ACTOR, systemClock, { action: 'test.event', subjectType: 'test', subjectId: 'contract', summary: 'Before the forgery', data: {} }));
+    const last = (await db.tx(T, (tx) => tx.find('audit_log', {}, { orderBy: [['seq', 'desc']], limit: 1 })))[0]!;
+    const event: AuditAppend = { id: `aud_forged_${++seq}`, at: '2026-10-02T09:10:00.000Z', actor_type: 'user', actor_id: 'usr_cfo', actor_label: 'Chief Financial Officer', on_behalf_of: null, action: 'period.lock', subject_type: 'period', subject_id: 'x', entity_id: null, summary: 'The CFO approved everything', data: { amountMinor: 45_909_400, rate: 1.25, tiny: 1e-9, flags: ['a', 'b'], nested: { b: 1, a: null } }, ip: null };
+    const link = { tenant_id: T, seq: last.seq + 1, prev_hash: last.hash };
+    // a made-up hash, and a real hash of different content
+    await expect(db.tx(T, (tx) => tx.insert('audit_log', { ...event, ...link, hash: 'b'.repeat(64) }))).rejects.toThrow(/AX-AUD-01/);
+    await expect(db.tx(T, (tx) => tx.insert('audit_log', { ...event, ...link, summary: 'Nothing to see here', hash: computeAuditHash(last.hash, T, last.seq + 1, event) }))).rejects.toThrow(/AX-AUD-01/);
+    // the honest event, hashed as the application hashes it, is accepted by the database's own recomputation
+    const ok = await db.tx(T, (tx) => tx.insert('audit_log', { ...event, ...link, hash: computeAuditHash(last.hash, T, last.seq + 1, event) }));
+    expect(ok.seq).toBe(last.seq + 1);
+  });
+
+  it('TO-DB-RLS: finds the tenant of a sign-in email, a session and an API token without reading across tenants', async () => {
+    const db = getDb();
+    const casey = PEOPLE.find((p) => p.key === 'casey')!.email;
+    expect(await db.tenantOf('user_email', casey)).toBe(T);
+    expect(await db.tenantOf('user_email', 'nobody@example.com')).toBeNull();
+    const session = await db.tx(T, async (tx) => {
+      const u = (await tx.findOne('users', { email: casey }))!;
+      return tx.insert('sessions', { id: 'c'.repeat(64), user_id: u.id, csrf_hash: 'd'.repeat(64), idle_expires_at: '2026-10-02T10:00:00.000Z', absolute_expires_at: '2026-10-02T21:00:00.000Z', created_at: '2026-10-02T09:00:00.000Z', last_seen_at: '2026-10-02T09:00:00.000Z' });
+    });
+    expect(await db.tenantOf('session', session.id)).toBe(T);
+    expect(await db.tenantOf('session', 'e'.repeat(64))).toBeNull();
+    expect(await db.tenantOf('api_token', 'f'.repeat(64))).toBeNull();
   });
 
   it('scopes every read and write to one tenant', async () => {

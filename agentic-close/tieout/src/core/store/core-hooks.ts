@@ -1,7 +1,8 @@
-/** MemoryStore emulation of the core schema's triggers (mirrors migrations/0001_core.sql). */
+/** MemoryStore emulation of the core schema's triggers (mirrors migrations/0001_core.sql and 0009). */
+import { computeAuditHash } from '../audit/chain';
 import { ZERO_HASH } from '../util/hash';
 import type { MemoryHooks } from './memory';
-import { StoreError } from './types';
+import { StoreError, type AuditAppend } from './types';
 
 const forbid = (table: string, op: string) => () => {
   throw new StoreError('23514', `AX-AUD-01: ${op} on ${table} is not allowed (append-only)`);
@@ -19,6 +20,8 @@ export const coreHooks: MemoryHooks = {
         throw new StoreError('23514', `AX-AUD-01: audit chain link broken at seq ${String(row.seq)}`);
       }
       if (!/^[0-9a-f]{64}$/.test(String(row.hash))) throw new StoreError('23514', 'audit hash must be a SHA-256 hex digest');
+      // the hash is recomputed from the event itself (migration 0009), so a forged link is refused
+      if (row.hash !== computeAuditHash(row.prev_hash as string, row.tenant_id as string, row.seq as number, row as unknown as AuditAppend)) throw new StoreError('23514', `AX-AUD-01: audit event ${String(row.seq)} does not match its hash`);
     },
     skill_policies: (row, db) => oneCurrentPolicy(row, db),
     proposals: (row) => proposalChecks(row),

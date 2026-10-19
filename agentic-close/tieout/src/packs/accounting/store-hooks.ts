@@ -98,7 +98,9 @@ export const accountingHooks: MemoryHooks = {
       if (next.status === 'posted') postingChecks(next, db);
     },
     journal_lines: (old, next, db) => {
+      // the entry a line leaves and the entry it joins must both still be editable (AX-IM-01)
       lineGuard(old.journal_entry_id as string, db);
+      if (next.journal_entry_id !== old.journal_entry_id) lineGuard(next.journal_entry_id as string, db);
       lineRowChecks(next, db);
     },
     periods: (old, next) => {

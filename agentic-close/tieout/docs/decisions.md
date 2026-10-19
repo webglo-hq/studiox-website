@@ -128,9 +128,17 @@ reset also retires the person's API tokens, and signing in through SSO retires t
 **Context.** Store-level tenant filters are one missed `WHERE` away from a leak.
 
 **Decision.** Migration 0003 enables and FORCEs row-level security on every tenant table. Each
-transaction sets `tieout.tenant_id`; the few identity lookups that must cross tenants set
-`tieout.bypass` for their transaction only. The application must connect as an ordinary role
-(superusers bypass RLS); tests prove isolation as such a role.
+transaction sets `tieout.tenant_id`. The application must connect as an ordinary role (superusers
+bypass RLS); tests prove isolation as such a role.
+
+**Revised 2026-10-19 (independent review).** 0003 let the identity lookups that run before the
+tenant is known (sign-in by email, session and API-token resolution) set `tieout.bypass` — and any
+session can set a custom setting, so the application role could switch isolation off for itself.
+Migration 0010 removes the bypass from every policy. Those lookups now read `tenant_directory`, the
+one table without row-level security, which holds only a lookup key (email, session-id hash,
+API-token hash; each unique across tenants) and its tenant, kept in step by triggers; the row itself
+is then read inside that tenant (`Store.tenantOf`). The database also recomputes every audit hash on
+insert (migration 0009) and checks both entries when a journal line moves (migration 0008).
 
 **Entity scope (within a tenant).** Role grants can be limited to legal entities (Admin → People →
 Roles). Reads hide rows of entities outside the scope and keep group-level rows (the checklist);
