@@ -1,5 +1,6 @@
 import { approvalBlocks } from '../../agents/framework/decisions';
 import type { AgentRuntime } from '../../agents/framework/runtime';
+import type { Tx } from '../../persistence/db';
 import { closeProgress, signOffProblems, taskStates } from '../../packs/accounting/domain/close';
 import { closeBlockers } from '../../packs/accounting/services/periods';
 import { certificationProblems } from '../../packs/accounting/services/recon';
@@ -10,6 +11,24 @@ import { currentClose } from './close';
 
 /** "My close": what this person should do next, ranked, with their tasks and the close at a glance. */
 
+async function closeAgents(tx: Tx, closeId: string, waiting: number): Promise<CloseAgentsView | null> {
+  const [latest] = await tx.find('agent_runs', { close_id: closeId, skill_key: 'close-orchestrator', parent_run_id: null }, { orderBy: [['created_at', 'desc']], limit: 1 });
+  if (!latest) return null;
+  const tree = await tx.find('agent_runs', { close_id: closeId, created_at: { gte: latest.created_at } });
+  const proposals = tree.length ? await tx.find('proposals', { run_id: { in: tree.map((r) => r.id) } }) : [];
+  return {
+    runId: latest.id,
+    status: latest.status,
+    startedBy: latest.requested_by_label,
+    startedAt: latest.started_at ?? latest.created_at,
+    finishedAt: latest.finished_at,
+    working: tree.filter((r) => r.status === 'queued' || r.status === 'running').length,
+    proposals: proposals.length,
+    autoApplied: proposals.filter((x) => x.status === 'auto_applied').length,
+    waiting,
+  };
+}
+
 export interface NextStep {
   id: string;
   title: string;
@@ -17,6 +36,21 @@ export interface NextStep {
   href: string;
   count?: number;
   tone: 'primary' | 'attention' | 'info' | 'done';
+}
+
+/** The latest "Run close agents" for the close: whether it is still working and what it left for people. */
+export interface CloseAgentsView {
+  runId: string;
+  status: string;
+  startedBy: string;
+  startedAt: string;
+  finishedAt: string | null;
+  /** Runs of this close still queued or running. */
+  working: number;
+  proposals: number;
+  autoApplied: number;
+  /** Proposals of the close still waiting for a decision. */
+  waiting: number;
 }
 
 export async function home(app: App, p: Principal) {
@@ -27,6 +61,7 @@ export async function home(app: App, p: Principal) {
     const businessDate = app.clock.businessDate();
     const next: NextStep[] = [];
     let closeView = null;
+    let agents: CloseAgentsView | null = null;
     let myTasks: Array<Record<string, unknown>> = [];
     let pendingForMe = 0;
     let blockedForMe = 0;
@@ -53,7 +88,8 @@ export async function home(app: App, p: Principal) {
           else blockedForMe++;
         }
         if (pendingForMe) next.push({ id: 'inbox', title: `Review ${pendingForMe} item${pendingForMe === 1 ? '' : 's'} in your inbox`, detail: 'Agents prepared these and verified them against the ontology; they need your approval.', href: '#/inbox', count: pendingForMe, tone: 'attention' });
-        else if (pending.length && blockedForMe) next.push({ id: 'inbox-others', title: `${pending.length} item${pending.length === 1 ? '' : 's'} wait for someone with a higher limit or different role`, detail: 'Open the inbox to see who can approve each one.', href: '#/inbox', count: pending.length, tone: 'info' });
+        else if (pending.length && can(p, 'proposal.view')) next.push({ id: 'inbox-others', title: `Review ${pending.length} item${pending.length === 1 ? '' : 's'} the agents prepared`, detail: 'Someone else approves them (a higher limit, another role, or independence from whoever started the agents). Open each to check the evidence, and reject anything wrong.', href: '#/inbox', count: pending.length, tone: 'info' });
+        agents = await closeAgents(tx, close.id, pending.length);
         const postHoc = await tx.count('proposals', { tenant_id: p.tenantId, status: 'auto_applied', post_hoc_status: 'pending' });
         if (postHoc && can(p, 'proposal.review_posthoc')) next.push({ id: 'posthoc', title: `Spot-check ${postHoc} auto-applied item${postHoc === 1 ? '' : 's'}`, detail: 'A sample of work applied under autonomy policy, for after-the-fact review.', href: '#/inbox?view=review', count: postHoc, tone: 'info' });
 
@@ -99,6 +135,7 @@ export async function home(app: App, p: Principal) {
       businessDate,
       mode: { live: !!app.liveModel, model: app.liveModel },
       close: closeView,
+      agents,
       next,
       myTasks,
       inbox: { pendingForMe, blockedForMe },

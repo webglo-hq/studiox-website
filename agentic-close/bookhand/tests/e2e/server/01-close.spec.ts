@@ -27,11 +27,15 @@ test('a staff accountant, a senior, the controller and the CFO close September e
   await expect(page.getByRole('heading', { name: "What's next for you" })).toBeVisible();
   await expect(page.getByText('Run the close agents')).toBeVisible();
 
-  // 2. Run the close agents and follow the orchestrator's trace.
+  // 2. Run the close agents: My close shows them working, then the call to review what they left (B-7).
   await page.getByRole('button', { name: 'Run close agents' }).first().click();
-  await expect(page).toHaveURL(/#\/runs\//);
-  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Close agents (are working|finished)$/ })).toBeVisible();
+  expect(page.url()).not.toContain('#/runs/');
   await waitForAgents(page);
+  await expect(page.getByRole('link', { name: /^Review \d+ items?$/ })).toBeVisible({ timeout: 30_000 });
+  // The orchestrator's trace is one click away.
+  await page.getByRole('link', { name: 'Open the agent trace' }).click();
+  await expect(page.getByRole('heading', { name: 'Close orchestrator' })).toBeVisible();
   await expect(page.getByText('Completed').first()).toBeVisible({ timeout: 30_000 });
   await remember();
 
