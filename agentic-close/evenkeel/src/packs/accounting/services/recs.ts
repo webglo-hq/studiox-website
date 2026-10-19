@@ -7,7 +7,7 @@ import { sha256Hex } from '../../../framework/util/sha256';
 import { scanForInjection } from '../../../framework/util/text';
 import { REC_TEMPLATE, type RecTemplate } from '../close/template';
 import { audit } from '../domain/audit';
-import { requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { accumulatedDepreciation, type AssetFact } from '../domain/schedule-math';
 import { assertSod } from '../domain/rbac';
 import { accountById, accounts, entities, entityById } from '../domain/refdata';
@@ -265,7 +265,7 @@ export async function pendingProposalsFor(ctx: ServiceContext, recId: string) {
 
 export async function listRecs(ctx: ServiceContext, periodKey: string): Promise<RecSummary[]> {
   requirePermission(ctx, 'close.view');
-  const recs = await ctx.db.find('reconciliation', { tenant_id: ctx.tenantId, period_key: periodKey });
+  const recs = (await ctx.db.find('reconciliation', { tenant_id: ctx.tenantId, period_key: periodKey })).filter((r) => canSeeEntity(ctx, r.entity_id));
   const people = await peopleMap(ctx);
   const out: RecSummary[] = [];
   for (const r of recs) out.push(await summarize(ctx, r, people));
@@ -314,6 +314,7 @@ export async function recDetail(ctx: ServiceContext, recId: string): Promise<Rec
   requirePermission(ctx, 'close.view');
   const rec = await ctx.db.get('reconciliation', recId);
   if (!rec || rec.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Reconciliation not found');
+  requireEntity(ctx, rec.entity_id);
   const people = await peopleMap(ctx);
   const summary = await summarize(ctx, rec, people);
   const current = await live(ctx, rec);
@@ -543,6 +544,7 @@ export async function resolveReconcilingItem(ctx: ServiceContext, itemId: string
   const item = await ctx.db.get('reconciling_item', itemId);
   if (!item || item.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Item not found');
   const rec = (await ctx.db.get('reconciliation', item.reconciliation_id))!;
+  requireEntity(ctx, rec.entity_id);
   assertEditable(rec);
   if (!input.note || input.note.trim().length < 3) throw new AppError('VALIDATION', 'Add a short note explaining the resolution.');
   if (input.status === 'written_off') requirePermission(ctx, 'je.approve');
@@ -595,6 +597,8 @@ export async function createMatch(
 
 export async function manualMatch(ctx: ServiceContext, input: { reconciliationId: string; bankTransactionIds: string[]; journalLineIds: string[]; note?: string }): Promise<RecSummary> {
   requirePermission(ctx, 'rec.prepare');
+  const rec = await ctx.db.get('reconciliation', input.reconciliationId);
+  if (rec && rec.tenant_id === ctx.tenantId) requireEntity(ctx, rec.entity_id);
   await createMatch(ctx, { ...input, rationale: input.note?.trim() || 'Matched manually.', createdBy: 'user', acceptedBy: ctx.actor.userId });
   await refreshRec(ctx, input.reconciliationId);
   return summarize(ctx, (await ctx.db.get('reconciliation', input.reconciliationId))!, await peopleMap(ctx));
@@ -605,6 +609,7 @@ export async function unmatch(ctx: ServiceContext, matchId: string, reason: stri
   const m = await ctx.db.get('rec_match', matchId);
   if (!m || m.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Match not found');
   const rec = (await ctx.db.get('reconciliation', m.reconciliation_id))!;
+  requireEntity(ctx, rec.entity_id);
   assertEditable(rec);
   if (!reason || reason.trim().length < 3) throw new AppError('VALIDATION', 'Say why you are undoing this match.');
   await ctx.db.tx(async (db) => {

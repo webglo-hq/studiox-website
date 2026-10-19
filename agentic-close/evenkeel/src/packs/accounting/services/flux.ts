@@ -4,7 +4,7 @@ import { AppError } from '../../../framework/util/errors';
 import { allocateByWeights } from '../../../framework/util/money';
 import { normalize } from '../../../framework/util/text';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { analyzeDrivers, computeVariance, fluxNarrative, isMaterialVariance, naturalSign, type ActivityLine, type DriverAnalysis, type FluxThreshold } from '../domain/flux-math';
 import { ledgerLines } from '../domain/queries';
 import { accounts, dimensionById, entities, entityByCode } from '../domain/refdata';
@@ -111,6 +111,7 @@ function totalsOf(lines: { accountClass?: string; current: number; comparison: n
 export async function fluxView(ctx: ServiceContext, input: { entityCode: string; periodKey: string; comparison: Comparison; threshold?: FluxThreshold }): Promise<FluxView> {
   requirePermission(ctx, 'report.view');
   const ent = await entityByCode(ctx, input.entityCode);
+  requireEntity(ctx, ent.id);
   const analysis = await ctx.db.findOne('flux_analysis', { tenant_id: ctx.tenantId, entity_id: ent.id, period_key: input.periodKey, comparison: input.comparison });
   const threshold: FluxThreshold = analysis ? { abs: analysis.threshold_abs, pct: analysis.threshold_pct, mode: 'and' } : (input.threshold ?? DEFAULT_THRESHOLD);
   const computed = await computeFluxLines(ctx, ent.id, input.periodKey, input.comparison, threshold);
@@ -255,6 +256,7 @@ export async function activityLines(ctx: ServiceContext, entityId: string, accou
 }
 
 export async function varianceDrivers(ctx: ServiceContext, input: { entityId: string; accountId: string; periodKey: string; comparison: Comparison }): Promise<DriverAnalysis & { variance: number; narrative: string; current: number; comparisonAmount: number }> {
+  requireEntity(ctx, input.entityId);
   const a = (await accounts(ctx)).get(input.accountId)!;
   const ent = (await entities(ctx)).get(input.entityId)!;
   const lines = await computeFluxLines(ctx, input.entityId, input.periodKey, input.comparison, DEFAULT_THRESHOLD);
@@ -278,6 +280,7 @@ export async function varianceDrivers(ctx: ServiceContext, input: { entityId: st
 export async function submitExplanation(ctx: ServiceContext, input: unknown): Promise<string> {
   requirePermission(ctx, 'flux.explain');
   const d = FluxExplanationDraft.parse(input);
+  requireEntity(ctx, d.entityId);
   const ensured = await ensureAnalysis(ctx, d.entityId, d.periodKey, d.comparison as Comparison, DEFAULT_THRESHOLD, null);
   const lineId = d.fluxLineId ?? ensured.lines.get(d.accountId);
   if (!lineId) throw new AppError('NOT_FOUND', 'No variance line for this account.');
@@ -294,10 +297,17 @@ async function refreshAnalysisStatus(ctx: ServiceContext, analysisId: string): P
   if (lines.length && lines.every((l) => l.status === 'approved')) await ctx.db.update('flux_analysis', analysisId, { status: 'approved', approved_by: ctx.actor.userId, approved_at: ctx.clock.nowIso() });
 }
 
+/** The entity whose variance an explanation explains. */
+async function explanationEntity(ctx: ServiceContext, lineId: string): Promise<string | null> {
+  const line = await ctx.db.get('flux_line', lineId);
+  return line ? ((await ctx.db.get('flux_analysis', line.flux_analysis_id))?.entity_id ?? null) : null;
+}
+
 export async function approveExplanation(ctx: ServiceContext, explanationId: string): Promise<void> {
   requirePermission(ctx, 'flux.approve');
   const e = await ctx.db.get('flux_explanation', explanationId);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Explanation not found');
+  requireEntity(ctx, await explanationEntity(ctx, e.flux_line_id));
   if (e.status === 'approved') return;
   let requestedBy: string | null = null;
   if (e.run_id) requestedBy = (await ctx.db.get('agent_run', e.run_id))?.requested_by ?? null;
@@ -316,6 +326,7 @@ export async function rejectExplanation(ctx: ServiceContext, explanationId: stri
   if (!reason || reason.trim().length < 3) throw new AppError('VALIDATION', 'Say what is missing from the explanation.');
   const e = await ctx.db.get('flux_explanation', explanationId);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Explanation not found');
+  requireEntity(ctx, await explanationEntity(ctx, e.flux_line_id));
   await ctx.db.tx(async (db) => {
     await db.update('flux_explanation', e.id, { status: 'rejected', rejection_reason: reason.trim() });
     await db.update('flux_line', e.flux_line_id, { status: 'unexplained' });

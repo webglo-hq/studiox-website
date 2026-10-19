@@ -34,19 +34,34 @@ export function Admin({ route }: { route: Route }) {
   );
 }
 
+/** "All entities" or the entity codes a person's roles are limited to. */
+function entityLabel(access: User['entities']): string {
+  return access === 'all' ? 'All entities' : access.join(', ');
+}
+
 function RolesDialog({ user, onClose }: { user: User; onClose: () => void }) {
   const roles = useApi('admin.roles', {});
+  const ref = useApi('journals.reference', {});
   const [sel, setSel] = useState<Set<string>>(new Set(user.roles));
+  const [allEntities, setAllEntities] = useState(user.entities === 'all');
+  const [ents, setEnts] = useState<Set<string>>(new Set(user.entities === 'all' ? [] : user.entities));
   const save = useAction('admin.setRoles', { success: `Roles updated for ${user.name}. Their sessions were signed out so the change applies now.`, onSuccess: onClose });
+  const pick = (set: (fn: (s: Set<string>) => Set<string>) => void, v: string) =>
+    set((s) => {
+      const n = new Set(s);
+      if (n.has(v)) n.delete(v);
+      else n.add(v);
+      return n;
+    });
   return (
     <Dialog
       title={`Roles for ${user.name}`}
-      description="Combinations that break a blocking segregation-of-duties rule are refused."
+      description="Combinations that break a blocking segregation-of-duties rule are refused. Limiting someone to some entities hides the other entities, consolidated figures, the close package and the audit log from them."
       onClose={onClose}
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" busy={save.isPending} onClick={() => save.mutate({ userId: user.id, roles: [...sel] })}>
+          <Button variant="primary" busy={save.isPending} disabled={!allEntities && ents.size === 0} onClick={() => save.mutate({ userId: user.id, roles: [...sel], entities: allEntities ? 'all' : [...ents] })}>
             Save roles
           </Button>
         </>
@@ -57,19 +72,7 @@ function RolesDialog({ user, onClose }: { user: User; onClose: () => void }) {
           <div className="stack" style={{ gap: 6 }}>
             {r.roles.map((role) => (
               <label key={role.code} className="panel row" style={{ alignItems: 'flex-start', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={sel.has(role.code)}
-                  onChange={() =>
-                    setSel((s) => {
-                      const n = new Set(s);
-                      if (n.has(role.code)) n.delete(role.code);
-                      else n.add(role.code);
-                      return n;
-                    })
-                  }
-                  style={{ width: 18, height: 18, marginTop: 2 }}
-                />
+                <input type="checkbox" checked={sel.has(role.code)} onChange={() => pick(setSel, role.code)} style={{ width: 18, height: 18, marginTop: 2 }} />
                 <span className="stack" style={{ gap: 2 }}>
                   <strong className="small">{role.name}</strong>
                   <span className="xs ink2">{role.description}</span>
@@ -79,6 +82,33 @@ function RolesDialog({ user, onClose }: { user: User; onClose: () => void }) {
           </div>
         )}
       </Query>
+      <fieldset className="stack" style={{ border: 0, margin: '14px 0 0', padding: 0, gap: 6 }}>
+        <legend className="small strong" style={{ marginBottom: 6 }}>
+          Entities these roles cover
+        </legend>
+        <label className="row" style={{ cursor: 'pointer' }}>
+          <input type="radio" name="entity-scope" checked={allEntities} onChange={() => setAllEntities(true)} style={{ accentColor: 'var(--accent)' }} />
+          <span className="small">All entities</span>
+        </label>
+        <label className="row" style={{ cursor: 'pointer' }}>
+          <input type="radio" name="entity-scope" checked={!allEntities} onChange={() => setAllEntities(false)} style={{ accentColor: 'var(--accent)' }} />
+          <span className="small">Only these entities</span>
+        </label>
+        {!allEntities && (
+          <Query q={ref} rows={2}>
+            {(r) => (
+              <div className="row-wrap" style={{ paddingLeft: 26 }}>
+                {r.entities.map((e) => (
+                  <label key={e.code} className="row small" style={{ cursor: 'pointer' }}>
+                    <input type="checkbox" checked={ents.has(e.code)} onChange={() => pick(setEnts, e.code)} style={{ width: 18, height: 18 }} />
+                    {e.name} ({e.code})
+                  </label>
+                ))}
+              </div>
+            )}
+          </Query>
+        )}
+      </fieldset>
     </Dialog>
   );
 }
@@ -100,6 +130,7 @@ function Users() {
                     Person
                   </th>
                   <th scope="col">Roles</th>
+                  <th scope="col">Entities</th>
                   <th scope="col">Security</th>
                   <th scope="col">Last sign-in</th>
                   <th scope="col" className="last">
@@ -124,6 +155,7 @@ function Users() {
                       </div>
                       {u.conflicts.length > 0 && <div className="xs diff-bad">{u.conflicts.map((c) => `${c.rule} ${c.name}`).join(', ')}</div>}
                     </td>
+                    <td className="small nowrap">{entityLabel(u.entities)}</td>
                     <td className="small">
                       <div className="row-wrap">
                         <Status value={u.status === 'active' ? 'ok' : 'blocked'} label={humanize(u.status)} />

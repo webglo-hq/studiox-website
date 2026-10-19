@@ -53,19 +53,18 @@ export function requirePermission(ctx: ServiceContext, permission: string): void
   }
 }
 
-export function requireEntity(ctx: ServiceContext, entityId: string | null | undefined): void {
-  if (!entityId || ctx.actor.entityScope === 'all') return;
-  if (!ctx.actor.entityScope.includes(entityId)) throw new AppError('FORBIDDEN', 'You do not have access to this entity.');
-}
-
 /**
- * Read-side entity scope. A person granted only some entities sees records of those entities;
+ * Entity scope. A person granted only some entities reads and changes records of those entities;
  * records that span entities (no entity, consolidated views, the close package, the audit log)
  * are for tenant-wide roles only, so nothing from another entity leaks through them.
  */
 export function canSeeEntity(ctx: ServiceContext, entityId: string | null | undefined): boolean {
   if (ctx.actor.entityScope === 'all') return true;
   return !!entityId && ctx.actor.entityScope.includes(entityId);
+}
+
+export function requireEntity(ctx: ServiceContext, entityId: string | null | undefined): void {
+  if (!canSeeEntity(ctx, entityId)) throw new AppError('FORBIDDEN', 'You do not have access to this entity.');
 }
 
 /** Entities the actor may read, or null when tenant-wide (no filter needed). */

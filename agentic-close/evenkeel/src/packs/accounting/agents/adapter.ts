@@ -66,7 +66,7 @@ export function createAdapter(deps: AdapterDeps): DomainAdapter<AgentCtx> {
   const authorize = async (p: ProposalRecord, ctx: AgentCtx, decision: 'approve' | 'reject' | 'review'): Promise<void> => {
     const actor = ctx.decider ?? ctx.svc.actor;
     if (!actor.userId) throw new AppError('FORBIDDEN', 'Only a signed-in person can decide on proposals.');
-    if (p.entityId) requireEntity(ctx.svc, p.entityId);
+    requireEntity(ctx.svc, p.entityId);
     if (decision === 'review') {
       if (!hasPermission(actor, 'proposal.review')) throw new AppError('FORBIDDEN', 'Your role cannot complete post-hoc reviews.');
       if (ctx.run.requestedBy === actor.userId) throw new AppError('SOD_VIOLATION', 'SOD-02: you started the run that posted this; someone else must review it.');

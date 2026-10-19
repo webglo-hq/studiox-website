@@ -3,7 +3,7 @@ import { addMonths, periodEnd } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
 import { sha256Hex } from '../../../framework/util/sha256';
 import { audit } from '../domain/audit';
-import { hasPermission, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { hasPermission, requireAllEntities, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { buildStatement, consolidatedTrialBalance, trialBalance, type Statement, type TrialBalance } from '../domain/reporting';
 import { accounts, entities, fxRate, operatingEntities } from '../domain/refdata';
 import { completionReadiness, updateTask } from './close';
@@ -212,12 +212,14 @@ async function toSummary(ctx: ServiceContext, p: { id: string; period_key: strin
 
 export async function listPackages(ctx: ServiceContext, periodKey?: string): Promise<PackageSummary[]> {
   requirePermission(ctx, 'report.view');
+  requireAllEntities(ctx, 'The close package');
   const rows = await ctx.db.find('close_package', periodKey ? { tenant_id: ctx.tenantId, period_key: periodKey } : { tenant_id: ctx.tenantId }, { orderBy: [['period_key', 'desc'], ['version', 'desc']] });
   return Promise.all(rows.map((r) => toSummary(ctx, r)));
 }
 
 export async function getPackage(ctx: ServiceContext, id: string): Promise<{ summary: PackageSummary; content: PackageContent; stale: boolean; changes: string[] }> {
   requirePermission(ctx, 'report.view');
+  requireAllEntities(ctx, 'The close package');
   const p = await ctx.db.get('close_package', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
   const content = p.content as unknown as PackageContent;
@@ -248,6 +250,7 @@ async function insertVersion(ctx: ServiceContext, periodKey: string, opts: { com
 /** A person generates a new draft version. */
 export async function createPackage(ctx: ServiceContext, periodKey: string, opts: { commentary?: string | null } = {}): Promise<PackageSummary> {
   requirePermission(ctx, 'package.generate');
+  requireAllEntities(ctx, 'The close package');
   return insertVersion(ctx, periodKey, { commentary: opts.commentary ?? null, runId: null, generatedBy: ctx.actor.userId });
 }
 
@@ -267,6 +270,7 @@ export async function createAgentPackage(ctx: ServiceContext, periodKey: string,
  */
 export async function refreshPackage(ctx: ServiceContext, id: string): Promise<PackageSummary> {
   if (!hasPermission(ctx.actor, 'package.generate')) requirePermission(ctx, 'package.approve');
+  requireAllEntities(ctx, 'The close package');
   const p = await ctx.db.get('close_package', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
   if (p.status === 'final') throw new AppError('CONFLICT', 'This package is already final.');
@@ -284,6 +288,7 @@ export async function refreshPackage(ctx: ServiceContext, id: string): Promise<P
  */
 export async function approvePackage(ctx: ServiceContext, id: string, statement?: string): Promise<PackageSummary> {
   requirePermission(ctx, 'package.approve');
+  requireAllEntities(ctx, 'The close package');
   const p = await ctx.db.get('close_package', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
   if (p.status === 'final') throw new AppError('CONFLICT', 'This package is already final.');

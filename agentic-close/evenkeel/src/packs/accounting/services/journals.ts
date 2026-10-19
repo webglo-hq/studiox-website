@@ -1,7 +1,7 @@
 import { periodEnd } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { hasPermission, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, entityFilter, hasPermission, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { createEntry, postEntry, reverseEntry, validateEntry } from '../domain/ledger';
 import { assertSod } from '../domain/rbac';
 import { accounts, dimensionById, entities, entityByCode } from '../domain/refdata';
@@ -14,7 +14,7 @@ import { sourceLabel } from './reports';
 /** Entities, the chart of accounts and departments, for entry forms and filters. */
 export async function ledgerReference(ctx: ServiceContext) {
   requirePermission(ctx, 'report.view');
-  const ents = [...(await entities(ctx)).values()];
+  const ents = [...(await entities(ctx)).values()].filter((e) => canSeeEntity(ctx, e.id));
   const accs = [...(await accounts(ctx)).values()].filter((a) => a.is_active && a.is_postable);
   const dims = [...(await dimensionById(ctx)).values()];
   const deptType = await ctx.db.findOne('dimension_type', { tenant_id: ctx.tenantId, code: 'department' });
@@ -50,7 +50,10 @@ export async function listEntries(ctx: ServiceContext, f: { periodKey?: string; 
   const ents = await entities(ctx);
   const where: Record<string, unknown> = { tenant_id: ctx.tenantId };
   if (f.periodKey) where.period_key = f.periodKey;
-  if (f.entityCode) where.entity_id = (await entityByCode(ctx, f.entityCode)).id;
+  if (f.entityCode) {
+    where.entity_id = (await entityByCode(ctx, f.entityCode)).id;
+    requireEntity(ctx, where.entity_id as string);
+  } else if (entityFilter(ctx)) where.entity_id = { in: [...entityFilter(ctx)!] };
   if (f.status) where.status = f.status;
   if (f.source) where.source = f.source;
   if (f.type) where.entry_type = f.type;
@@ -102,6 +105,7 @@ export async function entryDetail(ctx: ServiceContext, id: string) {
   requirePermission(ctx, 'report.view');
   const e = await ctx.db.get('journal_entry', id);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Journal entry not found');
+  requireEntity(ctx, e.entity_id);
   const accs = await accounts(ctx);
   const dims = await dimensionById(ctx);
   const ents = await entities(ctx);
@@ -203,6 +207,7 @@ export async function rejectEntry(ctx: ServiceContext, id: string, reason: strin
   if (!reason || reason.trim().length < 3) throw new AppError('VALIDATION', 'Say why the entry is rejected.');
   const e = await ctx.db.get('journal_entry', id);
   if (!e || e.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Journal entry not found');
+  requireEntity(ctx, e.entity_id);
   if (e.status !== 'pending_approval' && e.status !== 'draft') throw new AppError('CONFLICT', 'Only unposted entries can be rejected.');
   await ctx.db.tx(async (db) => {
     await db.update('journal_entry', id, { status: 'rejected' });

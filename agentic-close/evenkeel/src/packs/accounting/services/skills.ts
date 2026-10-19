@@ -2,7 +2,7 @@ import type { SkillPolicy } from '../../../framework/runtime/types';
 import { AUTONOMY_LEVELS, type AutonomyLevel, type SkillPackage } from '../../../framework/skills/manifest';
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, requireAllEntities, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { compileRules, type CompiledRule, type CompileResult, type RuleRefs } from '../domain/policy-rules';
 import { accounts, dimensionValues } from '../domain/refdata';
 import { person, type PersonRef } from './common';
@@ -85,8 +85,8 @@ export interface SkillCard {
 
 export async function listSkills(ctx: ServiceContext, skills: SkillPackage[]): Promise<SkillCard[]> {
   requirePermission(ctx, 'close.view');
-  const runs = await ctx.db.find('agent_run', { tenant_id: ctx.tenantId }, { orderBy: [['created_at', 'desc']] });
-  const proposals = await ctx.db.find('proposal', { tenant_id: ctx.tenantId });
+  const runs = (await ctx.db.find('agent_run', { tenant_id: ctx.tenantId }, { orderBy: [['created_at', 'desc']] })).filter((r) => canSeeEntity(ctx, r.entity_id));
+  const proposals = (await ctx.db.find('proposal', { tenant_id: ctx.tenantId })).filter((p) => canSeeEntity(ctx, p.entity_id));
   const out: SkillCard[] = [];
   for (const s of skills) {
     const p = await currentPolicy(ctx, s);
@@ -206,6 +206,7 @@ async function newPolicyVersion(ctx: ServiceContext, skill: SkillPackage, patch:
 
 export async function updatePolicy(ctx: ServiceContext, skills: SkillPackage[], input: { skillId: string; rulesText?: string; thresholds?: Record<string, number>; enabled?: boolean; note: string }) {
   requirePermission(ctx, 'skill.policy.edit');
+  requireAllEntities(ctx, 'A skill policy');
   const s = skills.find((x) => x.id === input.skillId);
   if (!s) throw new AppError('NOT_FOUND', 'Skill not found');
   if (input.enabled === false) requirePermission(ctx, 'skill.autonomy.set');
@@ -231,6 +232,7 @@ export async function updatePolicy(ctx: ServiceContext, skills: SkillPackage[], 
 
 export async function setAutonomy(ctx: ServiceContext, skills: SkillPackage[], input: { skillId: string; level: AutonomyLevel; note: string }) {
   requirePermission(ctx, 'skill.autonomy.set');
+  requireAllEntities(ctx, 'Agent autonomy');
   const s = skills.find((x) => x.id === input.skillId);
   if (!s) throw new AppError('NOT_FOUND', 'Skill not found');
   if (AUTONOMY_LEVELS.indexOf(input.level) > AUTONOMY_LEVELS.indexOf(s.manifest.autonomy.max)) throw new AppError('VALIDATION', `${s.manifest.title} allows at most ${s.manifest.autonomy.max}.`);

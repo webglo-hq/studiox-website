@@ -8,7 +8,7 @@ import type { Brain, RunRecord, ToolDef } from '../../../framework/runtime/types
 import { validateSkill, type SkillPackage } from '../../../framework/skills/manifest';
 import type { Clock } from '../../../framework/util/clock';
 import { AppError } from '../../../framework/util/errors';
-import { hasPermission, makeContext } from '../domain/context';
+import { hasPermission, makeContext, requireAllEntities, requireEntity } from '../domain/context';
 import { loadActor, PERMISSIONS } from '../domain/rbac';
 import { closeOntology, PROPOSAL_CLASS, PROPOSAL_KINDS, PROPOSAL_SHAPES, type ProposalKind } from '../ontology';
 import { orchTasks, syncTaskFromRuns } from '../services/close';
@@ -166,6 +166,7 @@ export class AgentEngine {
       const actor = await loadActor(db, tenantId, by.userId);
       if (!hasPermission(actor, 'agent.run')) throw new AppError('FORBIDDEN', 'Your role cannot run agents.');
       if (task.owner_id !== by.userId && !hasPermission(actor, 'agent.orchestrate')) throw new AppError('FORBIDDEN', 'Only the task owner (or a close lead) can run this agent.');
+      requireEntity(this.ctx(actor), task.entity_id);
     }
     const previous = await db.count('agent_run', { tenant_id: tenantId, close_task_id: task.id });
     const delegated = await delegatedActorFor(db, tenantId, task.owner_id, skill);
@@ -205,6 +206,7 @@ export class AgentEngine {
     const { db, tenantId } = this.opts;
     const actor = await loadActor(db, tenantId, userId);
     if (!hasPermission(actor, 'agent.orchestrate')) throw new AppError('FORBIDDEN', 'Your role cannot run the whole close; run the agents for your own tasks instead.');
+    requireAllEntities(this.ctx(actor), 'Running every close agent');
     const period = periodKey ?? (await currentPeriodKey(this.ctx(actor)));
     const cycle = await db.findOne('close_cycle', { tenant_id: tenantId, period_key: period });
     if (!cycle) throw new AppError('NOT_FOUND', `No close calendar for ${period}`);
@@ -290,6 +292,7 @@ export class AgentEngine {
     const { db, tenantId } = this.opts;
     const actor = await loadActor(db, tenantId, userId);
     if (!hasPermission(actor, 'agent.orchestrate')) throw new AppError('FORBIDDEN', 'Your role cannot run the whole close; run the agents for your own tasks instead.');
+    requireAllEntities(this.ctx(actor), 'Running every close agent');
     const period = periodKey ?? (await currentPeriodKey(this.ctx(actor)));
     const cycle = await db.findOne('close_cycle', { tenant_id: tenantId, period_key: period });
     if (!cycle) throw new AppError('NOT_FOUND', `No close calendar for ${period}`);

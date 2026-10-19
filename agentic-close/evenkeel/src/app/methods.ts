@@ -199,7 +199,7 @@ export const METHODS = {
 
   'admin.users': m({ input: empty, mutates: false, description: 'Users and roles', handler: (ctx) => listUsers(ctx) }),
   'admin.roles': m({ input: empty, mutates: false, description: 'Roles and permissions', handler: (ctx) => listRoles(ctx) }),
-  'admin.setRoles': m({ input: z.object({ userId: Id, roles: z.array(z.string().max(40)).max(8) }).strict(), mutates: true, description: 'Replace a user’s roles', handler: (ctx, _e, i) => setUserRoles(ctx, i) }),
+  'admin.setRoles': m({ input: z.object({ userId: Id, roles: z.array(z.string().max(40)).max(8), entities: z.union([z.literal('all'), z.array(z.string().max(20)).min(1).max(20)]).optional() }).strict(), mutates: true, description: 'Replace a user’s roles and the entities they cover', handler: (ctx, _e, i) => setUserRoles(ctx, i) }),
   'admin.setStatus': m({ input: z.object({ userId: Id, status: z.enum(['active', 'disabled']) }).strict(), mutates: true, description: 'Enable or disable a user', handler: async (ctx, _e, i) => { await setUserStatus(ctx, i); return { ok: true }; } }),
   'admin.sodRules': m({ input: empty, mutates: false, description: 'Segregation-of-duties rules', handler: (ctx) => listSodRules(ctx) }),
   'admin.setSodRule': m({ input: z.object({ code: z.string().max(20), enabled: z.boolean(), note: z.string().min(5).max(500) }).strict(), mutates: true, description: 'Enable/disable a SoD rule', handler: async (ctx, _e, i) => { await setSodRule(ctx, i); return { ok: true }; } }),

@@ -2,7 +2,7 @@ import type { GateExplanation } from '../../../framework/runtime/types';
 import type { Row } from '../../../framework/store/schema';
 import { AppError } from '../../../framework/util/errors';
 import { audit } from '../domain/audit';
-import { hasPermission, requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { canSeeEntity, hasPermission, requireEntity, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { reverseEntry } from '../domain/ledger';
 import { loadActor } from '../domain/rbac';
 import { accounts, dimensionById, entities } from '../domain/refdata';
@@ -67,7 +67,7 @@ export function approveGuard(ctx: ServiceContext, p: ProposalRow, requestedBy: s
   if (extra && !hasPermission(a, extra)) reasons.push(`Needs the ${extra} permission.`);
   if (a.userId && requestedBy === a.userId) reasons.push('SOD-02: you started the agent run that prepared this, so someone else must approve it.');
   else if (a.userId && taskOwner === a.userId) reasons.push('SOD-01: you own the task this was prepared for, so someone else must approve it.');
-  if (p.entity_id && a.entityScope !== 'all' && !a.entityScope.includes(p.entity_id)) reasons.push('Outside your entities.');
+  if (!canSeeEntity(ctx, p.entity_id)) reasons.push('Outside your entities.');
   return { ok: reasons.length === 0, reasons };
 }
 
@@ -296,7 +296,7 @@ export async function listProposals(ctx: ServiceContext, f: { tab?: InboxTab; ki
   if (f.periodKey) base.period_key = f.periodKey;
   if (f.kind) base.kind = f.kind;
   if (f.skillId) base.skill_id = f.skillId;
-  const all = await ctx.db.find('proposal', base as never, { orderBy: [['created_at', 'desc']] });
+  const all = (await ctx.db.find('proposal', base as never, { orderBy: [['created_at', 'desc']] })).filter((p) => canSeeEntity(ctx, p.entity_id));
   const waiting = all.filter((p) => p.status === 'pending' || p.status === 'suggested');
   const review = all.filter((p) => p.status === 'auto_applied' && (p.review_status === 'sampled' || p.review_status === 'pending_review'));
   const auto = all.filter((p) => p.status === 'auto_applied');
@@ -328,6 +328,7 @@ export async function getProposal(ctx: ServiceContext, id: string): Promise<Prop
   requirePermission(ctx, 'close.view');
   const p = await ctx.db.get('proposal', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Proposal not found');
+  requireEntity(ctx, p.entity_id);
   return (await toViews(ctx, [p]))[0]!;
 }
 

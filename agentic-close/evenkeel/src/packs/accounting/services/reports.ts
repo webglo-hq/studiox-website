@@ -1,7 +1,7 @@
 import { addMonths, periodEnd } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
 import { formatMoney } from '../../../framework/util/money';
-import { requirePermission, type ServiceContext } from '../domain/context';
+import { requireAllEntities, requireEntity, requirePermission, type ServiceContext } from '../domain/context';
 import { ledgerLines } from '../domain/queries';
 import { accounts, entities, entityByCode, fxRate } from '../domain/refdata';
 import { consolidatedTrialBalance, trialBalance, validateTrialBalance, type Statement } from '../domain/reporting';
@@ -10,9 +10,14 @@ import { statementsFor } from './package';
 
 /** Trial balance, statements and drill-down from a statement line to the source record. */
 
+/** Resolve a report scope, refusing entities (and consolidation) outside the person's access. */
 async function scopeOf(ctx: ServiceContext, scope: string): Promise<{ kind: 'consolidated' } | { kind: 'entity'; entityId: string; code: string }> {
-  if (scope === 'consolidated' || scope === 'CONSOLIDATED') return { kind: 'consolidated' };
+  if (scope === 'consolidated' || scope === 'CONSOLIDATED') {
+    requireAllEntities(ctx, 'The consolidated view');
+    return { kind: 'consolidated' };
+  }
   const e = await entityByCode(ctx, scope);
+  requireEntity(ctx, e.id);
   return { kind: 'entity', entityId: e.id, code: e.code };
 }
 
@@ -130,6 +135,8 @@ export async function sourceRecord(ctx: ServiceContext, input: { type: string; i
   if (!(allowed as readonly string[]).includes(input.type)) throw new AppError('VALIDATION', 'Unknown record type');
   const row = (await ctx.db.get(input.type as (typeof allowed)[number], input.id)) as Record<string, unknown> | null;
   if (!row || row.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Record not found');
+  const bankAccount = input.type === 'bank_transaction' ? await ctx.db.get('bank_account', row.bank_account_id as string) : null;
+  requireEntity(ctx, (row.entity_id as string | undefined) ?? bankAccount?.entity_id ?? null);
   const docId = (row.source_document_id as string | null | undefined) ?? null;
   const doc = docId ? await ctx.db.get('source_document', docId) : null;
   const fields = Object.fromEntries(Object.entries(row).filter(([k]) => !['tenant_id', 'dedupe_hash'].includes(k)));
@@ -141,6 +148,7 @@ export async function sourceDocument(ctx: ServiceContext, id: string) {
   const d = await ctx.db.get('source_document', id);
   if (!d || d.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Document not found');
   const connector = d.connector_id ? await ctx.db.get('connector', d.connector_id) : null;
+  requireEntity(ctx, connector?.entity_id ?? null);
   const batch = await ctx.db.findOne('import_batch', { source_document_id: d.id });
   const receiver = d.received_by ? await ctx.db.get('app_user', d.received_by) : null;
   const content = d.content ?? '';
@@ -163,6 +171,7 @@ export async function sourceDocument(ctx: ServiceContext, id: string) {
 /** Headline figures for the home screen (consolidated, reporting currency). */
 export async function headline(ctx: ServiceContext, periodKey: string) {
   requirePermission(ctx, 'report.view');
+  requireAllEntities(ctx, 'Consolidated figures');
   const st = await statementsFor(ctx, 'consolidated', periodKey);
   const sec = (n: string) => st.is.sections.find((x) => x.name === n);
   const ni = st.is.subtotals.find((x) => x.label === 'Net income');
