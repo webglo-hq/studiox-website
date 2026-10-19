@@ -58,6 +58,26 @@ export function requireEntity(ctx: ServiceContext, entityId: string | null | und
   if (!ctx.actor.entityScope.includes(entityId)) throw new AppError('FORBIDDEN', 'You do not have access to this entity.');
 }
 
+/**
+ * Read-side entity scope. A person granted only some entities sees records of those entities;
+ * records that span entities (no entity, consolidated views, the close package, the audit log)
+ * are for tenant-wide roles only, so nothing from another entity leaks through them.
+ */
+export function canSeeEntity(ctx: ServiceContext, entityId: string | null | undefined): boolean {
+  if (ctx.actor.entityScope === 'all') return true;
+  return !!entityId && ctx.actor.entityScope.includes(entityId);
+}
+
+/** Entities the actor may read, or null when tenant-wide (no filter needed). */
+export function entityFilter(ctx: ServiceContext): readonly string[] | null {
+  return ctx.actor.entityScope === 'all' ? null : ctx.actor.entityScope;
+}
+
+/** Refuse a cross-entity view (consolidation, close package, audit log) to entity-scoped people. */
+export function requireAllEntities(ctx: ServiceContext, what: string): void {
+  if (ctx.actor.entityScope !== 'all') throw new AppError('FORBIDDEN', `${what} covers every entity; your access is limited to some entities.`);
+}
+
 export async function memo<T>(ctx: ServiceContext, key: string, load: () => Promise<T>): Promise<T> {
   if (ctx.cache.has(key)) return ctx.cache.get(key) as T;
   const v = await load();

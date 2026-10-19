@@ -7,7 +7,7 @@ import { closeCalendar, orchTasks } from '../services/close';
 import { settings } from '../services/common';
 import { computeFluxLines, DEFAULT_THRESHOLD, varianceDrivers, type Comparison } from '../services/flux';
 import { listIssues } from '../services/issues';
-import { buildPackageContent, contentHash } from '../services/package';
+import { buildPackageContent, numbersHash } from '../services/package';
 import { lockReadiness } from '../services/periods';
 import { listRecs } from '../services/recs';
 import type { AgentCtx } from './context';
@@ -212,7 +212,7 @@ export const buildClosePackage = defineTool({
     const bs = content.consolidated.balanceSheet;
     return {
       periodKey: ctx.periodKey,
-      contentHashWithoutCommentary: contentHash(content),
+      contentHashWithoutCommentary: numbersHash(content),
       keyFigures: {
         currency: content.currency,
         revenue: sec('Revenue')?.total ?? 0,

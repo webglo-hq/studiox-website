@@ -107,12 +107,31 @@ export interface VerificationReport {
   checks: VerificationCheck[];
 }
 
+/**
+ * The domain's own reading of a draft. Everything here is computed from the payload and the
+ * records it acts on, never taken from what the brain (playbook or model) claims.
+ */
 export interface Assessment {
-  /** amount in reporting currency minor units (absolute) */
+  /** What the proposal moves, absolute, in `currency` minor units; null when it cannot be computed. */
+  amount: number | null;
+  currency: string | null;
+  /** True for kinds that move money or balances: they always face the amount test. */
+  monetary: boolean;
+  /** amount in reporting currency minor units (absolute; 0 for non-monetary kinds) */
   amountReporting: number;
   materiality: Materiality;
   performanceMateriality: number;
   requiresRole: string | null;
+  /** Reasons a person must decide, found server-side (policy rules, an amount that cannot be computed). */
+  holds: Hold[];
+  /** Records the proposal acts on contain instruction-like text. */
+  injectionSuspected: boolean;
+}
+
+/** Why an item waits for a person: a stable code (e.g. "policy_rule") and the reason in words. */
+export interface Hold {
+  code: string;
+  reason: string;
 }
 
 export interface ProposalRecord {
@@ -152,6 +171,8 @@ export interface ProposalRecord {
 export interface GateExplanation {
   decision: GateDecision;
   reasons: string[];
+  /** Codes of the holds behind `reasons` (material, policy_rule, untrusted_text, low_confidence…). */
+  codes?: string[];
   level: AutonomyLevel;
   threshold: number;
   minConfidence: number;

@@ -44,17 +44,17 @@ export function MyClose() {
 
               <section className={`hero ${d.next.tone === 'done' ? 'done' : ''}`} aria-labelledby="next-title">
                 <div>
-                  <div className="kicker">{d.next.tone === 'done' ? 'All set' : 'What to do next'}</div>
+                  <div className="kicker">{d.next.kicker}</div>
                   <h2 id="next-title" data-testid="next-action">
                     {d.next.title}
                   </h2>
                   <p>{d.next.detail}</p>
                   <div className="row-wrap" style={{ marginTop: 18 }}>
                     {d.next.action === 'orchestrate' && can('agent.orchestrate') ? (
-                      <OrchestrateButton label={d.agentsRan ? 'Continue the close' : 'Run the close agents'} size="l" />
-                    ) : d.next.action !== 'none' ? (
-                      <LinkButton href={d.next.href} variant="primary" size="l" icon={<ArrowRight size={18} aria-hidden />}>
-                        {d.next.action === 'approve' ? 'Open the inbox' : d.next.action === 'certify' || d.next.action === 'review' ? 'Open reconciliations' : d.next.action === 'package' ? 'Open the package' : d.next.action === 'lock' ? 'Go to lock' : 'Open'}
+                      <OrchestrateButton label={d.next.cta ?? 'Run the close agents'} size="l" />
+                    ) : d.next.cta ? (
+                      <LinkButton href={d.next.href} variant={d.next.tone === 'primary' ? 'primary' : undefined} size="l" icon={d.next.tone === 'primary' ? <ArrowRight size={18} aria-hidden /> : undefined}>
+                        {d.next.cta}
                       </LinkButton>
                     ) : (
                       <LinkButton href={d.next.href} size="l">
@@ -170,7 +170,7 @@ export function MyClose() {
                       </div>
                     ) : (
                       <Empty icon={<CheckCircle2 size={22} />} title="Nothing waiting for you">
-                        {d.approvals.waiting ? `${plural(d.approvals.waiting, 'proposal')} need someone else (maker-checker).` : d.agentsRan ? 'Every agent proposal has been decided.' : 'Run the agents to start the close.'}
+                        {d.approvals.waiting ? `${plural(d.approvals.waiting, 'proposal')} ${d.approvals.waiting === 1 ? 'needs' : 'need'} someone else (maker-checker).` : d.agentsRan ? 'Every agent proposal has been decided.' : 'Waiting for the close agents to run.'}
                       </Empty>
                     )}
                   </Card>

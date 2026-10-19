@@ -281,11 +281,13 @@ export class AgentRuntime<Ctx> {
         if (!draft.why || draft.why.trim().length < 10) base.checks.push({ id: 'AX-PRP-01', label: 'Has a plain-English rationale', ok: false, severity: 'error' });
         if (!draft.evidence?.length) base.checks.push({ id: 'AX-PRP-01', label: 'Has evidence', ok: false, severity: 'error' });
         if (!(draft.confidence >= 0 && draft.confidence <= 1)) base.checks.push({ id: 'AX-PRP-01', label: 'Confidence within [0, 1]', ok: false, severity: 'error' });
-        const injection = draft.evidence.filter((e) => e.untrusted).some((e) => scanForInjection(`${e.label} ${e.detail ?? ''}`).suspicious) || !!draft.injectionSuspected;
         const domain = base.checks.some((c) => !c.ok) ? { ok: false, checks: [] } : await adapter.verify(draft, ctx);
         const verification: VerificationReport = { ok: base.checks.every((c) => c.ok) && domain.ok, checks: [...base.checks, ...domain.checks] };
         await step('verify', `Verify: ${draft.title}`, { checks: verification.checks }, verification.ok ? 'ok' : 'error');
+        // The domain reads the amount, materiality, policy-rule holds and injection risk from the
+        // payload and the records it acts on; what the brain declares never relaxes them.
         const assessment = await adapter.assess(draft, ctx);
+        const injection = draft.evidence.filter((e) => e.untrusted).some((e) => scanForInjection(`${e.label} ${e.detail ?? ''}`).suspicious) || !!draft.injectionSuspected || assessment.injectionSuspected;
         const g = gate({ ...draft, injectionSuspected: injection }, verification, assessment, policy, skill.manifest.controls.approvalRequired);
         await step('gate', `Gate: ${g.decision.replace('_', ' ')} — ${draft.title}`, g);
         const status: ProposalRecord['status'] = !verification.ok ? 'failed' : g.decision === 'suggest_only' ? 'suggested' : 'pending';
@@ -297,8 +299,8 @@ export class AgentRuntime<Ctx> {
           title: draft.title.slice(0, 200),
           why: draft.why,
           confidence: Math.round(draft.confidence * 10_000) / 10_000,
-          amount: draft.amount ?? null,
-          currency: draft.currency ?? null,
+          amount: assessment.amount,
+          currency: assessment.currency,
           materiality: assessment.materiality,
           entityId: draft.entityId ?? run.entityId,
           periodKey: draft.periodKey ?? run.periodKey,
@@ -334,7 +336,7 @@ export class AgentRuntime<Ctx> {
               const patch = { status: 'auto_applied' as const, appliedRef: applied, reviewStatus: review, decidedAt: clock.nowIso(), decisionReason: g.reasons.join(' ') };
               if (!(await tx.store.claimProposal(proposed.id, { status: OPEN_STATUSES }, patch))) throw new Error('the proposal was decided by someone else first');
               const done: ProposalRecord = { ...proposed, ...patch };
-              await tx.adapter.audit(c, { action: 'agent.proposal.auto_applied', subjectType: 'proposal', subjectId: proposed.id, data: { skill: skill.id, kind: draft.kind, amount: draft.amount ?? null, policy: `${policy.autonomy}@v${policy.version}`, review } });
+              await tx.adapter.audit(c, { action: 'agent.proposal.auto_applied', subjectType: 'proposal', subjectId: proposed.id, data: { skill: skill.id, kind: draft.kind, amount: assessment.amount, policy: `${policy.autonomy}@v${policy.version}`, review } });
               if (tx.adapter.afterDecision) await tx.adapter.afterDecision(done, c);
               return done;
             });
@@ -346,7 +348,7 @@ export class AgentRuntime<Ctx> {
           }
         }
         if (rec.status !== 'auto_applied') {
-          await adapter.audit(ctx, { action: 'agent.proposal.created', subjectType: 'proposal', subjectId: rec.id, data: { skill: skill.id, kind: draft.kind, amount: draft.amount ?? null, status, gate: g.decision, ...(autoFailed ? { autoPostRefused: autoFailed } : {}) } });
+          await adapter.audit(ctx, { action: 'agent.proposal.created', subjectType: 'proposal', subjectId: rec.id, data: { skill: skill.id, kind: draft.kind, amount: assessment.amount, status, gate: g.decision, ...(autoFailed ? { autoPostRefused: autoFailed } : {}) } });
         }
         return { status: rec.status, proposalId: rec.id, verification, gate: g };
       },

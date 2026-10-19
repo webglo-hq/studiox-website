@@ -7,8 +7,9 @@ import { accounts, entityById, periodOf } from '../domain/refdata';
 import { closeOntology } from '../ontology';
 import { ClosePackageDraft, CodingDecision, FixedAssetDraft, FluxExplanationDraft, IssueDraft, JournalEntryDraft, PrepaidScheduleDraft, RecMatch, ReconcilingItemDraft, TaskUpdate } from '../ontology/shapes';
 import { settings } from '../services/common';
-import { buildPackageContent, contentHash } from '../services/package';
+import { buildPackageContent, numbersHash } from '../services/package';
 import { computeFluxLines, DEFAULT_THRESHOLD } from '../services/flux';
+import { MONETARY, proposalAmount } from './assess';
 import type { AgentCtx } from './context';
 
 /**
@@ -215,7 +216,8 @@ async function verifyPackage(ctx: AgentCtx, payload: Record<string, unknown>): P
   if (!parsed.success) return [fail('shape:ek:ClosePackage', 'Package has the required structure', parsed.error.issues[0]?.message)];
   const d = parsed.data;
   const fresh = await buildPackageContent(ctx.svc, d.periodKey, null);
-  const same = contentHash(fresh) === d.contentHash;
+  // The draft's commentary is written from the numbers; status may still move until signing.
+  const same = numbersHash(fresh) === d.contentHash;
   const final = await ctx.svc.db.findOne('close_package', { tenant_id: ctx.svc.tenantId, period_key: d.periodKey, status: 'final' });
   return [
     same ? ok('hash', 'Numbers unchanged since the package was built') : fail('hash', 'Numbers unchanged since the package was built', 'The ledger moved; the agent must rebuild the package.'),
@@ -224,7 +226,29 @@ async function verifyPackage(ctx: AgentCtx, payload: Record<string, unknown>): P
   ];
 }
 
+/**
+ * The amount an agent states must be what its proposal does: the lines' total for an entry,
+ * the card charge for a coding, the statement lines for a match. A mismatch is an error (the
+ * proposal misdescribes itself); a missing statement is fine, since the amount used for
+ * materiality and gating is always computed (see assess.ts).
+ */
+async function statedAmountCheck(ctx: AgentCtx, draft: ProposalDraft): Promise<Check> {
+  const derived = await proposalAmount(ctx, draft);
+  const label = 'Stated amount matches what the proposal does';
+  if (derived.amount === null) return fail('amount', 'Amount can be computed from the lines and records', 'held for a person', 'warning');
+  const ccy = derived.currency ?? draft.currency ?? 'USD';
+  if (draft.amount === null || draft.amount === undefined) return ok('amount', 'Amount computed from the lines and records', formatMoney(derived.amount, ccy));
+  const sameCurrency = !draft.currency || !derived.currency || draft.currency === derived.currency;
+  return Math.abs(draft.amount) === derived.amount && sameCurrency ? ok('amount', label, formatMoney(derived.amount, ccy)) : fail('amount', label, `stated ${formatMoney(Math.abs(draft.amount), draft.currency ?? ccy)}; the ${draft.kind === 'journal_entry' ? 'lines total' : 'records show'} ${formatMoney(derived.amount, ccy)}`);
+}
+
 export async function verifyProposal(ctx: AgentCtx, draft: ProposalDraft): Promise<VerificationReport> {
+  const r = await verifyByKind(ctx, draft);
+  if (!MONETARY.has(draft.kind)) return r;
+  return report([...r.checks, await statedAmountCheck(ctx, draft)]);
+}
+
+async function verifyByKind(ctx: AgentCtx, draft: ProposalDraft): Promise<VerificationReport> {
   const p = draft.payload;
   switch (draft.kind) {
     case 'journal_entry':

@@ -79,7 +79,7 @@ function toolsFor(session: BrainSession, ontology: OntologyContext): Anthropic.B
         title: { type: 'string' },
         why: { type: 'string', description: 'plain-English rationale (2–4 sentences)' },
         confidence: { type: 'number', minimum: 0, maximum: 1 },
-        amount: { type: ['integer', 'null'], description: 'absolute amount in minor units' },
+        amount: { type: ['integer', 'null'], description: 'absolute amount in minor units. Optional: the runtime computes the amount from the payload (entry lines, the records it acts on) and rejects a proposal whose stated amount differs.' },
         payload: { type: 'object', description: `payload for the kind; schemas: ${JSON.stringify(Object.fromEntries((kinds.length ? kinds : ['issue']).map((k) => [k, ontology.payloadSchema(k)])))}`.slice(0, 6000) },
         evidence: {
           type: 'array',
@@ -200,6 +200,10 @@ const DraftInput = z.object({
   evidence: z.array(z.object({ kind: z.enum(['record', 'calculation', 'rule', 'history', 'document', 'check', 'note']), label: z.string().min(1).max(300), detail: z.string().max(2000).optional() })).min(1).max(30),
 });
 
+/**
+ * The model's proposal as a draft. It carries no hold flags of its own: the runtime and the
+ * domain compute the amount, materiality, policy-rule holds and injection risk server-side.
+ */
 function parseDraft(input: unknown): ProposalDraft {
   const d = DraftInput.parse(input);
   return { key: `llm:${d.key}`, kind: d.kind, title: d.title, why: d.why, confidence: d.confidence, amount: d.amount ?? null, payload: d.payload, evidence: d.evidence };

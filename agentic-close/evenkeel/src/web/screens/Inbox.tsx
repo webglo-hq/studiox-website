@@ -287,7 +287,8 @@ function ProposalDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <Kv
               items={[
                 ['Prepared by', `${p.skillId} agent (${p.run.engine === 'live' ? `Claude ${p.run.model ?? ''}` : 'offline engine'})`],
-                ['On behalf of', <Person key="rb" name={p.run.requestedBy?.name} />],
+                ['Prepared for', <Person key="ow" name={p.run.owner?.name ?? p.run.requestedBy?.name} />],
+                ['Run started by', <Person key="rb" name={p.run.requestedBy?.name} />],
                 ['Task', p.run.taskCode ? `${p.run.taskCode} ${p.run.taskTitle}` : '—'],
                 ['Created', when(p.createdAt)],
                 ...(p.decidedBy ? ([['Decided by', `${p.decidedBy.name} · ${when(p.decidedAt)}`]] as [string, string][]) : []),
@@ -433,7 +434,7 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
           </div>
         ) : items.length === 0 ? (
           <Empty icon={<InboxIcon size={22} />} title={tab === 'mine' ? 'Nothing is waiting for you' : 'Nothing here'}>
-            {tab === 'mine' && counts?.waiting ? `${plural(counts.waiting, 'proposal')} wait for someone else, because you prepared them or they need a different role.` : tab === 'mine' ? 'When agents need a decision, it appears here.' : 'Try another view.'}
+            {tab === 'mine' && counts?.waiting ? `${plural(counts.waiting, 'proposal')} ${counts.waiting === 1 ? 'waits' : 'wait'} for someone else, because you started or own the work or ${counts.waiting === 1 ? 'it needs' : 'they need'} a different role.` : tab === 'mine' ? 'When agents need a decision, it appears here.' : 'Try another view.'}
           </Empty>
         ) : (
           <div className="table-wrap">

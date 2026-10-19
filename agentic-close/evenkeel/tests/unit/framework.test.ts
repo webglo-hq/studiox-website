@@ -83,7 +83,7 @@ describe('autonomy gate', () => {
   const policy = (autonomy: SkillPolicy['autonomy'], thresholds: Record<string, number> = {}): SkillPolicy => ({ version: 1, autonomy, enabled: true, thresholds, rules: [], autoPostBelow: 250_000, minConfidence: 0.85, sampleRate: 0.1 });
   const draft = (over: Partial<ProposalDraft> = {}): ProposalDraft => ({ key: 'k', kind: 'journal_entry', title: 't', why: 'because', confidence: 0.95, payload: {}, evidence: [], ...over });
   const ok: VerificationReport = { ok: true, checks: [{ id: 'AX-DE-01', label: 'Balanced', ok: true, severity: 'error' }] };
-  const small: Assessment = { amountReporting: 10_000, materiality: 'trivial', performanceMateriality: 22_500_000, requiresRole: null };
+  const small: Assessment = { amount: 10_000, currency: 'USD', monetary: true, amountReporting: 10_000, materiality: 'trivial', performanceMateriality: 22_500_000, requiresRole: null, holds: [], injectionSuspected: false };
 
   it('maps L0–L3 to suggest, approve, auto under threshold and auto with review', () => {
     expect(gate(draft(), ok, small, policy('L0'), []).decision).toBe('suggest_only');
@@ -108,7 +108,7 @@ describe('autonomy gate', () => {
 
   it('honours per-kind thresholds and never holds zero-amount items on amount', () => {
     expect(gate(draft({ kind: 'rec_match' }), ok, { ...small, amountReporting: 1_000_000 }, policy('L2', { 'autoPostBelow:rec_match': 5_000_000 }), []).decision).toBe('auto_post');
-    expect(gate(draft({ kind: 'issue' }), ok, { ...small, amountReporting: 0 }, policy('L2', { autoPostBelow: 0 }), []).decision).toBe('auto_post');
+    expect(gate(draft({ kind: 'issue' }), ok, { ...small, amount: null, monetary: false, amountReporting: 0 }, policy('L2', { autoPostBelow: 0 }), []).decision).toBe('auto_post');
   });
 
   it('samples post-hoc reviews deterministically at roughly the requested rate', () => {

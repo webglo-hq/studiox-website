@@ -13,6 +13,7 @@ import { loadActor, PERMISSIONS } from '../domain/rbac';
 import { closeOntology, PROPOSAL_CLASS, PROPOSAL_KINDS, PROPOSAL_SHAPES, type ProposalKind } from '../ontology';
 import { orchTasks, syncTaskFromRuns } from '../services/close';
 import { currentPeriodKey, settings } from '../services/common';
+import { bulkGuard } from '../services/inbox';
 import type { EkDb } from '../store';
 import { createAdapter } from './adapter';
 import { delegatedActorFor, humanDelegate, type AgentCtx } from './context';
@@ -146,7 +147,11 @@ export class AgentEngine {
     return makeContext(this.opts.db, this.opts.tenantId, actor ?? { type: 'system', userId: null, label: 'Evenkeel', roles: [], permissions: new Set(['*']), entityScope: 'all' }, this.opts.clock);
   }
 
-  /** Run the agent for one close task on behalf of its owner. */
+  /**
+   * Run the agent for one close task. The agent works for the task's owner (their authority,
+   * intersected with the skill's) and the run is recorded as requested by whoever started it —
+   * directly or by running the close — so neither of them can approve what it proposes.
+   */
   async runTask(taskId: string, by: { userId: string | null; parentRunId?: string | null; trigger?: 'manual' | 'orchestrator'; brain?: Brain }): Promise<RunResult> {
     const { db, tenantId } = this.opts;
     const task = await db.get('close_task', taskId);
@@ -163,13 +168,12 @@ export class AgentEngine {
       if (task.owner_id !== by.userId && !hasPermission(actor, 'agent.orchestrate')) throw new AppError('FORBIDDEN', 'Only the task owner (or a close lead) can run this agent.');
     }
     const previous = await db.count('agent_run', { tenant_id: tenantId, close_task_id: task.id });
-    const owner = task.owner_id;
-    const delegated = await delegatedActorFor(db, tenantId, owner, skill);
+    const delegated = await delegatedActorFor(db, tenantId, task.owner_id, skill);
     if (task.status === 'not_started' || task.status === 'blocked') await db.update('close_task', task.id, { status: 'in_progress', blocked_reason: null });
     const result = await this.runtime.start({
       skillId: skill.id,
       input: (task.skill_input ?? {}) as Record<string, unknown>,
-      requestedBy: owner,
+      requestedBy: by.userId,
       actor: delegated,
       entityId: task.entity_id,
       periodKey: cycle.period_key,
@@ -241,7 +245,15 @@ export class AgentEngine {
     rows.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
     const known = new Set(rows.map((r) => r.id));
     const ordered = [...rows.map((r) => r.id), ...input.proposalIds.filter((id) => !known.has(id))];
+    // Approving several at once never sweeps in items a person must look at on their own.
+    const bulk = input.decision === 'approve' && ordered.length > 1;
     for (const id of ordered) {
+      const row = rows.find((r) => r.id === id);
+      const individual = bulk && row ? bulkGuard(row) : null;
+      if (individual && !individual.ok) {
+        results.push({ proposalId: id, ok: false, error: individual.reasons.join(' '), code: 'REVIEW_INDIVIDUALLY' });
+        continue;
+      }
       try {
         const r = await decideProposal(this.runtime, { proposalId: id, decision: input.decision, reason: input.reason ?? null, actor });
         results.push({ proposalId: id, ok: true, status: r.proposal.status });
@@ -325,6 +337,10 @@ export class AgentEngine {
 
   /** Resume runs interrupted by a crash or restart (idempotent: recorded tool calls replay). */
   async resumeInterrupted(): Promise<RunResult[]> {
-    return this.runtime.resumeAll(async (run) => delegatedActorFor(this.opts.db, this.opts.tenantId, run.requestedBy, this.skills.get(run.skillId)!));
+    return this.runtime.resumeAll(async (run) => {
+      // Same authority as when it started: the task owner's for task runs, the requester's otherwise.
+      const task = run.taskId ? await this.opts.db.get('close_task', run.taskId) : null;
+      return delegatedActorFor(this.opts.db, this.opts.tenantId, task ? task.owner_id : run.requestedBy, this.skills.get(run.skillId)!);
+    });
   }
 }

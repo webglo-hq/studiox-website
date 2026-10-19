@@ -18,7 +18,7 @@ import { listConnectors, listDocuments, uploadDocument } from '../packs/accounti
 import { listIssues, updateIssue } from '../packs/accounting/services/issues';
 import { approveEntry, createManualEntry, entryDetail, ledgerReference, listEntries, previewManualEntry, rejectEntry, reversePostedEntry } from '../packs/accounting/services/journals';
 import { exportOntology, glossary, graph, overview, search, term } from '../packs/accounting/services/ontology-view';
-import { approvePackage, createPackage, getPackage, listPackages } from '../packs/accounting/services/package';
+import { approvePackage, createPackage, getPackage, listPackages, refreshPackage } from '../packs/accounting/services/package';
 import { lockPeriod, lockReadiness, periodsOverview, reopenPeriod, softClose } from '../packs/accounting/services/periods';
 import { addReconcilingItem, certifyRec, listRecs, manualMatch, recDetail, resolveReconcilingItem, reviewRec, unmatch } from '../packs/accounting/services/recs';
 import { accountActivity, sourceDocument, sourceRecord, statementView, trialBalanceView } from '../packs/accounting/services/reports';
@@ -175,6 +175,7 @@ export const METHODS = {
   'package.list': m({ input: period, mutates: false, description: 'Close packages', handler: (ctx, _e, i) => listPackages(ctx, i.periodKey) }),
   'package.get': m({ input: z.object({ id: Id }).strict(), mutates: false, expensive: true, description: 'Close package content', handler: (ctx, _e, i) => getPackage(ctx, i.id) }),
   'package.generate': m({ input: z.object({ periodKey: PeriodKeyShape.optional(), commentary: z.string().max(10_000).optional() }).strict(), mutates: true, expensive: true, description: 'Generate a new draft package', handler: async (ctx, _e, i) => createPackage(ctx, await periodOr(ctx, i.periodKey), { commentary: i.commentary ?? null }) }),
+  'package.refresh': m({ input: z.object({ id: Id }).strict(), mutates: true, expensive: true, description: 'Rebuild a stale draft with the current numbers and close status', handler: (ctx, _e, i) => refreshPackage(ctx, i.id) }),
   'package.approve': m({ input: z.object({ id: Id, statement: z.string().max(500).optional() }).strict(), mutates: true, expensive: true, description: 'Approve (sign) the package', handler: (ctx, _e, i) => approvePackage(ctx, i.id, i.statement) }),
 
   'runs.list': m({ input: z.object({ periodKey: PeriodKeyShape.optional(), skillId: z.string().max(64).optional(), status: z.string().max(30).optional(), limit: z.number().int().min(1).max(500).optional() }).strict(), mutates: false, description: 'Agent runs', handler: (ctx, _e, i) => listRuns(ctx, i) }),

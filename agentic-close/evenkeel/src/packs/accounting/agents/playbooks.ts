@@ -807,31 +807,29 @@ const flux: Playbook = async (s) => {
 
 // ------------------------------------------------------------------ close package
 
-const OPEN_LABEL: Record<string, string> = { tasks: 'task reviews', recs: 'reconciliation certifications', flux: 'variance approvals', proposals: 'agent proposals', entries: 'unposted entries', issues: 'exceptions' };
-
 const closePackage: Playbook = async (s) => {
-  await s.plan(['Check the close status', 'Build the package deterministically', 'Draft the executive commentary from approved figures', 'Submit the package for controller approval']);
+  await s.plan(['Check the close status', 'Build the package deterministically', 'Draft the executive commentary from approved figures', 'Submit the draft to the people who sign the package']);
   const status = await s.callTool<{ progress: { complete: number; total: number }; lockChecklist: { id: string; label: string; ok: boolean; detail: string }[] }>('get_close_status', {});
   const pkg = await s.callTool<{ periodKey: string; contentHashWithoutCommentary: string; keyFigures: Record<string, number | string | boolean>; approvedFlux: { entity: string; account: string; comparison: string; variance: number; narrative: string | null }[]; openExceptions: { title: string; severity: string }[]; adjustments: number; sections: { id: string; title: string; kind: 'table' | 'narrative' | 'checklist' | 'metrics' }[] }>('build_close_package', {});
   const k = pkg.keyFigures as Record<string, number>;
   const ccy = String(pkg.keyFigures.currency ?? 'USD');
   const pct = (a: number, b: number) => (b ? `${a >= b ? '+' : '−'}${Math.abs(((a - b) / Math.abs(b)) * 100).toFixed(1)}%` : 'n/a');
   const topFlux = pkg.approvedFlux.filter((f) => f.comparison === 'prior_month').sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)).slice(0, 2);
-  const open = status.lockChecklist.filter((c) => !c.ok && c.id !== 'package');
+  // Figures only: the reconciliation, checklist and exception status the signer relies on is
+  // rebuilt into every package version, so the commentary never goes stale on it.
   const commentary = [
     `${formatPeriod(pkg.periodKey)} closed with consolidated revenue of ${money(k.revenue!, ccy)} (${pct(k.revenue!, k.revenuePrior!)} vs prior month) and operating expenses of ${money(k.operatingExpenses!, ccy)} (${pct(k.operatingExpenses!, k.operatingExpensesPrior!)}).`,
     `Net income was ${money(k.netIncome!, ccy)} against ${money(k.netIncomePrior!, ccy)} in the prior month.`,
     ...topFlux.map((f) => `${f.account} (${f.entity}): ${(f.narrative ?? '').split('. ').slice(0, 2).join('. ').replace(/\.$/, '')}.`),
-    pkg.openExceptions.length ? `${plural(pkg.openExceptions.length, 'exception')} remain open: ${pkg.openExceptions.map((x) => `${x.title} (${x.severity})`).join('; ')}.` : 'No exceptions remain open.',
     `${plural(pkg.adjustments, 'adjustment')} were booked during the close; each was approved by a person or posted under a versioned agent policy.`,
-    open.length ? `Sign-offs still in progress when this was drafted: ${open.map((c) => `${OPEN_LABEL[c.id] ?? c.label.toLowerCase()} — ${c.detail}`).join('; ')}.` : 'All close checks pass except the final sign-off.',
     `Cash at month end: ${money(k.cash!, ccy)}; total assets ${money(k.totalAssets!, ccy)}. The consolidated trial balance ${pkg.keyFigures.balanced ? 'balances' : 'does NOT balance'}.`,
+    'Reconciliation sign-offs, the close checklist and exceptions appear below as they stand in the version being signed.',
   ].join(' ');
   await propose(s, {
     key: `package:${pkg.periodKey}:${pkg.contentHashWithoutCommentary.slice(0, 12)}`,
     kind: 'close_package',
     title: `Close package — ${formatPeriod(pkg.periodKey)}`,
-    why: `The package assembles the statements, reconciliations, checklist, approved variance commentary, exceptions and adjustments (${status.progress.complete}/${status.progress.total} tasks complete). Approving creates a draft for CFO sign-off; the numbers are hashed so the CFO signs exactly these figures.`,
+    why: `The package assembles the statements, reconciliations, checklist, approved variance commentary, exceptions and adjustments (${status.progress.complete} of ${status.progress.total} tasks complete so far). Approving creates the draft for sign-off; its figures and close status are hashed, and the signer refreshes it if anything moves before signing.`,
     confidence: 0.9,
     periodKey: pkg.periodKey,
     payload: { periodKey: pkg.periodKey, title: `Close package — ${formatPeriod(pkg.periodKey)}`, sections: pkg.sections, contentHash: pkg.contentHashWithoutCommentary, commentary },

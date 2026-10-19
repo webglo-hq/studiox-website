@@ -8,7 +8,7 @@ import { accountByCode, accounts, entityById } from '../domain/refdata';
 import { depreciationForPeriod, prepaidSchedule } from '../domain/schedule-math';
 import { ClosePackageDraft, CodingDecision, FixedAssetDraft, FluxExplanationDraft, IssueDraft, JournalEntryDraft, PrepaidScheduleDraft, RecMatch, ReconcilingItemDraft, TaskUpdate, type JournalEntryDraftInput } from '../ontology/shapes';
 import { DEFAULT_THRESHOLD, ensureAnalysis, refreshAnalysisStatus, type Comparison } from '../services/flux';
-import { createPackage } from '../services/package';
+import { createAgentPackage } from '../services/package';
 import { createMatch, refreshRec } from '../services/recs';
 import type { AgentCtx } from './context';
 import { linksOf } from './verify';
@@ -263,7 +263,7 @@ async function applyTaskUpdate(t: ServiceContext, p: ProposalRecord) {
 
 async function applyPackage(t: ServiceContext, ctx: AgentCtx, p: ProposalRecord) {
   const d = ClosePackageDraft.parse(p.payload);
-  const pkg = await createPackage(t, d.periodKey, { commentary: d.commentary, runId: ctx.run.id, generatedBy: ctx.run.requestedBy });
+  const pkg = await createAgentPackage(t, d.periodKey, { commentary: d.commentary, runId: ctx.run.id, requestedBy: ctx.run.requestedBy });
   return { packageId: pkg.id, version: pkg.version, contentHash: pkg.contentHash };
 }
 

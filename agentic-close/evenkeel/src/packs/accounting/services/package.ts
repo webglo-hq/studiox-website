@@ -3,7 +3,7 @@ import { addMonths, periodEnd } from '../../../framework/util/dates';
 import { AppError } from '../../../framework/util/errors';
 import { sha256Hex } from '../../../framework/util/sha256';
 import { audit } from '../domain/audit';
-import { requirePermission, withDb, type ServiceContext } from '../domain/context';
+import { hasPermission, requirePermission, withDb, type ServiceContext } from '../domain/context';
 import { buildStatement, consolidatedTrialBalance, trialBalance, type Statement, type TrialBalance } from '../domain/reporting';
 import { accounts, entities, fxRate, operatingEntities } from '../domain/refdata';
 import { completionReadiness, updateTask } from './close';
@@ -26,7 +26,8 @@ export interface PackageContent {
   consolidated: { balanceSheet: Statement; incomeStatement: Statement; tbTotals: { debit: number; credit: number }; balanced: boolean; translation: TrialBalance['translation'] };
   entities: { code: string; name: string; currency: string; periodStatus: string; balanceSheet: Statement; incomeStatement: Statement }[];
   reconciliations: { title: string; entity: string; account: string; gl: number; comparison: number; unexplained: number; status: string; preparedBy: string | null; reviewedBy: string | null }[];
-  checklist: { code: string; title: string; status: string; owner: string | null; reviewer: string | null; completedAt: string | null }[];
+  /** `signedWithPackage`: the package's own task, completed by signing it. */
+  checklist: { code: string; title: string; status: string; owner: string | null; reviewer: string | null; completedAt: string | null; signedWithPackage?: boolean }[];
   flux: { entity: string; account: string; comparison: string; variance: number; variancePct: number | null; narrative: string | null; status: string; approvedBy: string | null }[];
   exceptions: { title: string; category: string; severity: string; status: string; amount: number | null; resolution: string | null }[];
   adjustments: { entryNumber: string; entity: string; type: string; memo: string; amount: number; source: string; preparedBy: string | null; approvedBy: string | null; policy: string | null }[];
@@ -119,7 +120,7 @@ export async function buildPackageContent(ctx: ServiceContext, periodKey: string
     consolidated: { balanceSheet: cons.bs, incomeStatement: cons.is, tbTotals: cons.tb.totals, balanced: cons.tb.balanced, translation: cons.tb.translation },
     entities: entityOut,
     reconciliations: recs.map((r) => ({ title: r.notes ?? '', entity: allEnts.get(r.entity_id)?.code ?? '', account: `${accts.get(r.account_id)?.code} ${accts.get(r.account_id)?.name}`, gl: r.gl_balance, comparison: r.comparison_balance, unexplained: r.unexplained, status: r.status, preparedBy: name(r.prepared_by), reviewedBy: name(r.reviewed_by) })),
-    checklist: tasks.map((t) => ({ code: t.code, title: t.title, status: t.status, owner: name(t.owner_id), reviewer: name(t.reviewer_id), completedAt: t.completed_at })),
+    checklist: tasks.map((t) => ({ code: t.code, title: t.title, status: t.status, owner: name(t.owner_id), reviewer: name(t.reviewer_id), completedAt: t.completed_at, ...(t.category === 'reporting' ? { signedWithPackage: true } : {}) })),
     flux,
     exceptions: issues.map((i) => ({ title: i.title, category: i.category, severity: i.severity, status: i.status, amount: i.amount, resolution: i.resolution_note })),
     adjustments,
@@ -139,13 +140,12 @@ export async function buildPackageContent(ctx: ServiceContext, periodKey: string
 }
 
 /**
- * Hash of the numbers and words an approver signs: statements, balances, differences,
- * commentary, exceptions and adjustments. Workflow status (checklist progress, sign-offs,
- * agent activity counters) is shown in the package but deliberately not hashed, so finishing
- * a review after generation does not invalidate the numbers.
+ * Hash of the numbers and words only (statements, balances, differences, commentary,
+ * exceptions and adjustments), without workflow status. The close-package agent drafts its
+ * commentary from these, so its proposal stays valid while reviews finish.
  */
-export function contentHash(content: PackageContent): string {
-  const signed = {
+export function numbersHash(content: PackageContent): string {
+  const numbers = {
     ...content,
     agentActivity: undefined,
     checklist: undefined,
@@ -153,7 +153,44 @@ export function contentHash(content: PackageContent): string {
     reconciliations: content.reconciliations.map((r) => ({ ...r, status: undefined, preparedBy: undefined, reviewedBy: undefined })),
     exceptions: content.exceptions.map((x) => ({ ...x, status: undefined, resolution: undefined })),
   };
-  return sha256Hex(stableStringify(signed));
+  return sha256Hex(stableStringify(numbers));
+}
+
+/**
+ * Hash of what the approver signs: the numbers and words, and the close status they rest on —
+ * reconciliation sign-offs, exception dispositions and checklist progress. Left out are only
+ * the facts that signing and locking change themselves (the package's own task, each
+ * entity's period status) and the agent activity counters, which are informational.
+ */
+export function contentHash(content: PackageContent): string {
+  return sha256Hex(stableStringify(signedView(content)));
+}
+
+function signedView(content: PackageContent): Record<string, unknown> {
+  return {
+    ...content,
+    agentActivity: undefined,
+    entities: content.entities.map((e) => ({ ...e, periodStatus: undefined })),
+    checklist: content.checklist.map((t) => (t.signedWithPackage ? { ...t, status: undefined, completedAt: undefined } : t)),
+  };
+}
+
+const SECTION_LABEL: [keyof PackageContent, string][] = [
+  ['consolidated', 'consolidated statements'],
+  ['entities', 'entity statements'],
+  ['reconciliations', 'reconciliation status'],
+  ['checklist', 'close checklist'],
+  ['flux', 'variance explanations'],
+  ['exceptions', 'exceptions'],
+  ['adjustments', 'adjusting entries'],
+  ['fxRates', 'exchange rates'],
+];
+
+/** In plain words, which parts of a package changed between two builds (for the stale notice). */
+export function packageChanges(before: PackageContent, after: PackageContent): string[] {
+  const a = signedView(before);
+  const b = signedView(after);
+  return SECTION_LABEL.filter(([k]) => stableStringify(a[k] ?? null) !== stableStringify(b[k] ?? null)).map(([, label]) => label);
 }
 
 export interface PackageSummary {
@@ -179,43 +216,83 @@ export async function listPackages(ctx: ServiceContext, periodKey?: string): Pro
   return Promise.all(rows.map((r) => toSummary(ctx, r)));
 }
 
-export async function getPackage(ctx: ServiceContext, id: string): Promise<{ summary: PackageSummary; content: PackageContent; stale: boolean }> {
+export async function getPackage(ctx: ServiceContext, id: string): Promise<{ summary: PackageSummary; content: PackageContent; stale: boolean; changes: string[] }> {
   requirePermission(ctx, 'report.view');
   const p = await ctx.db.get('close_package', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
   const content = p.content as unknown as PackageContent;
+  let changes: string[] = [];
   let stale = false;
   if (p.status === 'draft') {
     const fresh = await buildPackageContent(ctx, p.period_key, content.commentary ?? null);
     stale = contentHash(fresh) !== p.content_hash;
+    if (stale) changes = packageChanges(content, fresh);
   }
-  return { summary: await toSummary(ctx, p), content, stale };
+  return { summary: await toSummary(ctx, p), content, stale, changes };
 }
 
-/** Create a new draft version (by a person or by the close-package agent). */
-export async function createPackage(ctx: ServiceContext, periodKey: string, opts: { commentary?: string | null; runId?: string | null; generatedBy?: string | null } = {}): Promise<PackageSummary> {
-  requirePermission(ctx, 'package.generate');
-  const content = await buildPackageContent(ctx, periodKey, opts.commentary ?? null);
+/** Insert the next draft version built from the ledger and the close as they stand now. */
+async function insertVersion(ctx: ServiceContext, periodKey: string, opts: { commentary: string | null; runId: string | null; generatedBy: string | null; refreshedFrom?: number }): Promise<PackageSummary> {
+  const content = await buildPackageContent(ctx, periodKey, opts.commentary);
   const hash = contentHash(content);
   const prev = await ctx.db.find('close_package', { tenant_id: ctx.tenantId, period_key: periodKey }, { orderBy: [['version', 'desc']], limit: 1 });
   if (prev[0]?.status === 'final') throw new AppError('CONFLICT', 'The package for this period is already final.');
   const row = await ctx.db.tx(async (db) => {
-    const r = await db.insert('close_package', { tenant_id: ctx.tenantId, period_key: periodKey, version: (prev[0]?.version ?? 0) + 1, status: 'draft', content: content as unknown as Record<string, unknown>, content_hash: hash, generated_by: opts.generatedBy ?? ctx.actor.userId, generated_by_run: opts.runId ?? null, generated_at: ctx.clock.nowIso() });
-    await audit(withDb(ctx, db), { action: 'package.generated', subjectType: 'close_package', subjectId: r.id, data: { periodKey, version: r.version, contentHash: hash, run: opts.runId ?? null } });
+    const r = await db.insert('close_package', { tenant_id: ctx.tenantId, period_key: periodKey, version: (prev[0]?.version ?? 0) + 1, status: 'draft', content: content as unknown as Record<string, unknown>, content_hash: hash, generated_by: opts.generatedBy, generated_by_run: opts.runId, generated_at: ctx.clock.nowIso() });
+    await audit(withDb(ctx, db), { action: opts.refreshedFrom ? 'package.refreshed' : 'package.generated', subjectType: 'close_package', subjectId: r.id, data: { periodKey, version: r.version, contentHash: hash, run: opts.runId, ...(opts.refreshedFrom ? { from: opts.refreshedFrom } : {}) } });
     return r;
   });
   return toSummary(ctx, row);
 }
 
-/** Final approval (sign-off) — refuses a stale package so the approver signs current numbers. */
+/** A person generates a new draft version. */
+export async function createPackage(ctx: ServiceContext, periodKey: string, opts: { commentary?: string | null } = {}): Promise<PackageSummary> {
+  requirePermission(ctx, 'package.generate');
+  return insertVersion(ctx, periodKey, { commentary: opts.commentary ?? null, runId: null, generatedBy: ctx.actor.userId });
+}
+
+/**
+ * The close-package agent's draft, created when someone approves its proposal. That approval
+ * was authorised as a package approval (see the adapter), and the draft is attributed to the
+ * person who started the run, who therefore cannot sign it.
+ */
+export async function createAgentPackage(ctx: ServiceContext, periodKey: string, opts: { commentary: string | null; runId: string; requestedBy: string | null }): Promise<PackageSummary> {
+  return insertVersion(ctx, periodKey, { commentary: opts.commentary, runId: opts.runId, generatedBy: opts.requestedBy });
+}
+
+/**
+ * Rebuild a stale draft as a new version: same commentary and preparer of record, current
+ * numbers and close status. It is a deterministic re-render, so the people who sign packages
+ * may do it too; they then review the new version before signing.
+ */
+export async function refreshPackage(ctx: ServiceContext, id: string): Promise<PackageSummary> {
+  if (!hasPermission(ctx.actor, 'package.generate')) requirePermission(ctx, 'package.approve');
+  const p = await ctx.db.get('close_package', id);
+  if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
+  if (p.status === 'final') throw new AppError('CONFLICT', 'This package is already final.');
+  const latest = (await ctx.db.find('close_package', { tenant_id: ctx.tenantId, period_key: p.period_key }, { orderBy: [['version', 'desc']], limit: 1 }))[0]!;
+  if (latest.id !== p.id) throw new AppError('CONFLICT', `Version ${latest.version} is newer; refresh or sign that one.`);
+  const commentary = (p.content as unknown as PackageContent).commentary ?? null;
+  if (contentHash(await buildPackageContent(ctx, p.period_key, commentary)) === p.content_hash) throw new AppError('CONFLICT', 'This version is already current.');
+  return insertVersion(ctx, p.period_key, { commentary, runId: p.generated_by_run, generatedBy: p.generated_by, refreshedFrom: p.version });
+}
+
+/**
+ * Final approval (sign-off). The approver signs a version whose numbers and close status are
+ * still current; if anything moved since it was generated (a reconciliation certified, an
+ * exception resolved, an entry posted) the approval is refused and the version is refreshed.
+ */
 export async function approvePackage(ctx: ServiceContext, id: string, statement?: string): Promise<PackageSummary> {
   requirePermission(ctx, 'package.approve');
   const p = await ctx.db.get('close_package', id);
   if (!p || p.tenant_id !== ctx.tenantId) throw new AppError('NOT_FOUND', 'Package not found');
   if (p.status === 'final') throw new AppError('CONFLICT', 'This package is already final.');
   if (p.generated_by && p.generated_by === ctx.actor.userId) throw new AppError('SOD_VIOLATION', 'You generated this package, so someone else must approve it.');
-  const fresh = await buildPackageContent(ctx, p.period_key, (p.content as unknown as PackageContent).commentary ?? null);
-  if (contentHash(fresh) !== p.content_hash) throw new AppError('CONFLICT', 'The numbers changed since this package was generated. Generate a new version and approve that one.');
+  const stored = p.content as unknown as PackageContent;
+  const fresh = await buildPackageContent(ctx, p.period_key, stored.commentary ?? null);
+  if (contentHash(fresh) !== p.content_hash) {
+    throw new AppError('CONFLICT', `The close changed since version ${p.version} was generated (${packageChanges(stored, fresh).join(', ') || 'content'}). Refresh the package, review the new version and sign that one.`, { stale: true });
+  }
   const now = ctx.clock.nowIso();
   const row = await ctx.db.tx(async (db) => {
     const r = await db.update('close_package', p.id, { status: 'final', approved_by: ctx.actor.userId, approved_at: now });

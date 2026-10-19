@@ -10,7 +10,7 @@ import { loadScenario, type ScenarioInfo } from '../seed/load';
 import { SCENARIO, type UserKey } from '../seed/scenario';
 import { completionReadiness, updateTask } from '../services/close';
 import { listIssues, updateIssue } from '../services/issues';
-import { approvePackage, listPackages } from '../services/package';
+import { approvePackage, getPackage, listPackages, refreshPackage } from '../services/package';
 import { lockPeriod, lockReadiness } from '../services/periods';
 import { certifyRec, listRecs, reviewRec } from '../services/recs';
 import { createMemoryDb, type EkDb, type EkSchema } from '../store';
@@ -54,6 +54,11 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
     for (const who of ['casey', 'priya', 'jordan'] as const) {
       if (!remaining.length) break;
       const r = await engine.decide({ proposalIds: remaining, decision: 'approve', userId: info.users[who] });
+      // Flagged and low-confidence items are opened and approved one at a time.
+      for (const one of r.results.filter((x) => x.code === 'REVIEW_INDIVIDUALLY')) {
+        const single = await engine.decide({ proposalIds: [one.proposalId], decision: 'approve', userId: info.users[who] });
+        Object.assign(one, single.results[0]);
+      }
       remaining = r.results.filter((x) => !x.ok && x.code !== 'CONFLICT').map((x) => x.proposalId);
     }
     log(`round ${rounds + 1}: ${pending.length} pending, ${remaining.length} left undecided`);
@@ -81,7 +86,9 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
         if ((await completionReadiness(who, t.id)).ok) await updateTask(who, { taskId: t.id, action: 'complete' });
       }
     }
-    const draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft');
+    // The draft was generated before the reviews finished: refresh it to the current close, then sign.
+    let draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft');
+    if (draft && (await getPackage(jordan, draft.id)).stale) draft = await refreshPackage(jordan, draft.id);
     if (draft) await approvePackage(jordan, draft.id);
     const ready = await lockReadiness(casey, SCENARIO.openPeriod);
     lockFailures = ready.checks.filter((c) => !c.ok).map((c) => `${c.label}: ${c.detail}`);
