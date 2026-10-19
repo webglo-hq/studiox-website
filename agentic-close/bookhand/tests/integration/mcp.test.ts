@@ -48,6 +48,7 @@ describe('access tokens and the MCP server', () => {
   const email = (key: string) => seed.logins.find((l) => l.key === key)!.email;
   let hannahToken = '';
   let hannahTokenId = '';
+  let danielToken = '';
   let sofiaToken = '';
 
   beforeAll(async () => {
@@ -79,8 +80,12 @@ describe('access tokens and the MCP server', () => {
     expect((await sofia.call('POST', '/api/me/tokens', { name: 'Audit notebook', scope: 'write', expiresInDays: 30 })).status).toBe(400);
     expect((await sofia.call('POST', '/api/me/tokens', { name: 'Forever', scope: 'read', expiresInDays: 9999 })).status).toBe(400);
     sofiaToken = ((await sofia.call('POST', '/api/me/tokens', { name: 'Audit notebook', scope: 'read', expiresInDays: 7 })).body as { token: string }).token;
+    const daniel = new Browser(kernel);
+    await daniel.call('POST', '/api/auth/login', { email: email('daniel'), password: 'bookhand-demo' });
+    await daniel.call('GET', '/api/session');
+    danielToken = ((await daniel.call('POST', '/api/me/tokens', { name: 'Claude Code', scope: 'write', expiresInDays: 7 })).body as { token: string }).token;
     const audit = await app.read((tx) => tx.find('audit_log', { tenant_id: seed.tenantId, action: 'api_token.create' }));
-    expect(audit).toHaveLength(2);
+    expect(audit).toHaveLength(3);
   });
 
   it('speaks MCP: initialize, list tools with JSON Schemas, answer pings, reject unknown methods', async () => {
@@ -127,21 +132,26 @@ describe('access tokens and the MCP server', () => {
     const detail = await call('get_proposal', { id: accrual.id });
     expect((detail.structuredContent!.checks as unknown[]).length).toBeGreaterThan(0);
 
-    // Hannah started these agents, so segregation of duties stops her approving their larger proposals,
+    // Hannah started these agents, so segregation of duties stops her approving any of their output (SOD-002),
     // exactly as in the web app; the inbox already says so.
-    expect(accrual.youCanApprove).toBe(false);
+    expect(items.every((i) => !i.youCanApprove)).toBe(true);
     const refused = await call('approve_proposal', { id: accrual.id, note: 'PO-1042 receipt confirmed' });
     expect(refused.isError).toBe(true);
     expect(refused.content[0]!.text).toMatch(/Bookhand refused \(\d{3}\)/);
 
-    const mine = items.find((i) => i.youCanApprove && !i.riskFlags.length)!;
-    const approved = await call('approve_proposal', { id: mine.id, note: 'Reviewed via MCP' });
+    // Daniel's assistant acts as Daniel: independent of the run, within his limit.
+    const danielMcp = new McpServer(tokenClient(kernel, danielToken));
+    await danielMcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
+    const asDaniel = async (name: string, args: Record<string, unknown> = {}) => ((await danielMcp.handle({ jsonrpc: '2.0', id: name, method: 'tools/call', params: { name, arguments: args } })) as { result: ToolResult }).result;
+    const forDaniel = ((await asDaniel('list_proposals', { view: 'pending', limit: 100 })).structuredContent as { items: Array<{ id: string; youCanApprove: boolean; riskFlags: string[] }> }).items;
+    const mine = forDaniel.find((i) => i.youCanApprove && !i.riskFlags.length)!;
+    const approved = await asDaniel('approve_proposal', { id: mine.id, note: 'Reviewed via MCP' });
     expect(approved.isError, approved.content[0]!.text).toBeFalsy();
     const event = await app.read((tx) => tx.findOne('audit_log', { tenant_id: seed.tenantId, action: 'proposal.approve', object_id: mine.id }));
-    expect(event?.actor_label).toBe('Hannah Weiss (via MCP)');
+    expect(event?.actor_label).toBe('Daniel Okafor (via MCP)');
 
     // The same rules as the web app: approving twice is refused, arguments are validated, tools exist.
-    expect((await call('approve_proposal', { id: mine.id })).isError).toBe(true);
+    expect((await asDaniel('approve_proposal', { id: mine.id })).isError).toBe(true);
     expect((await call('reject_proposal', { id: halcyon.id, reason: '' })).isError).toBe(true);
     expect((await call('no_such_tool')).isError).toBe(true);
     expect((await call('trial_balance', { entity: 'BW-UK' })).structuredContent!.balanced).toBe(true);

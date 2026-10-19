@@ -19,19 +19,35 @@ export interface DecisionBlock {
   message: string;
 }
 
+/** Below this confidence a proposal is opened and decided on its own, never swept up by a bulk approval. */
+export const BULK_MIN_CONFIDENCE = 0.7;
+
+/**
+ * Why a proposal must be opened and decided individually rather than bulk-approved (null = bulk is fine):
+ * anything risk-flagged (instruction-like text, unexplained cash), any deterministic check that did not pass,
+ * and anything the agent is not confident about.
+ */
+export function bulkApprovalBlock(proposal: Pick<Row<'proposals'>, 'risk_flags' | 'verification' | 'confidence'>): string | null {
+  const flags = (proposal.risk_flags as string[] | null) ?? [];
+  if (flags.length) return `Flagged (${flags.map((f) => f.replace(/_/g, ' ')).join(', ')}): open it and decide on its own.`;
+  const checks = (proposal.verification as Array<{ id?: string; passed?: boolean }> | null) ?? [];
+  if (checks.some((c) => c.id !== 'DISPOSITION' && c.passed === false)) return 'A deterministic check did not pass: open it and decide on its own.';
+  if (proposal.confidence < BULK_MIN_CONFIDENCE) return `Confidence ${Math.round(proposal.confidence * 100)}% is below the ${Math.round(BULK_MIN_CONFIDENCE * 100)}% floor for bulk approval: open it and decide on its own.`;
+  return null;
+}
+
 /** Segregation-of-duties findings for `principal` approving `proposal`, with each rule's configured severity. */
 export async function sodFindings(tx: Tx, runtime: AgentRuntime<unknown>, principal: Principal, proposal: Row<'proposals'>): Promise<Array<DecisionBlock & { severity: 'block' | 'warn' }>> {
   const out: Array<DecisionBlock & { severity: 'block' | 'warn' }> = [];
-  const limitApplies = runtime.handler(proposal.kind).limitApplies !== false;
   const rules = await tx.find('sod_rules', { tenant_id: principal.tenantId, enabled: true });
   for (const rule of rules) {
-    const params = (rule.params ?? {}) as Record<string, unknown>;
     const add = (message: string) => out.push({ code: rule.code, message, severity: rule.severity });
     if (rule.kind === 'maker_checker' && proposal.maker_user_id && proposal.maker_user_id === principal.user.id) {
       add(`${rule.name}: you made this proposal, so someone else must approve it.`);
     }
-    if (rule.kind === 'requester_limit' && limitApplies && proposal.requested_by === principal.user.id && proposal.amount_minor > Number(params.limit_minor ?? 0)) {
-      add(`${rule.name}: you started the agent run, and items over ${formatMoney(Number(params.limit_minor ?? 0))} need an independent approver.`);
+    // Whoever started the agent run is its maker: none of its output, of any kind or amount, is theirs to approve.
+    if (rule.kind === 'requester_limit' && proposal.requested_by && proposal.requested_by === principal.user.id) {
+      add(`${rule.name}: you started the agent run that made this proposal, so someone independent must approve it.`);
     }
     if (rule.kind === 'policy_author' && proposal.policy_id) {
       const policy = await tx.get('skill_policies', proposal.policy_id);
@@ -154,6 +170,8 @@ export async function reviewAutoApplied(
   if (proposal.status !== 'auto_applied') throw new DomainError('CONFLICT', 'Only auto-applied work is reviewed after the fact.');
   if (proposal.post_hoc_status === 'confirmed' || proposal.post_hoc_status === 'reversed') throw new DomainError('CONFLICT', 'Already reviewed.');
   if (!can(principal, 'proposal.review_posthoc')) throw new DomainError('FORBIDDEN', 'Your role cannot review auto-applied work.');
+  // Confirming is an independent review; the person who started the run may still reverse its work.
+  if (decision === 'confirm' && proposal.requested_by && proposal.requested_by === principal.user.id) throw new DomainError('SOD_VIOLATION', 'You started the agent run that applied this, so someone independent must confirm it.');
   if (decision === 'reverse' && (!reason || reason.trim().length < 3)) throw new DomainError('VALIDATION', 'Say why you are reversing it.');
   const now = ctx.clock.now();
   let effect = proposal.effect ?? {};

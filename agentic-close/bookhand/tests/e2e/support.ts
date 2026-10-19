@@ -43,14 +43,20 @@ export async function signInAs(page: Page, who: Person): Promise<void> {
   if (await dismiss.isVisible().catch(() => false)) await dismiss.click();
 }
 
-/** Select everything in "Needs approval" and approve what this person may approve. Returns the count. */
+/**
+ * Select everything routine in "Needs approval" and approve what this person may approve, through the
+ * confirmation step (count and total). Flagged, failed-check and low-confidence items are never part of a bulk
+ * approval: `approveIndividually` opens and decides those. Returns the count approved in bulk.
+ */
 export async function approveAllICan(page: Page): Promise<number> {
   await go(page, '#/inbox');
   const table = page.locator('table.inbox-table');
   const empty = page.getByRole('heading', { name: 'Inbox zero' });
   await expect(table.or(empty)).toBeVisible();
   if (await empty.isVisible()) return 0;
-  await page.getByRole('checkbox', { name: 'Select all' }).check();
+  const selectAll = page.getByRole('checkbox', { name: 'Select all' });
+  if (await selectAll.isDisabled()) return 0;
+  await selectAll.check();
   const button = page.getByRole('button', { name: /^Approve \d+$/ });
   const count = Number((await button.innerText()).match(/\d+/)?.[0] ?? '0');
   if (count === 0) {
@@ -58,8 +64,26 @@ export async function approveAllICan(page: Page): Promise<number> {
     return 0;
   }
   await button.click();
+  const confirm = page.getByRole('dialog', { name: /^Approve \d+ items?\?$/ });
+  await expect(confirm.getByTestId('bulk-summary')).toContainText(`${count} item`);
+  await confirm.getByRole('button', { name: /^Approve \d+ items?$/ }).click();
   await expect(page.getByRole('status').filter({ hasText: /^Approved/ }).first()).toBeVisible({ timeout: 60_000 });
   return count;
+}
+
+/** Open each item kept out of bulk approval that this person may approve, look at it, and approve it on its own. */
+export async function approveIndividually(page: Page): Promise<number> {
+  const res = await page.request.get('/api/proposals?view=pending&limit=300');
+  const items = ((await res.json()) as { items: Array<{ id: string; canApprove: boolean; bulkBlock: string | null }> }).items.filter((i) => i.canApprove && i.bulkBlock);
+  for (const i of items) {
+    await go(page, `#/inbox/${i.id}`);
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByText('Decide this one on its own.')).toBeVisible();
+    await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Approved and applied.' }).first()).toBeVisible({ timeout: 60_000 });
+    await closeDialogs(page);
+  }
+  return items.length;
 }
 
 /** Waits until no agent run is queued or running (the API is only read, never driven). */
@@ -109,6 +133,7 @@ export async function closeRound(page: Page, opts: RoundOptions = {}): Promise<{
     await signInAs(page, who);
     if ((await pendingCount(page)) === 0) break;
     approved += await approveAllICan(page);
+    approved += await approveIndividually(page);
     await waitForAgents(page);
   }
   await opts.afterApprovals?.();

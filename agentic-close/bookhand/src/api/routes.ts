@@ -132,7 +132,12 @@ export const ROUTES: RouteDef[] = [
     handler: (c) => inbox.listProposals(c.app, c.principal!, { view: q(c.query.view) as inbox.InboxView | undefined, kind: q(c.query.kind), skill: q(c.query.skill), entity: q(c.query.entity), closeTaskId: q(c.query.task), runId: q(c.query.run), limit: qn(c.query.limit), offset: qn(c.query.offset) }),
   },
   { method: 'GET', path: '/api/proposals/:id', handler: (c) => inbox.proposalDetail(c.app, c.principal!, c.params.id!) },
-  { method: 'POST', path: '/api/proposals/bulk', body: z.object({ ids: z.array(id).min(1).max(200), decision: z.enum(['approve', 'reject']), reason: text(0, 500).optional() }).strict(), handler: (c) => inbox.decideBulk(c.app, c.principal!, c.body.ids as string[], c.body.decision as 'approve' | 'reject', c.body.reason as string | undefined, c.meta) },
+  {
+    method: 'POST',
+    path: '/api/proposals/bulk',
+    body: z.object({ ids: z.array(id).min(1).max(200), decision: z.enum(['approve', 'reject']), reason: text(0, 500).optional(), confirm: z.object({ count: z.number().int().nonnegative(), totalMinor: z.number().int() }).strict().optional() }).strict(),
+    handler: (c) => inbox.decideBulk(c.app, c.principal!, c.body.ids as string[], c.body.decision as 'approve' | 'reject', c.body.reason as string | undefined, c.meta, c.body.confirm as { count: number; totalMinor: number } | undefined),
+  },
   { method: 'POST', path: '/api/proposals/:id/approve', body: z.object({ note: text(0, 500).optional() }).strict(), handler: (c) => inbox.decide(c.app, c.principal!, c.params.id!, 'approve', c.body.note as string | undefined, c.meta) },
   { method: 'POST', path: '/api/proposals/:id/reject', body: z.object({ reason: text(3, 500) }).strict(), handler: (c) => inbox.decide(c.app, c.principal!, c.params.id!, 'reject', String(c.body.reason), c.meta) },
   { method: 'POST', path: '/api/proposals/:id/adopt', handler: (c) => inbox.adopt(c.app, c.principal!, c.params.id!, c.meta) },

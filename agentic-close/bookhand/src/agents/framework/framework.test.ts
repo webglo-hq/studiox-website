@@ -8,10 +8,10 @@ import { loadPrincipal } from '../../security/principal';
 import type { DomainContext } from '../../shared/context';
 import { DomainError } from '../../shared/errors';
 import { createAnthropicClient } from '../llm/anthropic';
-import { approvalBlocks, approveProposal, rejectProposal } from './decisions';
+import { approvalBlocks, approveProposal, BULK_MIN_CONFIDENCE, bulkApprovalBlock, rejectProposal } from './decisions';
 import { scanText, sanitizeString, wrapToolResult } from './hygiene';
 import { parseSkillMd, SkillManifestError, validateManifest } from './manifest';
-import { decideDisposition, resolvePolicy } from './policy';
+import { changePolicy, decideDisposition, resolvePolicy } from './policy';
 import { AgentRuntime, type PackRuntime, SimulatedCrash, toolJsonSchema } from './runtime';
 import type { AnyTool, Materiality, ProposalDraft, ProposalHandler, ResolvedPolicy, SkillEngine } from './types';
 
@@ -253,29 +253,50 @@ describe('agent framework (generic pack)', () => {
 
     // Maya's approval limit is $5,000; the espresso machine is $6,000.
     expect(await blocks('maya', 'n2')).toContain('LIMIT');
-    // Daniel started the run; SOD-002 lets the requester self-review up to $10,000, so he may approve it.
-    expect(await blocks('daniel', 'n2')).toEqual([]);
-    // Rejecting needs a reason.
-    const daniel = await P('daniel');
-    await expect(db.tx((tx) => rejectProposal(tx, ctx('daniel'), rtAny, daniel, note('n2').id, ''))).rejects.toThrow(DomainError);
-
-    // Lower the self-review limit to $50 as a warning: Daniel may still approve, and the warning is audited.
-    const rule = (await db.read((tx) => tx.find('sod_rules', { tenant_id: seed.tenantId, kind: 'requester_limit' })))[0]!;
-    await db.tx((tx) => tx.update('sod_rules', rule.id, { params: { limit_minor: 5_000 }, severity: 'warn' }));
-    expect(await blocks('daniel', 'n2')).toEqual([]);
-    const approved = await db.tx((tx) => approveProposal(tx, ctx('daniel'), rtAny, daniel, note('n2').id, 'checked the receipt'));
-    expect(approved.status).toBe('approved');
-    expect(counters.applied).toContain('n2');
-    const audit = await db.read((tx) => tx.find('audit_log', { tenant_id: seed.tenantId, action: 'proposal.approve', object_id: note('n2').id }));
-    expect(audit[0]!.summary).toMatch(/despite SoD warning SOD-002/);
-
-    // As a blocking rule with a $10 limit, the same situation stops Daniel on the $20 note.
-    await db.tx((tx) => tx.update('sod_rules', rule.id, { params: { limit_minor: 1_000 }, severity: 'block' }));
+    // BH-M2: Daniel started the run, so SOD-002 stops him approving any of its output, small or large.
+    expect(await blocks('daniel', 'n2')).toContain('SOD-002');
     expect(await blocks('daniel', 'n3')).toContain('SOD-002');
     expect(await blocks('hannah', 'n3')).toEqual([]);
-    await db.tx((tx) => tx.update('sod_rules', rule.id, { params: { limit_minor: 1_000_000 } }));
+    // Rejecting needs a reason (the requester may still reject what his run proposed).
+    const daniel = await P('daniel');
+    await expect(db.tx((tx) => rejectProposal(tx, ctx('daniel'), rtAny, daniel, note('n2').id, ''))).rejects.toThrow(DomainError);
     // Read-only auditors never decide.
     expect(await blocks('sofia', 'n3')).toContain('READ_ONLY');
+
+    // A rule set to "warn" lets the decision through and audits the warning. Hannah authors a policy version, so
+    // SOD-003 (policy author cannot check the outcome) applies to what a new run proposes under it.
+    const hannah = await P('hannah');
+    const manifest = rt.skill('note-review').pkg.manifest;
+    await db.tx((tx) => changePolicy(tx, ctx('hannah'), manifest, { autonomy: 'L1', reason: 'every finding needs a person' }, () => []));
+    const second = await runOnce(counters, 'daniel', 'sod-policy');
+    await second.rt.execute(second.run.id);
+    const authored = (await db.read((tx) => tx.find('proposals', { run_id: second.run.id, status: 'pending' }))).find((p) => (p.payload as { noteId: string }).noteId === 'n1')!;
+    const blocksOn = async (key: string, id: string) => {
+      const principal = await P(key);
+      return (await db.read(async (tx) => approvalBlocks(tx, rtAny, principal, (await tx.get('proposals', id))!))).map((b) => b.code);
+    };
+    expect(await blocksOn('hannah', authored.id)).toContain('SOD-003');
+    const rule = (await db.read((tx) => tx.find('sod_rules', { tenant_id: seed.tenantId, kind: 'policy_author' })))[0]!;
+    await db.tx((tx) => tx.update('sod_rules', rule.id, { severity: 'warn' }));
+    expect(await blocksOn('hannah', authored.id)).toEqual([]);
+    const approved = await db.tx((tx) => approveProposal(tx, ctx('hannah'), rtAny, hannah, authored.id, 'checked the note'));
+    expect(approved.status).toBe('approved');
+    const audit = await db.read((tx) => tx.find('audit_log', { tenant_id: seed.tenantId, action: 'proposal.approve', object_id: authored.id }));
+    expect(audit[0]!.summary).toMatch(/despite SoD warning SOD-003/);
+    await db.tx((tx) => tx.update('sod_rules', rule.id, { severity: 'block' }));
+    await db.tx((tx) => changePolicy(tx, ctx('hannah'), manifest, { autonomy: 'L2', reason: 'back to the package default' }, () => []));
+  });
+});
+
+describe('bulk approval eligibility', () => {
+  const row = (over: Partial<{ risk_flags: string[]; verification: Array<Record<string, unknown>>; confidence: number }> = {}) => ({ risk_flags: [], verification: [{ id: 'GEN-WHY', passed: true }, { id: 'DISPOSITION', passed: true }], confidence: 0.95, ...over });
+
+  it('B-2: keeps flagged, failed-check and low-confidence proposals out of bulk approval', () => {
+    expect(bulkApprovalBlock(row())).toBeNull();
+    expect(bulkApprovalBlock(row({ confidence: BULK_MIN_CONFIDENCE }))).toBeNull();
+    expect(bulkApprovalBlock(row({ risk_flags: ['instruction_like_text'] }))).toMatch(/Flagged \(instruction like text\)/);
+    expect(bulkApprovalBlock(row({ verification: [{ id: 'AX-FLX-04', passed: false, severity: 'warning' }] }))).toMatch(/check did not pass/);
+    expect(bulkApprovalBlock(row({ confidence: 0.4 }))).toMatch(/Confidence 40% is below the 70% floor/);
   });
 });
 

@@ -172,11 +172,12 @@ export interface SodRuleDefinition {
 export const DEFAULT_SOD_RULES: SodRuleDefinition[] = [
   { code: 'SOD-001', name: 'Maker-checker', description: 'Nobody approves an entry, reconciliation, explanation or package they prepared.', kind: 'maker_checker', params: {} },
   {
+    // Kind keeps its original code ("requester_limit") so existing rule rows stay valid; it no longer has a limit.
     code: 'SOD-002',
-    name: 'Agent requester self-review limit',
-    description: 'The person who launched an agent run may approve its postings only up to $10,000; larger items need someone independent.',
+    name: 'Agent run requester cannot approve its output',
+    description: 'The person who started an agent run approves none of its output, whatever the kind or amount: someone independent must. Enforced by the database as well.',
     kind: 'requester_limit',
-    params: { limit_minor: 1_000_000 },
+    params: {},
   },
   {
     code: 'SOD-003',
