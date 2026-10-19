@@ -1,0 +1,25 @@
+# Tieout: nested ignore rules (the repository root ignores lockfiles and .env.*)
+!package-lock.json
+!.env.example
+
+# Dependencies and build outputs
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Local databases (PGlite data dirs, Postgres test clusters)
+.data/
+.pgtest/
+
+# Test and tooling reports
+test-results/
+playwright-report/
+blob-report/
+coverage/
+.eval-reports/
+.tmp/
+
+# Local environment
+.env
+.env.local

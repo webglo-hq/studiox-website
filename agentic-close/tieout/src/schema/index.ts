@@ -1,0 +1,108 @@
+/**
+ * The composed data model: generated row types + table metadata, id prefixes and the typed
+ * Store/Tx aliases used throughout the app.
+ */
+import type { Store, Tx } from '../core/store/types';
+import type { DbOptionalOnInsert, DbTables, TableName } from './tables.generated';
+
+export * from './tables.generated';
+
+export type DbInsertRow<T extends TableName> = Omit<DbTables[T], DbOptionalOnInsert[T]> &
+  Partial<Pick<DbTables[T], DbOptionalOnInsert[T] & keyof DbTables[T]>>;
+export type DbInserts = { [T in TableName]: DbInsertRow<T> };
+export type Db = Store<DbTables, DbInserts>;
+export type DbTx = Tx<DbTables, DbInserts>;
+
+export const ID_PREFIX: Record<TableName, string> = {
+  schema_migrations: 'mig',
+  tenants: 'ten',
+  counters: 'ctr',
+  users: 'usr',
+  permissions: 'perm',
+  roles: 'role',
+  role_permissions: 'rp',
+  user_roles: 'ur',
+  sessions: 'ses',
+  mfa_factors: 'mfa',
+  api_tokens: 'tok',
+  sod_rules: 'sod',
+  audit_log: 'aud',
+  ontology_versions: 'ont',
+  skills: 'skl',
+  skill_versions: 'skv',
+  skill_policies: 'pol',
+  skill_eval_runs: 'evr',
+  agent_runs: 'run',
+  agent_steps: 'stp',
+  agent_tool_calls: 'tc',
+  agent_messages: 'msg',
+  proposals: 'prp',
+  approvals: 'apr',
+  connectors: 'con',
+  source_documents: 'doc',
+  import_batches: 'imp',
+  evidence: 'evd',
+  currencies: 'ccy',
+  entities: 'ent',
+  fx_rates: 'fx',
+  fs_line_items: 'fsl',
+  accounts: 'acct',
+  dimensions: 'dim',
+  dimension_values: 'dv',
+  periods: 'per',
+  journal_entries: 'je',
+  journal_lines: 'jl',
+  vendors: 'ven',
+  purchase_orders: 'po',
+  goods_receipts: 'grn',
+  bills: 'bill',
+  bill_lines: 'bl',
+  bank_accounts: 'ba',
+  payments: 'pay',
+  payment_applications: 'pap',
+  customers: 'cus',
+  invoices: 'inv',
+  invoice_lines: 'il',
+  receipts: 'rcp',
+  receipt_applications: 'rap',
+  bank_statements: 'bst',
+  bank_transactions: 'btx',
+  cards: 'card',
+  card_transactions: 'ctx',
+  fixed_assets: 'fa',
+  depreciation_lines: 'dep',
+  prepaid_schedules: 'pps',
+  prepaid_lines: 'ppl',
+  payroll_runs: 'pr',
+  budgets: 'bud',
+  budget_lines: 'bdl',
+  close_templates: 'ctp',
+  close_template_tasks: 'ctt',
+  close_periods: 'cp',
+  close_tasks: 'tsk',
+  close_task_dependencies: 'tdep',
+  signoffs: 'sgn',
+  reconciliations: 'rec',
+  rec_matches: 'rm',
+  rec_match_items: 'rmi',
+  reconciling_items: 'ri',
+  flux_analyses: 'flx',
+  flux_lines: 'fln',
+  flux_explanations: 'fle',
+  close_packages: 'pkg',
+};
+
+/** Extra equality indexes for the memory adapter's hot paths. */
+export const MEMORY_INDEX_HINTS: Record<string, string[]> = {
+  journal_entries: ['status', 'entry_type', 'source', 'je_number'],
+  proposals: ['status', 'kind', 'skill_key'],
+  agent_runs: ['status', 'orchestration_id', 'skill_key'],
+  agent_steps: ['run_id'],
+  bank_transactions: ['status', 'txn_date'],
+  card_transactions: ['status'],
+  bills: ['status'],
+  close_tasks: ['status', 'key'],
+  audit_log: ['subject_id', 'action'],
+  users: ['email'],
+  sessions: ['user_id'],
+};
