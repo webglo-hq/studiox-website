@@ -126,6 +126,13 @@ describe('after the agents run', () => {
   it('T-4: once the agents ran, each person sees their own next step', async () => {
     const casey = await home('casey');
     expect(casey.next.steps.map((s) => s.text)).toContainEqual(expect.stringMatching(/^Decide \d+ items waiting for you in the inbox\.$/));
+    // what she cannot decide waits for others, counted per role (the payroll accrual for the CFO)
+    const forOthers = casey.next.waitingOn.find((w) => /waiting for someone else/.test(w))!;
+    expect(forOthers).toMatch(/1 for the CFO/);
+    const [total, ...perRole] = forOthers.match(/\d+/g)!.map(Number);
+    expect(perRole.reduce((a, b) => a + b, 0)).toBe(total);
+    // the Controller reviews reconciliations and approves explanations; she is not asked to prepare them
+    expect(casey.next.steps.map((s) => s.text).join(' ')).not.toMatch(/Certify|Explain/);
     const sam = await home('sam');
     expect(sam.next.steps.map((s) => s.text)).toContain('Certify 6 reconciliations as preparer, noting anything still open.');
     const waiting = sam.next.waitingOn.find((w) => /inbox items waiting for someone else/.test(w))!;

@@ -311,7 +311,7 @@ export function Home() {
 /** The close in six steps, who does each, and where this month is — for a first visit (dismissible). */
 const STEPS: { title: string; who: string; href: string }[] = [
   { title: 'Run the close agents', who: 'Senior Accountant', href: '#/home' },
-  { title: 'Decide what the agents prepared', who: 'Controller; the CFO above $250,000', href: '#/inbox' },
+  { title: 'Decide what the agents prepared', who: 'Senior Accountant up to $25,000, Controller up to $250,000, CFO above', href: '#/inbox' },
   { title: 'Certify and review the reconciliations', who: 'Staff Accountant, then a reviewer', href: '#/recs' },
   { title: 'Explain significant variances', who: 'Staff Accountant or FP&A; the Controller approves', href: '#/flux' },
   { title: 'Sign off the checklist and draft the close package', who: 'Each task’s reviewer, then the Controller', href: '#/close' },

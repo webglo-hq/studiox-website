@@ -30,7 +30,7 @@ export async function nextSteps(
   tx: DbTx,
   u: RequestUser,
   periodKey: string,
-  f: { closed: boolean; agentsRun: boolean; mine: number; open: ProposalRow[]; readiness: Readiness; tasks: TaskView[]; latestPackage: { id: string; status: string; requestedBy: string | null } | null },
+  f: { closed: boolean; agentsRun: boolean; open: ProposalRow[]; decidable: ReadonlySet<string>; readiness: Readiness; tasks: TaskView[]; latestPackage: { id: string; status: string; requestedBy: string | null } | null },
 ): Promise<{ steps: NextStep[]; waitingOn: string[] }> {
   if (f.closed) return { steps: [], waitingOn: [] };
   const can = (p: string) => u.actor.permissions.has(p);
@@ -44,15 +44,20 @@ export async function nextSteps(
     else waitingOn.push('the close agents to run (a Senior Accountant starts them)');
   }
 
-  // 2. decisions on agent work
-  if (f.mine) steps.push({ text: `Decide ${n(f.mine, 'item')} waiting for you in the inbox.`, href: '#/inbox' });
-  const others = f.open.length - f.mine;
-  if (others > 0) {
+  // 2. decisions on agent work: mine, and who the rest wait for
+  const mine = f.open.filter((p) => f.decidable.has(p.id)).length;
+  if (mine) steps.push({ text: `Decide ${n(mine, 'item')} waiting for you in the inbox.`, href: '#/inbox' });
+  const notMine = f.open.filter((p) => !f.decidable.has(p.id));
+  // items for a role you hold that you cannot decide (you prepared it, it waits on another item…)
+  const blocked = notMine.filter((p) => p.assigned_role && u.actor.roles.includes(p.assigned_role)).length;
+  const others = notMine.filter((p) => !(p.assigned_role && u.actor.roles.includes(p.assigned_role)));
+  if (others.length) {
     const byRole = new Map<string, number>();
-    for (const p of f.open) byRole.set(p.assigned_role ?? '', (byRole.get(p.assigned_role ?? '') ?? 0) + 1);
-    const parts = [...byRole].filter(([r]) => r).map(([r, c]) => `${c} for the ${roleDef(r)?.name ?? r}`);
-    waitingOn.push(`${n(others, 'inbox item')} waiting for someone else${parts.length ? ` (${parts.join(', ')})` : ''}`);
+    for (const p of others) if (p.assigned_role) byRole.set(p.assigned_role, (byRole.get(p.assigned_role) ?? 0) + 1);
+    const parts = [...byRole].map(([r, c]) => `${c} for the ${roleDef(r)?.name ?? r}`);
+    waitingOn.push(`${n(others.length, 'inbox item')} waiting for someone else${parts.length ? ` (${parts.join(', ')})` : ''}`);
   }
+  if (blocked) waitingOn.push(`${n(blocked, 'inbox item')} for your role that you cannot decide yet (the inbox says why)`);
 
   // access: new approval authority and control changes wait for a second person
   if (can('access.approve') || can('admin.users') || can('admin.sod')) {
@@ -63,7 +68,8 @@ export async function nextSteps(
     if (asked) waitingOn.push(`${n(asked, 'access request')} you made, waiting for a second person to approve`);
   }
 
-  // 3. reconciliations: preparers certify, a different person reviews (AX-SOD-03)
+  // 3. reconciliations: preparers certify, a different person reviews (AX-SOD-03); someone who may
+  //    review is not asked to prepare, or they could not review it afterwards
   const periods = new Set((await tx.find('periods', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id)).map((p) => p.id));
   const recs = (await tx.find('reconciliations', {})).filter((r) => periods.has(r.period_id) && ['bank', 'subledger_ap', 'subledger_ar'].includes(r.rec_type));
   const expected = (await svc.bank.accounts()).length + (await svc.ctx.legalEntities()).length * 2;
@@ -71,19 +77,20 @@ export async function nextSteps(
   const toCertify = Math.max(0, expected - certified);
   const toReview = recs.filter((r) => r.status === 'prepared');
   if (f.agentsRun && toCertify) {
-    if (can('recon.prepare')) steps.push({ text: `Certify ${n(toCertify, 'reconciliation')} as preparer, noting anything still open.`, href: '#/recs' });
+    if (can('recon.prepare') && !can('recon.review')) steps.push({ text: `Certify ${n(toCertify, 'reconciliation')} as preparer, noting anything still open.`, href: '#/recs' });
     else waitingOn.push(`${n(toCertify, 'reconciliation')} to certify (Staff Accountant)`);
   }
   const mineToReview = toReview.filter((r) => r.preparer_id !== u.actor.id).length;
   if (can('recon.review') && mineToReview) steps.push({ text: `Review ${n(mineToReview, 'reconciliation')} a preparer certified.`, href: '#/recs' });
   else if (toReview.length && !can('recon.review')) waitingOn.push(`${n(toReview.length, 'reconciliation')} to review (Senior Accountant or Controller)`);
 
-  // 4. significant variances need an explanation (AX-FLX-01); drafts waiting for approval count as in hand
+  // 4. significant variances need an explanation (AX-FLX-01); drafts waiting for approval count as in
+  //    hand, and whoever approves explanations is not asked to write them
   if (f.agentsRun) {
     let unexplained = 0;
     for (const e of await svc.ctx.legalEntities()) unexplained += (await svc.flux.compute(e.id, periodKey)).lines.filter((l) => l.exceeds && !isExplained(l) && !l.draft?.current).length;
     if (unexplained) {
-      if (can('flux.explain')) steps.push({ text: `Explain ${n(unexplained, 'significant variance')} in plain words (or let the agent draft them).`, href: '#/flux' });
+      if (can('flux.explain') && !can('flux.approve')) steps.push({ text: `Explain ${n(unexplained, 'significant variance')} in plain words (or let the agent draft them).`, href: '#/flux' });
       else waitingOn.push(`${n(unexplained, 'significant variance')} to explain (Staff Accountant or FP&A)`);
     }
   }

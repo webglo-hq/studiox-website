@@ -74,15 +74,16 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
     const t = await svc.close.tasks(periodKey);
     const props = (await tx.find('proposals', { period_key: periodKey })).filter((p) => inScope(u, p.entity_id));
     const open = props.filter((p) => OPEN.includes(p.status));
-    let mine = 0;
-    for (const p of open) if ((await eligibility(ctx, tx, u, p)).canDecide) mine++;
+    const decidable = new Set<string>();
+    for (const p of open) if ((await eligibility(ctx, tx, u, p)).canDecide) decidable.add(p.id);
+    const mine = decidable.size;
     const runs = (await tx.find('agent_runs', { period_key: periodKey }, { orderBy: [['created_at', 'desc']], limit: 40 })).filter((r) => inScope(u, r.entity_id)).slice(0, 8);
     const readiness = await svc.close.readiness(periodKey);
     const done = t.tasks.filter((x) => x.status === 'done' || x.status === 'skipped').length;
     const pkg = u.actor.entityScope ? undefined : (await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']], limit: 1 }))[0];
     const pkgRun = pkg?.agent_run_id ? await tx.get('agent_runs', pkg.agent_run_id) : undefined;
     const closed = t.closePeriod?.status === 'closed';
-    const next = await nextSteps(svc, tx, u, periodKey, { closed, agentsRun: runs.length > 0, mine, open, readiness, tasks: t.tasks, latestPackage: pkg ? { id: pkg.id, status: pkg.status, requestedBy: pkgRun?.requested_by ?? null } : null });
+    const next = await nextSteps(svc, tx, u, periodKey, { closed, agentsRun: runs.length > 0, open, decidable, readiness, tasks: t.tasks, latestPackage: pkg ? { id: pkg.id, status: pkg.status, requestedBy: pkgRun?.requested_by ?? null } : null });
     return {
       periodKey,
       periodLabel: periodLabel(periodKey),
