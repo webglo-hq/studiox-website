@@ -42,6 +42,17 @@ describe('closing September end to end', () => {
     expect((je.body as { error: { message: string } }).error.message).toMatch(/^AX-PD-01: period 2026-09 is locked$/);
   });
 
+  it('says the month is closed and runs no agents on it', async () => {
+    const home = (await out.people.casey!.get<{ closed: { by: string } | null; latestPackage: { status: string } | null }>(`/api/home?period=${P}`)).body;
+    expect(home.closed?.by).toBe('Casey Morgan');
+    expect(home.latestPackage?.status).toBe('final');
+    const again = await out.people.jordan!.post<{ error: { message: string } }>(`/api/close/${P}/run-agents`, {});
+    expect(again.status).toBe(409);
+    expect(again.body.error.message).toMatch(/September 2026 is locked/);
+    const me = (await out.people.jordan!.get<{ entities: { id: string; code: string }[] }>('/api/auth/me')).body;
+    expect((await out.people.jordan!.post('/api/runs', { skillKey: 'je-review', entityId: me.entities.find((e) => e.code === 'BWL-US')!.id, periodKey: P })).status).toBe(409);
+  });
+
   it('reopens one entity only with a documented reason, by a Controller or CFO', async () => {
     const me = (await out.people.casey!.get<{ entities: { id: string; code: string }[] }>('/api/auth/me')).body;
     const uk = me.entities.find((e) => e.code === 'BWL-UK')!;
@@ -52,6 +63,9 @@ describe('closing September end to end', () => {
     expect(r.body.status).toBe('soft_closed');
     const log = await out.people.casey!.get<{ items: { action: string; summary: string }[] }>('/api/audit?action=period.');
     expect(log.body.items.map((i) => i.action)).toEqual(expect.arrayContaining(['period.lock', 'period.reopen']));
+    // the month's close is open again: agents may work on the reopened entity, and it must lock again
+    expect((await out.people.casey!.get<{ closed: unknown }>(`/api/home?period=${P}`)).body.closed).toBeNull();
+    expect((await out.people.jordan!.post('/api/runs', { skillKey: 'je-review', entityId: uk.id, periodKey: P })).status).toBe(200);
   });
 
   it('keeps flagged items out of bulk approval and the chain check for those allowed to run it', async () => {

@@ -284,6 +284,14 @@ test('16 · the CFO approves and signs the close package, then locks September',
   await expect(page.locator('main')).toContainText(/final/i);
 });
 
-test('17 · no client errors during the whole script', async () => {
+test('17 · My close now says the month is closed and points to the signed package', async () => {
+  await go('/home');
+  await expect(page.locator('main')).toContainText('September 2026 is closed');
+  await expect(page.getByRole('button', { name: /Run close agents/ })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Open the close package' }).click();
+  await expect(page.locator('main')).toContainText(/final/i);
+});
+
+test('18 · no client errors during the whole script', async () => {
   expect(problems).toEqual([]);
 });

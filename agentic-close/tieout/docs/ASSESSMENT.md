@@ -12,12 +12,12 @@ through Playwright 1.56).
 | Types | `npm run typecheck` | 0 errors |
 | Lint (incl. layering and browser-safety rules) | `npm run lint` | 0 problems |
 | Unit tests | `npm run test:unit` | 99 passed, 8 files |
-| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, full close, identity, MCP, OIDC) | `npm run pg:start && npm run test:integration` | 71 passed, 8 files |
+| Integration tests (memory, PGlite, **real PostgreSQL 16**, HTTP, full close, identity, MCP, OIDC) | `npm run pg:start && npm run test:integration` | 73 passed, 8 files |
 | Skill evals (golden cases, offline engine) | `npm run evals` | 18/18 cases, 105/105 checks |
-| End-to-end, server on embedded PostgreSQL: the demo script to the locked period, entity scope, two-factor, axe WCAG 2.2 AA on every screen in light and dark | `npm run e2e` | 21 passed |
-| End-to-end, static demo: the same script from `file://`, sandboxed iframe, no network, phone on every route | `npm run e2e:demo` | 20 passed |
+| End-to-end, server on embedded PostgreSQL: the demo script to the locked period, entity scope, two-factor, axe WCAG 2.2 AA on every screen in light and dark | `npm run e2e` | 22 passed |
+| End-to-end, static demo: the same script from `file://`, sandboxed iframe, no network, phone on every route | `npm run e2e:demo` | 21 passed |
 | Dependency advisories | `npm audit --audit-level=high` | 0 vulnerabilities |
-| Static demo build checks | `npm run build:demo` | 1 file + favicon, 1.91 MB, relative paths, no service worker, guarded storage |
+| Static demo build checks | `npm run build:demo` | 1 file + favicon, 1.92 MB, relative paths, no service worker, guarded storage |
 
 Without the throwaway PostgreSQL cluster the 15 PostgreSQL tests report as **skipped**, never as
 passed.
@@ -145,7 +145,8 @@ suite.
   running the whole close on PostgreSQL; the browser suite now runs the server on embedded PostgreSQL.
 * The flux screen said "run the flux agent or write one" but offered neither; the close cockpit promised
   a reopen path that did not exist; the `audit.verify` permission was never checked; bulk approval could
-  include an item flagged for instruction-like text. All fixed and covered by `full-close.test.ts`.
+  include an item flagged for instruction-like text; agents could still be run on a locked month, and
+  *My close* invited it. All fixed and covered by `full-close.test.ts` and the e2e script.
 * The crash-injection hook never fired, so resume was untested until `runtime.test.ts` exposed it.
 * The camt.053 sample on the import screen had no balances and failed its own parser.
 * Browsers drop `Cookie`/`Set-Cookie` on script-built requests; the static demo could not keep a

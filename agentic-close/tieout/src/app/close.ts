@@ -8,11 +8,25 @@ import { sha256Hex } from '../core/util/hash';
 import { canonicalJson } from '../core/util/json';
 import { runCloseAgents, type CloseRunResult } from '../packs/accounting/close/orchestrate';
 import { AccountingServices } from '../packs/accounting/services';
+import { periodLabel } from '../core/util/time';
+import type { DbTx } from '../schema';
 import type { AppContext, RequestUser } from './context';
 import { assertCanActOn, assertInScope, requireGroupAccess, requirePermission } from './context';
 
+/**
+ * Agents never work on a locked month: for one entity, its period; for the group, every legal
+ * entity's period. Reopening (with a documented reason) is the way back.
+ */
+export async function assertPeriodWorkable(tx: DbTx, periodKey: string, entityId: string | null) {
+  const periods = await tx.find('periods', entityId ? { period_key: periodKey, entity_id: entityId } : { period_key: periodKey });
+  const legal = new Set((await tx.find('entities', { kind: 'legal' })).map((e) => e.id));
+  const relevant = periods.filter((p) => (entityId ? true : legal.has(p.entity_id)));
+  if (relevant.length && relevant.every((p) => p.status === 'locked')) throw precondition(`${periodLabel(periodKey)} is locked. Reopen it, with a documented reason, before running agents on it.`);
+}
+
 export async function startCloseAgents(ctx: AppContext, u: RequestUser, periodKey: string, opts: { only?: string[] } = {}): Promise<CloseRunResult> {
   requirePermission(u, 'agent.run');
+  await ctx.db.tx(u.tenantId, (tx) => assertPeriodWorkable(tx, periodKey, null));
   const gate = ctx.limiter.check(`close-agents:${u.tenantId}`, 6, 60_000);
   if (!gate.ok) throw precondition('The close agents were started very recently; wait a moment.');
   return runCloseAgents({ db: ctx.db, runtime: ctx.runtime, clock: ctx.clock }, { tenantId: u.tenantId, periodKey, requester: u.actor, only: opts.only });
@@ -136,6 +150,13 @@ export async function reopenPeriod(ctx: AppContext, u: RequestUser, periodKey: s
     if (p.status !== 'locked') throw conflict('The period is not locked.');
     if (!u.actor.roles.some((r) => r === 'controller' || r === 'cfo')) throw forbidden('Only a Controller or CFO can reopen a locked period.');
     const updated = await tx.update('periods', p.id, { status: 'soft_closed', status_reason: reason.trim(), reopen_count: p.reopen_count + 1 });
+    // the month's close is open again until the period is locked once more
+    const cp = await tx.findOne('close_periods', { period_key: periodKey });
+    if (cp?.status === 'closed') {
+      await tx.update('close_periods', cp.id, { status: 'review', closed_at: null, closed_by: null });
+      const lockTask = await tx.findOne('close_tasks', { close_period_id: cp.id, key: 'lock' });
+      if (lockTask?.status === 'done') await tx.update('close_tasks', lockTask.id, { status: 'not_started', completed_by: null, completed_at: null });
+    }
     await audit(tx, u.actor, ctx.clock, { action: 'period.reopen', subjectType: 'period', subjectId: p.id, entityId, summary: `${periodKey} reopened: ${reason.trim()}`, data: {} }, u.ip);
     return updated;
   });

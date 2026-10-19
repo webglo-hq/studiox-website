@@ -93,6 +93,9 @@ export async function home(ctx: AppContext, u: RequestUser, periodKey: string) {
         .map((p) => slim(p, users)),
       readiness,
       runs: runs.map((r) => ({ id: r.id, ref: r.ref, skillKey: r.skill_key, status: r.status, entityId: r.entity_id, headline: r.summary.headline ?? null, createdAt: r.created_at, mode: r.mode, costMicros: r.cost_micros })),
+      // once the month is locked: who closed it, and the signed package (group access only)
+      closed: t.closePeriod?.status === 'closed' ? { at: t.closePeriod.closed_at, by: who(t.closePeriod.closed_by, users) } : null,
+      latestPackage: u.actor.entityScope ? null : ((await tx.find('close_packages', { period_key: periodKey }, { orderBy: [['version', 'desc']], limit: 1 })).map((p) => ({ id: p.id, version: p.version, status: p.status }))[0] ?? null),
       agentsRun: runs.length > 0,
     };
   });

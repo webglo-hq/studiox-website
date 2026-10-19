@@ -12,6 +12,7 @@ import type { AgentRunRow, SkillEvalRunRow } from '../schema';
 import { compileRule, type CompiledRule } from '../packs/accounting/agent/rules';
 import { DIMENSIONS } from '../packs/accounting/seed/company';
 import type { AppContext, RequestUser } from './context';
+import { assertPeriodWorkable } from './close';
 import { assertCanActOn, requirePermission } from './context';
 
 async function skillRow(ctx: AppContext, u: RequestUser, key: string) {
@@ -76,6 +77,7 @@ export async function startRun(ctx: AppContext, u: RequestUser, req: { skillKey:
   if (!ctx.skills.has(req.skillKey)) throw notFound('Skill', req.skillKey);
   const gate = ctx.limiter.check(`run:${u.actor.id}`, 30, 60_000);
   if (!gate.ok) throw validation('Too many runs started in the last minute.');
+  await ctx.db.tx(u.tenantId, (tx) => assertPeriodWorkable(tx, req.periodKey, req.entityId));
   const run = await ctx.runtime.createRun({ tenantId: u.tenantId, skillKey: req.skillKey, entityId: req.entityId, periodKey: req.periodKey, requestedBy: u.actor.id, mode: req.mode });
   return ctx.runtime.execute(u.tenantId, run.id);
 }

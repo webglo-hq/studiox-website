@@ -1,10 +1,10 @@
 /** "My close": what needs me today, how far the close is, and the one button that starts the agents. */
-import { ArrowRight, Bot, CircleCheck, Play } from 'lucide-react';
+import { ArrowRight, Bot, CircleCheck, FileText, Lock, Play } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError, type CloseRunResult, type HomeData } from '../api';
 import { Badge, Confidence, Dialog, ErrorBox, FlagBadges, Loading, Meter, Money, ProposalStatus, Stat, Term } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
-import { date, KIND_LABEL, periodName } from '../lib/format';
+import { date, dateTime, KIND_LABEL, periodName } from '../lib/format';
 
 export function Home() {
   const me = useMe();
@@ -29,18 +29,31 @@ export function Home() {
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading label="Loading your close" />;
   const first = me.user.name.split(' ')[0];
+  const closed = data.closed;
   return (
     <div className={loading ? 'skeleton' : undefined}>
       <div className="page-head">
         <div>
           <h1>Welcome back, {first}.</h1>
-          <p className="lede">
-            {periodName(period)} close · <strong>{data.workday ?? '—'}</strong> ({date(data.businessDate, true)}). {data.progress.done} of {data.progress.total} checklist tasks are done
-            {data.closePeriod ? `; target close ${date(data.closePeriod.target_close_date)}` : ''}.
-          </p>
+          {closed ? (
+            <p className="lede">
+              {periodName(period)} is closed: every entity was locked{closed.by ? ` by ${closed.by}` : ''}
+              {closed.at ? ` on ${dateTime(closed.at)}` : ''}. Nothing more posts to it; reopening needs a documented reason.
+            </p>
+          ) : (
+            <p className="lede">
+              {periodName(period)} close · <strong>{data.workday ?? '—'}</strong> ({date(data.businessDate, true)}). {data.progress.done} of {data.progress.total} checklist tasks are done
+              {data.closePeriod ? `; target close ${date(data.closePeriod.target_close_date)}` : ''}.
+            </p>
+          )}
         </div>
         <div className="actions">
-          {can(me, 'agent.run') ? (
+          {closed && data.latestPackage ? (
+            <a className="btn primary big" href={`#/package/${data.latestPackage.id}`}>
+              <FileText className="icon" aria-hidden="true" /> Open the close package
+            </a>
+          ) : null}
+          {!closed && can(me, 'agent.run') ? (
             <button className="btn primary big" onClick={() => void runAgents()} disabled={running} aria-busy={running}>
               <Play className="icon" aria-hidden="true" />
               {running ? 'Agents are working…' : data.agentsRun ? 'Run close agents again' : 'Run close agents'}
@@ -52,7 +65,15 @@ export function Home() {
         </div>
       </div>
 
-      {!data.agentsRun ? (
+      {closed ? (
+        <div className="callout good" style={{ marginBottom: 16 }}>
+          <Lock className="icon" aria-hidden="true" />
+          <div>
+            <strong>{periodName(period)} is closed.</strong> Every proposal was decided, every reconciliation reviewed, every significant variance explained and the close package signed
+            {data.latestPackage ? ` (version ${data.latestPackage.version}, ${data.latestPackage.status})` : ''}. The trail is in the <a href="#/audit">audit log</a>.
+          </div>
+        </div>
+      ) : !data.agentsRun ? (
         <div className="callout info" style={{ marginBottom: 16 }}>
           <Bot className="icon" aria-hidden="true" />
           <div>
@@ -75,10 +96,12 @@ export function Home() {
           </div>
         </div>
         <Stat
-          label="Ready to lock"
-          value={data.readiness.ready ? 'Yes' : 'Not yet'}
+          label={closed ? 'Period' : 'Ready to lock'}
+          value={closed ? 'Locked' : data.readiness.ready ? 'Yes' : 'Not yet'}
           sub={
-            data.readiness.ready ? (
+            closed ? (
+              'Closed for every entity'
+            ) : data.readiness.ready ? (
               'Every lock condition holds'
             ) : (
               <span>
@@ -160,9 +183,13 @@ export function Home() {
 
           <section className="card card-pad" aria-labelledby="h-ready">
             <h2 id="h-ready" style={{ marginBottom: 8 }}>
-              Before the period can lock
+              {closed ? 'Period locked' : 'Before the period can lock'}
             </h2>
-            {data.readiness.ready ? (
+            {closed ? (
+              <p>
+                <Badge tone="good">Locked</Badge> All conditions of <code>AX-CL-02</code> held at the lock.
+              </p>
+            ) : data.readiness.ready ? (
               <p>
                 <Badge tone="good">Ready</Badge> All conditions of <code>AX-CL-02</code> hold.
               </p>

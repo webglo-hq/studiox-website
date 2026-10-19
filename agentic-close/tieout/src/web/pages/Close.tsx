@@ -50,12 +50,12 @@ export function Close() {
           </p>
         </div>
         <div className="actions">
-          {can(me, 'agent.run') ? (
+          {!locked && can(me, 'agent.run') ? (
             <button className="btn" disabled={!!busy} onClick={() => void act(`/close/${period}/run-agents`, 'Close agents finished. New items are in the inbox.')}>
               <Play className="icon" aria-hidden="true" /> {busy?.startsWith('Close agents') ? 'Running…' : 'Run close agents'}
             </button>
           ) : null}
-          {can(me, 'close.package') ? (
+          {!locked && can(me, 'close.package') ? (
             <button className="btn" disabled={!!busy} onClick={() => void act('/runs', 'Close package drafted. It is in the inbox for approval.', { skillKey: 'close-package', entityId: null, periodKey: period })}>
               <FileText className="icon" aria-hidden="true" /> Draft close package
             </button>
