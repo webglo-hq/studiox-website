@@ -373,7 +373,11 @@ test('16 · the CFO approves and signs the close package, then locks September',
   await expect(page.getByRole('heading', { name: 'Period locked' })).toBeVisible();
   await page.getByRole('link', { name: 'Open package' }).click();
   await expect(page.locator('main')).toContainText(/final/i);
-  // T-1: the gross margin is a share of revenue, shown once as a percentage (never "+8890.0%")
+});
+
+test('16b · T-1: the signed package shows the gross margin once, as a percentage', async () => {
+  await expect(page.getByRole('heading', { level: 1, name: /close package/ })).toBeVisible();
+  // a share of revenue, not a change and not scaled twice (it read "+8890.0%")
   await expect(page.locator('.stat').filter({ hasText: 'Gross margin' }).locator('.value')).toHaveText(/^\d{1,2}\.\d%$/);
 });
 
