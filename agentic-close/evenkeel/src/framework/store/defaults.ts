@@ -22,6 +22,10 @@ export function storeClock(): Clock {
   return clock;
 }
 
+export function currentIdGenerator(): IdGenerator {
+  return ids;
+}
+
 export function newId(): string {
   return ids.next();
 }
