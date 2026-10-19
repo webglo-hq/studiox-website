@@ -113,8 +113,12 @@ export async function runCloseAgents(app: App, p: Principal, closeId: string, op
   // The orchestrator works every entity's tasks: the right to run agents must cover every entity.
   requirePermissionOn(p, 'skill.run', null, 'run the close agents');
   if (close.status === 'closed') throw new DomainError('CONFLICT', 'This close is locked.');
-  const active = await app.read((tx) => tx.find('agent_runs', { close_id: closeId, skill_key: 'close-orchestrator', status: { in: ['queued', 'running'] } }));
-  if (active.length) return { runId: active[0]!.id, alreadyRunning: true };
+  const active = await app.read((tx) => tx.find('agent_runs', { close_id: closeId, skill_key: 'close-orchestrator', status: { in: ['queued', 'running'] } }, { orderBy: [['created_at', 'desc']] }));
+  for (const open of active) {
+    // An orchestrator whose worker died (no heartbeat) is taken over here, not reported as running until a restart.
+    if (!app.isAbandoned(open)) return { runId: open.id, alreadyRunning: true };
+    if ((await app.runtime.takeOver(open, (id) => void app.queue.enqueue(id))) === 'resumed') return { runId: open.id, alreadyRunning: true, resumed: true };
+  }
   const run = await app.runtime.start(p.tenantId, { skillKey: 'close-orchestrator', input: { closeId }, requestedBy: p.user.id, requestedByLabel: p.user.display_name, trigger: meta.channel === 'mcp' ? 'mcp' : meta.channel === 'api' ? 'api' : 'manual', closeId, mode: opts.mode });
   void app.queue.enqueue(run.id);
   return { runId: run.id, alreadyRunning: false };

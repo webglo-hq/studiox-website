@@ -120,6 +120,21 @@ interface RunState {
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'budget_exceeded']);
 
+/**
+ * Leases. A worker executing a run renews its heartbeat every HEARTBEAT_MS, whatever the run is doing; a run that
+ * is still running or queued without a heartbeat for STALE_MS has lost its worker (a crash, a kill, a lost
+ * container) and any process may take it over. A run interrupted MAX_RESUMES times is failed instead of resumed,
+ * so a run that kills its worker cannot loop.
+ */
+export const HEARTBEAT_MS = 10_000;
+export const STALE_MS = 30_000;
+export const MAX_RESUMES = 3;
+
+/** Whether `run` lost its worker: open, and no heartbeat (or, never started, no start) for staleMs. */
+export function isStale(run: Pick<Row<'agent_runs'>, 'status' | 'heartbeat_at' | 'created_at'>, now: string, staleMs = STALE_MS): boolean {
+  return (run.status === 'running' || run.status === 'queued') && Date.parse(run.heartbeat_at ?? run.created_at) <= Date.parse(now) - staleMs;
+}
+
 export class AgentRuntime<P> {
   private readonly tools: Map<string, AnyTool<P>>;
   private readonly handlers: Map<string, ProposalHandler<P>>;
@@ -259,6 +274,7 @@ export class AgentRuntime<P> {
     };
     if (resumed) await this.step(state, 'plan', 'decision', `Resumed after interruption (attempt ${run.resume_count})`, { completed_tool_calls: run.tool_calls_used }, `resume:${run.resume_count}`);
     const handle = this.handle(state);
+    const stopHeartbeat = this.heartbeat(runId);
     try {
       const summary = run.mode === 'live' && this.llm ? await this.liveLoop(state, handle) : await engine.offline(handle);
       return await this.finish(state, 'completed', summary, null);
@@ -269,16 +285,62 @@ export class AgentRuntime<P> {
       this.deps.log?.(`run ${runId} failed: ${message}`);
       await this.step(state, 'act', 'error', 'Run failed', { message }, `error:${state.seq}`).catch(() => undefined);
       return this.finish(state, 'failed', null, message);
+    } finally {
+      stopHeartbeat();
     }
   }
 
-  /** Resume runs whose worker died (no heartbeat for staleMs). */
-  async recover(staleMs = 60_000): Promise<string[]> {
-    const cutoff = new Date(Date.parse(this.deps.clock.now()) - staleMs).toISOString();
-    const stale = await this.deps.db.read((tx) => tx.find('agent_runs', { status: { in: ['running', 'queued'] } }));
-    const ids = stale.filter((r) => !r.heartbeat_at || r.heartbeat_at < cutoff).map((r) => r.id);
-    for (const id of ids) await this.execute(id);
-    return ids;
+  /** Keep the lease of a run this worker executes: renew its heartbeat until stopped (a dead worker stops renewing). */
+  private heartbeat(runId: string): () => void {
+    const timer = setInterval(() => {
+      void this.deps.db
+        .tx(async (tx) => {
+          const r = await tx.get('agent_runs', runId);
+          if (r?.status === 'running') await tx.update('agent_runs', runId, { heartbeat_at: this.deps.clock.now() });
+        })
+        .catch(() => undefined);
+    }, HEARTBEAT_MS);
+    (timer as { unref?: () => void }).unref?.();
+    return () => clearInterval(timer);
+  }
+
+  /**
+   * Runs whose worker died: open with a stale heartbeat. A child run of an open parent is left to its parent, which
+   * resumes it in place; `owned` names runs this process is executing or has queued (never stale to itself).
+   */
+  async staleRuns(staleMs = STALE_MS, owned: (runId: string) => boolean = () => false): Promise<Array<Row<'agent_runs'>>> {
+    const now = this.deps.clock.now();
+    const open = await this.deps.db.read((tx) => tx.find('agent_runs', { status: { in: ['running', 'queued'] } }, { orderBy: [['created_at', 'asc']] }));
+    const openIds = new Set(open.map((r) => r.id));
+    return open.filter((r) => isStale(r, now, staleMs) && !owned(r.id) && !(r.parent_run_id && openIds.has(r.parent_run_id)));
+  }
+
+  /**
+   * Take over a run whose worker died: resume it through `run` (inline by default, or a queue), or fail it when it
+   * was already interrupted MAX_RESUMES times. Returns what happened.
+   */
+  async takeOver(stale: Row<'agent_runs'>, run: (runId: string) => Promise<unknown> | void = (id) => this.execute(id)): Promise<'resumed' | 'failed'> {
+    if (stale.resume_count >= MAX_RESUMES) {
+      await this.deps.db.tx(async (tx) => {
+        const r = await tx.get('agent_runs', stale.id);
+        if (!r || TERMINAL.has(r.status)) return;
+        const now = this.deps.clock.now();
+        const error = `Interrupted ${r.resume_count + 1} times; stopped instead of resuming again. Check the trace, then start it again.`;
+        await tx.update('agent_runs', r.id, { status: 'failed', phase: 'done', error, finished_at: now, heartbeat_at: now });
+        await appendAudit(tx, r.tenant_id, { type: 'system', userId: null, label: 'Run recovery' }, { action: 'agent_run.failed', objectType: 'agent_run', objectId: r.id, summary: `${r.skill_key}: ${error}` }, now);
+      });
+      this.deps.log?.(`run ${stale.id} failed after ${stale.resume_count} resumes`);
+      return 'failed';
+    }
+    await run(stale.id);
+    return 'resumed';
+  }
+
+  /** Resume (or fail) every run whose worker died. Returns the ids resumed. */
+  async recover(staleMs = STALE_MS, run?: (runId: string) => Promise<unknown> | void, owned?: (runId: string) => boolean): Promise<string[]> {
+    const resumed: string[] = [];
+    for (const r of await this.staleRuns(staleMs, owned)) if ((await this.takeOver(r, run)) === 'resumed') resumed.push(r.id);
+    return resumed;
   }
 
   async cancel(runId: string, actor: Actor, reason: string): Promise<Row<'agent_runs'>> {

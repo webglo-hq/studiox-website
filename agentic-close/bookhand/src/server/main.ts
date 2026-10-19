@@ -4,9 +4,13 @@ import { verifyAuditChain } from '../audit/audit';
 import { createHttpServer } from './http';
 import { bootApp, loadConfig, openDb, ROOT } from './boot';
 
+/** How often the server looks for agent runs whose worker died, and sends queued messages. */
+const MAINTENANCE_MS = 15_000;
+
 /**
  * Bookhand server CLI.
- *   start   (default) migrate, seed the demo company on first run, recover interrupted agent runs, serve
+ *   start   (default) migrate, seed the demo company on first run, serve, and keep taking over agent runs whose
+ *           worker died (at start-up and every MAINTENANCE_MS: no second restart is ever needed)
  *   setup   migrate and seed if empty, then exit
  *   migrate apply database migrations
  *   seed    same as setup
@@ -57,8 +61,13 @@ async function main(): Promise<void> {
   if (command !== 'start') throw new Error(`unknown command "${command}"`);
 
   const { app, kernel, driver, seed } = await bootApp(cfg);
-  const resumed = await app.runtime.recover(60_000);
-  if (resumed.length) cfg.log(`resumed ${resumed.length} interrupted agent run(s)`);
+  const maintain = async () => {
+    const { resumed } = await app.maintain();
+    if (resumed.length) cfg.log(`resuming ${resumed.length} interrupted agent run(s)`);
+  };
+  await maintain();
+  const maintenance = setInterval(() => void maintain().catch((e: unknown) => cfg.log(`maintenance failed: ${e instanceof Error ? e.message : String(e)}`)), MAINTENANCE_MS);
+  maintenance.unref();
   const webRoot = join(ROOT, 'dist', 'web');
   const server = createHttpServer({ kernel, webRoot: existsSync(join(webRoot, 'index.html')) ? webRoot : null, secure: cfg.secureCookies, trustProxy: cfg.trustProxy });
   server.listen(cfg.port, cfg.host, () => {
@@ -78,6 +87,7 @@ async function main(): Promise<void> {
     cfg.log(`READY ${url}`);
   });
   const shutdown = async () => {
+    clearInterval(maintenance);
     server.close();
     await app.queue.idle().catch(() => undefined);
     await driver.close().catch(() => undefined);
