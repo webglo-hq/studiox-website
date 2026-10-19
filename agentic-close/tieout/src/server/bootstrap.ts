@@ -106,6 +106,7 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     sessionIdleMinutes: Number(env.SESSION_IDLE_MINUTES ?? 30),
     sessionAbsoluteHours: Number(env.SESSION_ABSOLUTE_HOURS ?? 12),
     demoMode: demo,
+    demoPassword: demo && !env.DEMO_PASSWORD ? DEV_DEMO_PASSWORD : null,
     oidc: env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_REDIRECT_URI ? { issuer: env.OIDC_ISSUER, clientId: env.OIDC_CLIENT_ID, redirectUri: env.OIDC_REDIRECT_URI } : null,
     version: '1.0.0',
   };

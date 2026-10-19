@@ -4,7 +4,7 @@
  */
 import type { AutonomyLevel } from '../core/agent/types';
 import { audit } from '../core/audit/audit';
-import { currentPolicyRow, updatePolicy } from '../core/skills/policy';
+import { currentPolicyRow, GENERIC_THRESHOLDS, updatePolicy } from '../core/skills/policy';
 import type { EvalCaseResult } from '../core/skills/eval-types';
 import type { PolicyRule } from '../core/skills/policy-types';
 import { forbidden, notFound, validation } from '../core/util/errors';
@@ -47,6 +47,8 @@ export async function addRule(ctx: AppContext, u: RequestUser, key: string, text
   const compiled = compileRule(String(text ?? ''), await ruleContext(ctx, u));
   if (compiled.status !== 'active') throw validation(compiled.interpretation, { compiled });
   const manifest = ctx.skills.get(key).manifest;
+  for (const k of Object.keys(compiled.thresholdChanges))
+    if (!(k in manifest.thresholds) && !(k in GENERIC_THRESHOLDS)) throw validation(`That rule changes a setting (${k}) the ${manifest.title} skill does not use.`, { compiled });
   return ctx.db.tx(u.tenantId, async (tx) => {
     const cur = await currentPolicyRow(tx, row.id, scopeEntityId);
     const rule: PolicyRule = { id: `rule-${cur.version + 1}-${cur.rules.length + 1}`, text: text.trim(), status: 'active', compiled: compiled.compiled, interpretation: compiled.interpretation, createdBy: u.actor.id, createdAt: ctx.clock.now().toISOString() };

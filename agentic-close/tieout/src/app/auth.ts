@@ -6,7 +6,7 @@
 import { resolveUserActor } from '../core/auth/actor';
 import { decryptSecret, encryptSecret, newTotpSecret, otpauthUri, verifyTotp } from '../core/auth/totp';
 import { audit } from '../core/audit/audit';
-import { DomainError, forbidden, validation } from '../core/util/errors';
+import { conflict, DomainError, forbidden, notFound, validation } from '../core/util/errors';
 import { hmacSha256Hex, sha256Hex, timingSafeEqual } from '../core/util/hash';
 import { secureToken } from '../core/util/random';
 import { addMinutes } from '../core/util/time';
@@ -123,6 +123,8 @@ export async function mfaEnroll(ctx: AppContext, a: Authenticated): Promise<{ se
   return ctx.db.tx(a.user.tenantId, async (tx) => {
     const user = await tx.get('users', a.user.actor.id);
     if (!user) throw unauthenticated();
+    // Replacing an active factor is an administrative reset, never self-service from a session.
+    if (await tx.findOne('mfa_factors', { user_id: user.id, status: 'active' })) throw conflict('Two-factor authentication is already on for this account.');
     for (const f of await tx.find('mfa_factors', { user_id: user.id, status: 'pending' })) await tx.update('mfa_factors', f.id, { status: 'revoked' });
     const secret = newTotpSecret();
     await tx.insert('mfa_factors', { user_id: user.id, type: 'totp', secret_ciphertext: await encryptSecret(secret, ctx.config.encryptionKey), status: 'pending', last_used_step: null, created_at: ctx.clock.now().toISOString(), activated_at: null });
@@ -179,6 +181,18 @@ export async function createApiToken(ctx: AppContext, u: RequestUser, name: stri
     const row = await tx.insert('api_tokens', { user_id: u.actor.id, name, token_hash: sha256Hex(token), scopes: ['read', 'agent.run'], created_at: now, last_used_at: null, expires_at: addMinutes(now, days * 24 * 60), revoked_at: null });
     await audit(tx, u.actor, ctx.clock, { action: 'auth.token.create', subjectType: 'api_token', subjectId: row.id, summary: `API token “${name}” created (expires in ${days} days)`, data: {} }, u.ip);
     return { token, id: row.id };
+  });
+}
+
+/** Revoke one of your own API tokens (immediately unusable). */
+export async function revokeApiToken(ctx: AppContext, u: RequestUser, id: string) {
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    const t = await tx.get('api_tokens', id);
+    if (!t || t.user_id !== u.actor.id) throw notFound('API token', id);
+    if (t.revoked_at) return { id, revoked: true };
+    await tx.update('api_tokens', t.id, { revoked_at: ctx.clock.now().toISOString() });
+    await audit(tx, u.actor, ctx.clock, { action: 'auth.token.revoke', subjectType: 'api_token', subjectId: t.id, summary: `API token “${t.name}” revoked`, data: {} }, u.ip);
+    return { id, revoked: true };
   });
 }
 

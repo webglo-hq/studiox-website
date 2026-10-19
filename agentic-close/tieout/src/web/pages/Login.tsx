@@ -1,0 +1,182 @@
+/** Sign-in with password, then TOTP (verify or first-time enrolment). Demo mode lists personas. */
+import { ShieldCheck } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { api, ApiError, setCsrf, type AuthOptions } from '../api';
+import { Avatar } from '../components/ui';
+import { useApp } from '../lib/app-state';
+import { ROLE_LABEL } from '../lib/format';
+
+export function Login() {
+  const { refresh, mfaPending } = useApp();
+  const [opts, setOpts] = useState<AuthOptions | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<'password' | 'mfa' | 'enroll'>(mfaPending ? 'mfa' : 'password');
+  const [code, setCode] = useState('');
+  const [enrol, setEnrol] = useState<{ secret: string; otpauth: string } | null>(null);
+  const id = useId();
+
+  useEffect(() => {
+    api<AuthOptions>('/auth/options')
+      .then(setOpts)
+      .catch(() => setOpts({ demo: false, personas: [], demoPassword: null, demoPasswordHint: null, oidc: { enabled: false, issuer: null, note: '' }, scenarioDate: null }));
+  }, []);
+
+  async function signIn(e?: React.FormEvent, as?: { email: string; password: string }) {
+    e?.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api<{ csrfToken: string; mfa: 'not_required' | 'pending' | 'enroll' }>('/auth/login', { body: as ?? { email, password } });
+      setCsrf(r.csrfToken);
+      if (r.mfa === 'pending') setStage('mfa');
+      else if (r.mfa === 'enroll') {
+        setStage('enroll');
+        setEnrol(await api<{ secret: string; otpauth: string }>('/auth/mfa/enroll', { body: {} }));
+      } else await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not sign in.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api<{ csrfToken: string }>('/auth/mfa/verify', { body: { code } });
+      setCsrf(r.csrfToken);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'That code did not work.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="login">
+      <section className="login-art" aria-label="About Tieout">
+        <div>
+          <div className="row" style={{ gap: 12 }}>
+            <span className="brand-mark" style={{ background: 'var(--accent-ink)', color: 'var(--accent)' }} aria-hidden="true">
+              t
+            </span>
+            <span className="brand-name">Tieout</span>
+          </div>
+        </div>
+        <div>
+          <h1>
+            Close the month with agents.
+            <br />
+            <em>Sign off like an accountant.</em>
+          </h1>
+          <ul style={{ marginTop: 22, paddingLeft: 18, lineHeight: 1.8, fontSize: 16, maxWidth: 520 }}>
+            <li>Agents reconcile, accrue, code and explain — every item with a why, a confidence and evidence.</li>
+            <li>You choose the autonomy, per skill. Small, certain items post themselves; everything else waits for you.</li>
+            <li>Segregation of duties, approval limits and a tamper-evident audit trail are enforced, not suggested.</li>
+          </ul>
+        </div>
+        <p style={{ fontSize: 13, opacity: 0.9 }}>Bramblewood Labs is a fictional company. All data in the demo is made up.</p>
+      </section>
+      <section className="login-form">
+        <div style={{ width: 'min(420px, 100%)' }} className="stack">
+          {stage === 'password' ? (
+            <>
+              <div>
+                <h2 style={{ fontSize: 24, fontFamily: 'var(--font-display)', fontWeight: 400 }}>Sign in</h2>
+                <p className="muted" style={{ marginTop: 4 }}>
+                  {opts?.demo ? 'Pick a person to see the close from their seat, or use the form.' : 'Use your work email.'}
+                </p>
+              </div>
+              {opts?.demo && opts.personas.length ? (
+                <div className="stack" style={{ gap: 8 }} role="group" aria-label="Demo personas">
+                  {opts.personas.map((p) => (
+                    <button key={p.email} type="button" className="persona" disabled={busy || !opts.demoPassword} onClick={() => void signIn(undefined, { email: p.email, password: opts.demoPassword ?? '' })}>
+                      <Avatar name={p.name} />
+                      <span>
+                        <span style={{ fontWeight: 600 }}>{p.name}</span>
+                        <br />
+                        <span className="muted" style={{ fontSize: 13 }}>
+                          {p.title}
+                        </span>
+                      </span>
+                      <span className="badge neutral">{ROLE_LABEL[p.role] ?? p.role}</span>
+                    </button>
+                  ))}
+                  {opts.demoPassword ? (
+                    <p className="muted" style={{ fontSize: 13 }}>
+                      Dev-only demo password for every persona: <code>{opts.demoPassword}</code>
+                    </p>
+                  ) : (
+                    <p className="muted" style={{ fontSize: 13 }}>
+                      {opts.demoPasswordHint}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void signIn(e)} noValidate>
+                <label className="field" htmlFor={`${id}-e`}>
+                  Email
+                  <input id={`${id}-e`} type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                </label>
+                <label className="field" htmlFor={`${id}-p`}>
+                  Password
+                  <input id={`${id}-p`} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                </label>
+                {error ? (
+                  <p className="error-text" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <button className="btn primary big" type="submit" disabled={busy}>
+                  {busy ? 'Signing in…' : 'Sign in'}
+                </button>
+                {opts?.oidc.enabled ? (
+                  <a className="btn" href="/api/auth/oidc/start">
+                    Sign in with single sign-on
+                  </a>
+                ) : null}
+              </form>
+            </>
+          ) : (
+            <form className="stack" style={{ gap: 12 }} onSubmit={(e) => void verify(e)}>
+              <div className="row">
+                <ShieldCheck className="icon" aria-hidden="true" />
+                <h2 style={{ fontSize: 22 }}>Two-factor authentication</h2>
+              </div>
+              {stage === 'enroll' ? (
+                <div className="callout info">
+                  <div>
+                    <p>Your role requires two-factor authentication. Add this key to an authenticator app (time-based, 6 digits), then enter the current code.</p>
+                    <p style={{ marginTop: 8 }}>
+                      <code style={{ wordBreak: 'break-all' }}>{enrol?.secret ?? '…'}</code>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="muted">Enter the 6-digit code from your authenticator app.</p>
+              )}
+              <label className="field" htmlFor={`${id}-c`}>
+                Code
+                <input id={`${id}-c`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+              </label>
+              {error ? (
+                <p className="error-text" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button className="btn primary big" type="submit" disabled={busy || code.length !== 6}>
+                Verify
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}

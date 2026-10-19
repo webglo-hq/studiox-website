@@ -36,13 +36,13 @@ export default tseslint.config(
   },
   {
     // The browser bundle must never pull in Node-only drivers.
-    files: ['src/web/**/*.{ts,tsx}', 'src/demo/**/*.ts'],
+    files: ['src/web/**/*.{ts,tsx}', 'src/demo/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [{ group: ['**/drivers/**', 'pg', '@electric-sql/pglite', 'node:*'], message: 'Node-only module in browser code.' }] }],
     },
   },
   {
-    files: ['src/web/**/*.tsx', 'src/web/**/*.ts'],
+    files: ['src/web/**/*.{ts,tsx}', 'src/demo/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',

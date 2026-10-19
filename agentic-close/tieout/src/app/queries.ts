@@ -5,11 +5,12 @@
 import { AUTONOMY_LABELS } from '../core/agent/types';
 import { verifyAuditChain } from '../core/audit/chain';
 import { MODEL_RATIONALE } from '../core/llm/pricing';
-import { currentPolicyRow } from '../core/skills/policy';
+import { currentPolicyRow, GENERIC_THRESHOLDS } from '../core/skills/policy';
 import { notFound } from '../core/util/errors';
 import { periodEnd, periodLabel } from '../core/util/time';
 import type { AuditRecord } from '../core/store/types';
 import type { DbTx, ProposalRow } from '../schema';
+import { formatWorkday, workdayOffset } from '../packs/accounting/close/workdays';
 import { ROLES } from '../packs/accounting/controls/permissions';
 import { balancesAsOf, trialBalanceRows } from '../packs/accounting/ledger/balances';
 import { consolidatedStatements, entityStatements } from '../packs/accounting/ledger/statements';
@@ -25,6 +26,12 @@ import { DECISION_PERMISSION, eligibility } from './proposals';
 
 const OPEN: ProposalRow['status'][] = ['pending_approval', 'suggested'];
 
+function workdayLabel(periodKey: string | null, businessDate: string): string | null {
+  if (!periodKey) return null;
+  const wd = workdayOffset(periodKey, businessDate);
+  return wd === null ? null : formatWorkday(wd);
+}
+
 async function names(tx: DbTx): Promise<Map<string, string>> {
   const m = new Map<string, string>();
   for (const u of await tx.find('users', {})) m.set(u.id, u.display_name);
@@ -37,6 +44,7 @@ function who(id: string | null, users: Map<string, string>): string | null {
   if (id.startsWith('agent:')) return `${id.slice(6).replace(/-/g, ' ')} agent`;
   if (id.startsWith('policy:')) return `Policy ${id.slice(7)}`;
   if (id.startsWith('system')) return 'System';
+  if (id.startsWith('connector:')) return `${id.slice(10).replace(/-/g, ' ')} connector`;
   return id;
 }
 
@@ -47,10 +55,11 @@ export async function me(ctx: AppContext, u: RequestUser, sessionToken: string |
     const entities = (await tx.find('entities', {}, { orderBy: [['sort_order', 'asc']] })).filter((e) => !u.actor.entityScope || u.actor.entityScope.includes(e.id) || e.kind === 'elimination');
     return {
       user: { id: user.id, name: user.display_name, email: user.email, title: user.title, roles: u.actor.roles, permissions: [...u.actor.permissions].sort(), approvalLimitMinor: u.actor.approvalLimitMinor, mfaEnabled: user.mfa_enabled, preferences: user.preferences },
-      tenant: { name: tenant.name, displayName: tenant.settings.displayName ?? tenant.name, demo: tenant.is_demo, businessDate: await svc.ctx.businessDate(), activeCloseKey: tenant.settings.activeCloseKey ?? null, mfaRequiredRoles: tenant.settings.mfaRequiredRoles ?? [] },
+      tenant: { name: tenant.name, displayName: tenant.settings.displayName ?? tenant.name, demo: tenant.is_demo, businessDate: await svc.ctx.businessDate(), activeCloseKey: tenant.settings.activeCloseKey ?? null, workday: workdayLabel(tenant.settings.activeCloseKey ?? null, await svc.ctx.businessDate()), mfaRequiredRoles: tenant.settings.mfaRequiredRoles ?? [] },
       entities: entities.map((e) => ({ id: e.id, code: e.code, name: e.name, currency: e.functional_currency, kind: e.kind })),
       csrfToken: sessionToken ? csrfFor(sessionToken) : null,
       liveAgents: !!ctx.llm,
+      canResetDemo: !!ctx.resetDemo && ctx.config.demoMode,
       version: ctx.config.version,
     };
   });
@@ -272,7 +281,7 @@ export async function fluxView(ctx: AppContext, u: RequestUser, entityId: string
     const r = await svc.flux.compute(entityId, periodKey);
     const props = await tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'flux_explanation' });
     const byAccount = new Map(props.map((p) => [(p.payload as { accountCode: string }).accountCode, p]));
-    return { ...r, lines: r.lines.map((l) => ({ ...l, proposal: byAccount.has(l.code) ? slim(byAccount.get(l.code)!, users) : null, explanationAuthor: l.explanation ? who(l.explanation.author_id, users) : null, explanationApprover: l.explanation?.approved_by ? who(l.explanation.approved_by, users) : null })) };
+    return { ...r, lines: r.lines.map((l) => ({ ...l, proposal: byAccount.has(l.code) ? slim(byAccount.get(l.code)!, users) : null, draftText: byAccount.has(l.code) ? String((byAccount.get(l.code)!.payload as { text?: string }).text ?? '') : null, explanationAuthor: l.explanation ? who(l.explanation.author_id, users) : null, explanationApprover: l.explanation?.approved_by ? who(l.explanation.approved_by, users) : null })) };
   });
 }
 
@@ -428,7 +437,7 @@ export async function skillDetail(ctx: AppContext, u: RequestUser, key: string) 
       evalRuns: evals.map((e) => ({ id: e.id, passed: e.passed, total: e.total, at: e.ran_at, by: who(e.ran_by, users), results: e.results })),
       policies: current.map((p) => ({ id: p.id, scopeEntityId: p.scope_entity_id, version: p.version, autonomy: p.autonomy_level, thresholds: p.thresholds, mappings: p.mappings, rules: p.rules, enabled: p.enabled })),
       history: history.map((p) => ({ version: p.version, scopeEntityId: p.scope_entity_id, autonomy: p.autonomy_level, note: p.change_note, by: who(p.changed_by, users), at: p.created_at, current: p.is_current })),
-      thresholdSpecs: s.manifest.thresholds,
+      thresholdSpecs: { ...GENERIC_THRESHOLDS, ...s.manifest.thresholds } as Record<string, { label: string; description: string; unit: 'minor' | 'pct' | 'days' | 'ratio' | 'count'; min?: number; max?: number; default?: number }>,
       ruleExamples: RULE_EXAMPLES,
       autonomyLevels: AUTONOMY_LABELS,
     };
@@ -472,7 +481,8 @@ export async function auditList(ctx: AppContext, u: RequestUser, q: { limit?: nu
     let rows = await tx.find('audit_log', where as never, { orderBy: [['seq', 'desc']], limit: Math.min(q.limit ?? 100, 500) });
     if (q.action) rows = rows.filter((r) => r.action.startsWith(q.action!));
     const total = await tx.count('audit_log', {});
-    return { total, items: rows.map((r) => ({ seq: r.seq, at: r.at, actorType: r.actor_type, actor: r.actor_label, onBehalfOf: r.on_behalf_of, action: r.action, subjectType: r.subject_type, subjectId: r.subject_id, entityId: r.entity_id, summary: r.summary, hash: r.hash, prevHash: r.prev_hash })) };
+    const users = await names(tx);
+    return { total, items: rows.map((r) => ({ seq: r.seq, at: r.at, actorType: r.actor_type, actor: r.actor_label, onBehalfOf: who(r.on_behalf_of, users), action: r.action, subjectType: r.subject_type, subjectId: r.subject_id, entityId: r.entity_id, summary: r.summary, hash: r.hash, prevHash: r.prev_hash })) };
   });
 }
 

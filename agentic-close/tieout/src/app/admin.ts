@@ -75,10 +75,15 @@ export async function setSodRule(ctx: AppContext, u: RequestUser, code: string, 
   });
 }
 
-export async function updateSettings(ctx: AppContext, u: RequestUser, patch: Pick<TenantSettings, 'mfaRequiredRoles' | 'sessionIdleMinutes' | 'sessionAbsoluteHours'>) {
+export async function updateSettings(ctx: AppContext, u: RequestUser, input: Pick<TenantSettings, 'mfaRequiredRoles' | 'sessionIdleMinutes' | 'sessionAbsoluteHours'>) {
   requirePermission(u, 'admin.settings');
-  if (patch.sessionIdleMinutes !== undefined && (patch.sessionIdleMinutes < 5 || patch.sessionIdleMinutes > 240)) throw validation('Idle timeout must be 5–240 minutes.');
-  if (patch.sessionAbsoluteHours !== undefined && (patch.sessionAbsoluteHours < 1 || patch.sessionAbsoluteHours > 24)) throw validation('Session lifetime must be 1–24 hours.');
+  // Whitelist the editable keys (the scenario clock, active period etc. are not editable here).
+  const patch: Pick<TenantSettings, 'mfaRequiredRoles' | 'sessionIdleMinutes' | 'sessionAbsoluteHours'> = {};
+  if (input.mfaRequiredRoles !== undefined) patch.mfaRequiredRoles = Array.isArray(input.mfaRequiredRoles) ? input.mfaRequiredRoles.map(String) : [];
+  if (input.sessionIdleMinutes !== undefined) patch.sessionIdleMinutes = Math.round(Number(input.sessionIdleMinutes));
+  if (input.sessionAbsoluteHours !== undefined) patch.sessionAbsoluteHours = Math.round(Number(input.sessionAbsoluteHours));
+  if (patch.sessionIdleMinutes !== undefined && !(patch.sessionIdleMinutes >= 5 && patch.sessionIdleMinutes <= 240)) throw validation('Idle timeout must be 5–240 minutes.');
+  if (patch.sessionAbsoluteHours !== undefined && !(patch.sessionAbsoluteHours >= 1 && patch.sessionAbsoluteHours <= 24)) throw validation('Session lifetime must be 1–24 hours.');
   if (patch.mfaRequiredRoles && patch.mfaRequiredRoles.some((r) => !ROLES.some((x) => x.key === r))) throw validation('Unknown role.');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const t = (await tx.get('tenants', u.tenantId))!;
@@ -94,7 +99,21 @@ export async function updateMateriality(ctx: AppContext, u: RequestUser, entityI
   return ctx.db.tx(u.tenantId, async (tx) => {
     const e = await tx.get('entities', entityId);
     if (!e) throw notFound('Entity', entityId);
-    const next = { ...e.materiality, ...m };
+    // Whitelist: only the numeric thresholds and the rationale can change (no mass assignment).
+    const patch: Partial<MaterialitySettings> = {};
+    for (const k of ['overallMinor', 'performanceMinor', 'clearlyTrivialMinor', 'fluxAbsMinor'] as const) {
+      if (m[k] === undefined) continue;
+      const v = Number(m[k]);
+      if (!Number.isSafeInteger(v) || v < 0) throw validation(`${k} must be a whole, non-negative amount in minor units.`);
+      patch[k] = v;
+    }
+    if (m.fluxPct !== undefined) {
+      const v = Number(m.fluxPct);
+      if (!(v > 0 && v <= 1)) throw validation('fluxPct must be between 0 and 1.');
+      patch.fluxPct = v;
+    }
+    if (m.rationale !== undefined) patch.rationale = String(m.rationale).slice(0, 2000);
+    const next = { ...e.materiality, ...patch };
     const check = closeOntology().check('AX-MAT-01', { clearlyTrivialMinor: next.clearlyTrivialMinor, performanceMinor: next.performanceMinor, overallMinor: next.overallMinor });
     if (!check.passed) throw validation(`AX-MAT-01: ${check.messages.join('; ')}`);
     await tx.update('entities', e.id, { materiality: next });

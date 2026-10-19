@@ -25,6 +25,8 @@ export interface AppConfig {
   sessionAbsoluteHours: number;
   /** demo affordances: persona picker, reset; never enable for real tenants */
   demoMode: boolean;
+  /** the documented dev-only demo password, shown on the sign-in page only when it is the default */
+  demoPassword: string | null;
   oidc: { issuer: string; clientId: string; redirectUri: string } | null;
   version: string;
 }

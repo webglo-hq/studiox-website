@@ -60,6 +60,7 @@ export async function updatePolicy(tx: DbTx, actor: Actor, clock: Clock, skillId
   const thresholds = { ...cur.thresholds, ...(change.thresholds ?? {}) };
   for (const [k, v] of Object.entries(change.thresholds ?? {})) {
     const spec = manifest.thresholds[k];
+    if (!spec && !(k in GENERIC_THRESHOLDS)) throw validation(`This skill has no threshold called ${k}.`);
     if (!Number.isFinite(v)) throw validation(`Threshold ${k} must be a number`);
     if (spec?.min !== undefined && v < spec.min) throw validation(`${spec.label} must be at least ${spec.min}`);
     if (spec?.max !== undefined && v > spec.max) throw validation(`${spec.label} must be at most ${spec.max}`);

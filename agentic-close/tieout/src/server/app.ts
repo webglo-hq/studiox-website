@@ -11,7 +11,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { DomainError, fromStorageError, validation } from '../core/util/errors';
 import { PEOPLE, SCENARIO } from '../packs/accounting/seed/company';
 import * as admin from '../app/admin';
-import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcStatus, type Authenticated } from '../app/auth';
+import { authenticate, authenticateApiToken, changePassword, checkCsrf, createApiToken, csrfFor, login, logout, mfaEnroll, mfaVerify, oidcStatus, revokeApiToken, type Authenticated } from '../app/auth';
 import * as close from '../app/close';
 import type { AppContext, RequestUser } from '../app/context';
 import { importFile } from '../app/imports';
@@ -90,7 +90,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
 
   app.get('/api/auth/options', async (c) => {
     const personas = ctx.config.demoMode ? PEOPLE.map((p) => ({ email: p.email, name: p.name, title: p.title, role: p.roles[0] })) : [];
-    return c.json({ demo: ctx.config.demoMode, personas, demoPasswordHint: ctx.config.demoMode ? 'Every fictional demo user shares the documented dev-only password.' : null, oidc: oidcStatus(ctx), scenarioDate: ctx.config.demoMode ? SCENARIO.businessDate : null });
+    return c.json({ demo: ctx.config.demoMode, personas, demoPassword: ctx.config.demoMode ? ctx.config.demoPassword : null, demoPasswordHint: ctx.config.demoMode ? 'Every fictional demo user shares one documented, dev-only password.' : null, oidc: oidcStatus(ctx), scenarioDate: ctx.config.demoMode ? SCENARIO.businessDate : null });
   });
 
   app.post('/api/auth/login', async (c) => {
@@ -156,6 +156,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     const b = await body<{ name: string; days?: number }>(c, 2000);
     return c.json(await createApiToken(ctx, U(c), b.name, Math.min(Math.max(Number(b.days ?? 30), 1), 90)));
   });
+  app.delete('/api/auth/tokens/:id', async (c) => c.json(await revokeApiToken(ctx, U(c), c.req.param('id'))));
 
   // ------------------------------------------------------------------ home & close
   const period = (c: Context<Env>) => {
