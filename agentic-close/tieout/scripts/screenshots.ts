@@ -83,6 +83,20 @@ try {
   await shot(desk, '12-audit-chain-verified');
   await go(desk, '/reports');
   await shot(desk, '13-consolidated-statements');
+  // an entry the agents posted within the Controller's policy: lines, proposal, approval route
+  await go(desk, '/journal?source=agent&status=posted');
+  await desk.locator('table.data a.row-link').first().click();
+  await desk.locator('main h1').first().waitFor();
+  await shot(desk, '18-journal-entry-detail');
+  await go(desk, '/imports');
+  await desk.getByRole('heading', { level: 1 }).first().waitFor();
+  await shot(desk, '19-imports-provenance');
+  await desk.getByRole('button', { name: 'Sign out' }).click();
+  await desk.getByRole('button', { name: /Avery Stone/ }).click();
+  await desk.locator('.topbar').getByText('Avery Stone').waitFor();
+  await go(desk, '/admin');
+  await desk.getByRole('row', { name: /Sam Rivera/ }).waitFor();
+  await shot(desk, '20-admin-people-roles');
   await desk.close();
 
   // ---------------------------------------------------------------- desktop, dark

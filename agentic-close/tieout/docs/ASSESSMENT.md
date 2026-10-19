@@ -132,7 +132,7 @@ suite.
 | Requirement | Evidence |
 |---|---|
 | README, assessment, decision log | `README.md`, this file, `docs/decisions.md`, `docs/architecture.md` |
-| Screenshots | 17 PNGs (1440×900 and 390×844), 3.3 MB, `npm run screenshots` |
+| Screenshots | 20 PNGs (1440×900 light and dark, 390×844 phone), 3.85 MB, `npm run screenshots` |
 | Zero-install static demo | `npm run build:demo` → `dist/demo/index.html`, Playwright-verified from disk, in a sandboxed iframe, offline, on a phone |
 | MCP server | `src/mcp` (11 tools over the HTTP API, read-only + agent-run tokens), `tests/integration/mcp.test.ts` |
 | Landing page | `site/index.html`, `npm run build:site` → `dist/site/` with the demo inside |
