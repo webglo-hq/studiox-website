@@ -348,9 +348,8 @@ code,
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-5);
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  backdrop-filter: saturate(1.2) blur(10px);
-  -webkit-backdrop-filter: saturate(1.2) blur(10px);
+  /* Opaque: content scrolling underneath must never show through the breadcrumb. */
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 .topbar .menu-btn {
@@ -649,6 +648,12 @@ code,
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* Stand-alone term links get a 24 px target (WCAG 2.5.8). */
+.stat .label .term {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 .stat .value {
   font-family: var(--font-display);

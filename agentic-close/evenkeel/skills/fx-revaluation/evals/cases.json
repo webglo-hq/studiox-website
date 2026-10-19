@@ -12,6 +12,34 @@
           "entryType": "fx_revaluation"
         }
       }
+    },
+    {
+      "id": "closing-rate-amount",
+      "description": "The USD balance due to Kitewell US is remeasured at the September closing rate: a £206.21 change.",
+      "expect": {
+        "kind": "journal_entry",
+        "amount": 20621,
+        "payload": {
+          "entryType": "fx_revaluation"
+        }
+      }
+    },
+    {
+      "id": "one-entry-per-balance",
+      "description": "One revaluation per monetary balance in a foreign currency; nothing duplicated.",
+      "expect": {
+        "kind": "journal_entry",
+        "payload": {
+          "entryType": "fx_revaluation"
+        },
+        "min": 1,
+        "max": 1
+      }
+    },
+    {
+      "id": "explained",
+      "description": "Each revaluation states the balance, the booked and closing amounts and the standard (ASC 830-20).",
+      "check": "every_proposal_explained"
     }
   ]
 }

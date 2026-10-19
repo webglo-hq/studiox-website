@@ -55,7 +55,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // An empty value (KEY= in .env) means "not set".
   const e = Env.parse(Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v.trim() !== '')));
   const production = e.NODE_ENV === 'production';
-  const helper = e.DEMO_LOGIN_HELPER === '1' || e.DEMO_LOGIN_HELPER === 'true';
+  // On by default outside production (and only ever for requests from this machine); 0 turns it off.
+  const helper = e.DEMO_LOGIN_HELPER === undefined ? !production : e.DEMO_LOGIN_HELPER === '1' || e.DEMO_LOGIN_HELPER === 'true';
   if (production && helper) throw new Error('DEMO_LOGIN_HELPER must be off in production.');
   if (production && e.DEMO_PASSWORD) throw new Error('DEMO_PASSWORD must not be set in production.');
   if (production && e.RATE_LIMIT_SCALE !== 1) throw new Error('RATE_LIMIT_SCALE must be 1 in production.');

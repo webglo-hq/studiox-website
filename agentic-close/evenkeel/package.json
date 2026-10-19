@@ -10,6 +10,7 @@
   },
   "scripts": {
     "setup": "npm install && npm run build:web",
+    "quickstart": "npm install --no-audit --no-fund && npm run build:web && npm start",
     "start": "node --env-file-if-exists=.env --import tsx src/server/main.ts",
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "node --env-file-if-exists=.env --watch --import tsx src/server/main.ts",
@@ -21,6 +22,8 @@
     "build:web": "vite build --config vite.config.ts --mode server",
     "build:demo": "vite build --config vite.config.ts --mode demo",
     "preview:demo": "node scripts/static-serve.mjs dist-demo",
+    "build:site": "npm run build:demo && node --import tsx scripts/build-site.ts",
+    "preview:site": "node scripts/static-serve.mjs dist-site",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run --project unit",
@@ -50,6 +53,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "1.56.1",
     "@types/node": "^22.20.5",

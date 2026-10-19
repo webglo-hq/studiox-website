@@ -162,7 +162,8 @@ function Roles() {
     <Query q={q} rows={8}>
       {(r) => (
         <Card title="Permissions by role" hint={<Term id="ek:Role">Roles</Term>} flush>
-          <div className="table-wrap">
+          {/* Wide matrix: focusable so keyboard users can scroll it (WCAG 2.1.1). */}
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Permissions by role">
             <table className="table">
               <thead>
                 <tr>

@@ -306,7 +306,7 @@ function GraphView({ modules }: { modules: string[] }) {
             <div className="graph-wrap">
               <svg
                 viewBox={`0 0 ${W} ${H}`}
-                role="img"
+                role="group"
                 aria-label={`Graph of ${filtered.nodes.length} ontology classes and ${filtered.edges.length} relations`}
                 onWheel={(e) => {
                   const k = Math.max(0.4, Math.min(4, view.k * (e.deltaY < 0 ? 1.12 : 0.89)));

@@ -21,6 +21,19 @@
           "entryType": "depreciation"
         }
       }
+    },
+    {
+      "id": "register-once",
+      "description": "The laptops are registered once, not once per card transaction.",
+      "expect": {
+        "kind": "fixed_asset",
+        "max": 1
+      }
+    },
+    {
+      "id": "explained",
+      "description": "Each proposal explains the asset, method and life it applies.",
+      "check": "every_proposal_explained"
     }
   ]
 }

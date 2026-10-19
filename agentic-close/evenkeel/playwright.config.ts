@@ -32,7 +32,7 @@ export default defineConfig({
   },
   projects: [
     // The static-demo checks (single file, workers, sandboxing) only make sense for the demo build.
-    ...(only !== 'demo' ? [{ name: 'server', testIgnore: /static-demo\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${serverPort}` } }] : []),
+    ...(only !== 'demo' ? [{ name: 'server', testIgnore: /(static-demo|accessibility)\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${serverPort}` } }] : []),
     ...(only !== 'server' ? [{ name: 'demo', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${demoPort}` } }] : []),
   ],
   webServer: [

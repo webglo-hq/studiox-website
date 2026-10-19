@@ -147,7 +147,7 @@ The brief was built without anyone to ask, so every judgment call is recorded he
 
 **D-20 · Demo passwords are generated, never committed.**
 - *Default:* Each demo user gets a 16-character password from a CSPRNG, printed once and written to `.data/demo-credentials.json` (mode 0600, gitignored).
-- *Options:* `DEMO_PASSWORD` sets one documented development password instead. `DEMO_LOGIN_HELPER` lists the accounts on the sign-in page, but only for requests from the same machine.
+- *Options:* `DEMO_PASSWORD` sets one documented development password instead. The sign-in page lists the accounts (with their generated passwords) only for requests from the same machine, outside production; `DEMO_LOGIN_HELPER=0` turns that off.
 - *Production:* both are refused when `NODE_ENV=production`.
 - *Zero-install demo:* It has no passwords at all. You pick a role, because nothing leaves the browser.
 
@@ -195,5 +195,36 @@ The brief was built without anyone to ask, so every judgment call is recorded he
 **D-28 · A Dockerfile and compose file, not verified by a container build here.**
 - *Context:* The build machine has no Docker daemon.
 - *Files:* The Dockerfile is a multi-stage Node 22 image that runs as a non-root user with a health check. The compose file adds PostgreSQL 16.
-- *Verified:* What they do — migrate, seed and serve — is exercised by the integration and e2e suites.
+- *Verified:* What they do — migrate, seed and serve — is exercised by the integration and e2e suites. The runtime stage was also reproduced without Docker: a production-only install with `--ignore-scripts` (which is why `tsx` is a runtime dependency), `NODE_ENV=production`, first-run seed, health check and security headers.
 - *Not verified:* The container build itself.
+
+## Interfaces beyond the web app
+
+**D-29 · The MCP server talks to the HTTP API with personal tokens, not to the database.**
+- *Context:* The brief asks for an MCP server with the same RBAC and audit as the app. PGlite cannot be opened by two processes, and a second enforcement point would drift.
+- *Decision:* The MCP process (stdio, JSON-RPC 2.0) calls the server's typed API with `Authorization: Bearer ekt_…`. The server runs the same method with the token owner's roles, entity scope, SoD rules and rate limits.
+- *Audit:* Events name the channel: "Casey Morgan via API token "Claude Desktop"".
+- *Tokens:*
+  - created in the web app and shown once; only their SHA-256 is stored;
+  - read-only or allowed to make changes; they expire and can be revoked;
+  - failed attempts draw on a per-IP budget.
+- *Limits:* Tokens can never manage tokens, users, roles, settings or skill policies; those need an interactive session with two-step sign-in.
+- *Tool schemas:* Generated from the API's zod inputs, so they cannot drift from validation.
+
+## Quality
+
+**D-30 · Accessibility is checked by machine on every screen.**
+- *Decision:* An axe-core run in the Playwright suite checks WCAG 2.2 A/AA rules on 50 views: every screen and the main detail views and dialogs, in light and dark, plus phone width.
+- *Results:* The first run found three issues: small stand-alone term links, a graph marked as an image while containing links, and a scrollable matrix that could not be focused. All three were fixed.
+- *Limits:* Automated checks cover only part of WCAG; there was no manual screen-reader pass (see ASSESSMENT).
+
+**D-31 · Eval cases are tightened when a skill has fewer than three.**
+- *Context:* A thin eval set proves little. Four skills had one or two cases.
+- *Decision:* Every skill now has at least three; a unit test enforces the minimum. Cases assert both behaviour (amounts, kinds, gates) and absence (the orchestrator never proposes postings itself).
+
+## Go to market
+
+**D-32 · A static marketing site and ad creatives in the product's own brand.**
+- *Site:* `npm run build:site` produces the landing page (how it works, controls, skills, pricing, FAQ) and the single-file demo as `demo.html`. It uses self-hosted fonts and makes no external requests; the build fails if the page references any.
+- *Pricing:* By entity, not by seat, so that adding reviewers and auditors is free; this matches the control story. The prices are illustrative and marked as such.
+- *Ads:* Three 1080×1350 creatives (`npm run ads`) lead with control rather than speed (see research §2). Their numbers come from the demo scenario.
