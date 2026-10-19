@@ -13,6 +13,26 @@ export interface ImportError {
   message: string;
 }
 
+/**
+ * A file refused as a whole. Imports fail closed: a line whose amount, date or sign cannot be
+ * read, a balance that does not tie, or a record the importer cannot place stops the import, and
+ * nothing from the file is stored. Every problem found is listed, with its line.
+ */
+export class ImportRejected extends Error {
+  readonly problems: ImportError[];
+  constructor(problems: ImportError[]) {
+    const shown = problems.slice(0, 5).map((p) => (p.line === null ? p.message : `line ${p.line}: ${p.message}`));
+    super(`${shown.join('; ')}${problems.length > 5 ? ` (and ${problems.length - 5} more)` : ''}`);
+    this.name = 'ImportRejected';
+    this.problems = problems;
+  }
+}
+
+/** Throw when any line had a problem: no partial imports. */
+export function failClosed(problems: ImportError[]): void {
+  if (problems.length) throw new ImportRejected(problems);
+}
+
 /** Normalised bank statement, independent of BAI2 / CAMT.053 / OFX / CSV. */
 export interface ParsedBankStatement {
   format: ConnectorFormat;
@@ -94,7 +114,8 @@ export interface ParsedPayrollRun {
 }
 
 export type ParseResult =
-  | { kind: 'bank_statement'; statement: ParsedBankStatement }
+  /** one statement per account (a camt.053 message or a BAI2 file may carry several) */
+  | { kind: 'bank_statement'; statements: ParsedBankStatement[] }
   | { kind: 'card_transactions'; transactions: ParsedCardTransaction[]; warnings: ImportError[] }
   | { kind: 'gl_lines'; lines: ParsedGlLine[]; warnings: ImportError[] }
   | { kind: 'bills'; bills: ParsedBill[]; warnings: ImportError[] }
