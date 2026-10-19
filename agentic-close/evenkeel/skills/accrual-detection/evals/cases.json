@@ -1,0 +1,106 @@
+{
+  "skill": "accrual-detection",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "grni-northgate",
+      "description": "Northgate PO-1042 was received but not invoiced: accrue $24,000 (GRNI).",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Northgate",
+        "amount": 2400000,
+        "payload": {
+          "entryType": "accrual"
+        }
+      }
+    },
+    {
+      "id": "subsequent-bill-helio",
+      "description": "Helio bill HU-2226 arrived after month end; accrue the September share ($3,180.40).",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Helio",
+        "amount": 318040
+      }
+    },
+    {
+      "id": "recurring-nimbus",
+      "description": "Nimbus Cloud bills every month and has not billed September yet.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Nimbus"
+      }
+    },
+    {
+      "id": "recurring-signal-ads",
+      "description": "Signal Ads Network is a recurring vendor with no September bill.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Signal Ads"
+      }
+    },
+    {
+      "id": "recurring-brightpath",
+      "description": "Brightpath Legal is a recurring vendor with no September bill.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Brightpath"
+      }
+    },
+    {
+      "id": "recurring-corelink",
+      "description": "Corelink Telecom is a recurring vendor with no September bill.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Corelink"
+      }
+    },
+    {
+      "id": "recurring-uk-ledger-co",
+      "description": "The UK accountants (Ledger & Co) have not billed September.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Ledger & Co"
+      }
+    },
+    {
+      "id": "recurring-uk-kingsway",
+      "description": "Kingsway Telecom (UK) has not billed September.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Kingsway"
+      }
+    },
+    {
+      "id": "payroll-accrual",
+      "description": "Wages earned after the last September pay period are accrued.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "payroll earned"
+      }
+    },
+    {
+      "id": "no-gridline-accrual",
+      "description": "Gridline was prepaid annually: no accrual is proposed (it is amortised instead).",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Gridline",
+        "absent": true
+      }
+    },
+    {
+      "id": "material-held",
+      "description": "The payroll accrual is above performance materiality and waits for a controller.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "payroll earned",
+        "notAutoPosted": true
+      }
+    },
+    {
+      "id": "accruals-reverse",
+      "description": "Every accrual reverses automatically on the first day of the next month.",
+      "check": "accruals_auto_reverse"
+    }
+  ]
+}

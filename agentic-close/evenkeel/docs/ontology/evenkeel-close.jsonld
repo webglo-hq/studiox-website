@@ -1,0 +1,5490 @@
+{
+  "@context": {
+    "ek": "https://evenkeel.example/ontology/close#",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "sh": "http://www.w3.org/ns/shacl#",
+    "dcterms": "http://purl.org/dc/terms/",
+    "schema": "https://schema.org/",
+    "cite": "https://evenkeel.example/ontology/close/cite#",
+    "rea": "https://example.org/rea#",
+    "xbrlGl": "http://www.xbrl.org/int/gl/cor/2016-12-01#",
+    "usGaap": "http://fasb.org/us-gaap/2025#",
+    "fibo": "https://spec.edmcouncil.org/fibo/ontology/",
+    "coso": "https://example.org/coso2013#",
+    "asc": "https://asc.fasb.org/",
+    "auditing": "https://pcaobus.org/oversight/standards/auditing-standards#",
+    "iso": "https://www.iso.org/standard/"
+  },
+  "@graph": [
+    {
+      "@id": "https://evenkeel.example/ontology/close",
+      "@type": "owl:Ontology",
+      "dcterms:title": "Evenkeel Financial Close Ontology",
+      "dcterms:description": "A formal, executable ontology of the month-end close grounded in REA, double-entry axioms, XBRL US-GAAP / XBRL GL, FIBO, COSO 2013 / SOX 404, audit assertions, ASC 340/360/606/810/830/842 and materiality. Shapes type every agent tool and proposal; axioms validate data and proposals.",
+      "owl:versionInfo": "1.3.0"
+    },
+    {
+      "@id": "ek:Thing",
+      "@type": "owl:Class",
+      "rdfs:label": "Close concept",
+      "rdfs:subClassOf": [],
+      "skos:definition": "Root of the Evenkeel close ontology.",
+      "skos:scopeNote": "Gives every concept a common root so tools and screens can treat them uniformly.",
+      "skos:example": "A journal entry, a reconciliation and a vendor are all close concepts.",
+      "rdfs:comment": "Anything the close platform knows about.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "foundation",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:EconomicResource",
+      "@type": "owl:Class",
+      "rdfs:label": "Economic resource",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A thing of economic value that is scarce and under the control of the enterprise (REA Resource).",
+      "skos:scopeNote": "Assets in the ledger are measurements of resources; reconciliations prove the resource really exists.",
+      "skos:example": "The balance held in the operating bank account.",
+      "rdfs:comment": "Something valuable the company controls, like cash or equipment.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "rea:EconomicResource",
+        "fibo:fnd/acc/aeq/Asset"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        },
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:EconomicEvent",
+      "@type": "owl:Class",
+      "rdfs:label": "Economic event",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A phenomenon that increases or decreases economic resources (REA Event); journal entries are its accounting record.",
+      "skos:scopeNote": "Every entry should trace back to a real event; that is the existence/occurrence assertion.",
+      "skos:example": "Paying a vendor invoice, receiving a customer payment.",
+      "rdfs:comment": "Something that happened that changed what the company owns or owes.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "rea:EconomicEvent",
+        "xbrlGl:gl-cor:entryHeader"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:EconomicAgent",
+      "@type": "owl:Class",
+      "rdfs:label": "Economic agent",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A person or organisation participating in economic events (REA Agent): internal agents (employees) and external agents (vendors, customers).",
+      "skos:scopeNote": "Controls such as segregation of duties are rules about which agents may participate in which events.",
+      "skos:example": "The AP clerk who entered a bill; the vendor who issued it.",
+      "rdfs:comment": "Who took part: an employee, a vendor, a customer.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "rea:EconomicAgent",
+        "fibo:fnd/aap/agt/AutonomousAgent"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:Commitment",
+      "@type": "owl:Class",
+      "rdfs:label": "Commitment",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "An agreement to execute an economic event in the future (extended REA).",
+      "skos:scopeNote": "Commitments fulfilled before period end but not yet billed create accruals.",
+      "skos:example": "A purchase order for consulting services delivered in September but invoiced in October.",
+      "rdfs:comment": "A promise to do something later, like a purchase order.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "rea:Commitment",
+        "fibo:fnd/agr/ctr/Contract"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:geerts-mccarthy2002"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:InternalAgent",
+      "@type": "owl:Class",
+      "rdfs:label": "Internal agent",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicAgent"
+        }
+      ],
+      "skos:definition": "An agent acting on behalf of the reporting entity: a user, or a software agent acting under a user’s delegated authority.",
+      "skos:scopeNote": "Determines permissions, approvals and accountability.",
+      "skos:example": "Sam, Staff Accountant; the bank-reconciliation agent run that Sam started.",
+      "rdfs:comment": "Someone (or an AI agent) working for the company.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        },
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:ExternalAgent",
+      "@type": "owl:Class",
+      "rdfs:label": "External agent",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicAgent"
+        }
+      ],
+      "skos:definition": "A counterparty outside the reporting entity.",
+      "skos:scopeNote": "Text from external agents (memos, invoices) is untrusted data, never instructions.",
+      "skos:example": "Corelink Telecom (vendor).",
+      "rdfs:comment": "Someone outside the company: a vendor, customer or bank.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        }
+      ],
+      "ek:module": "foundation"
+    },
+    {
+      "@id": "ek:LegalEntity",
+      "@type": "owl:Class",
+      "rdfs:label": "Legal entity",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A legally distinct organisation that keeps its own books in a functional currency.",
+      "skos:scopeNote": "Periods, ledgers, reconciliations and sign-offs are all per entity.",
+      "skos:example": "Kitewell Labs, Inc. (US, USD) and Kitewell Labs Ltd (UK, GBP).",
+      "rdfs:comment": "One company in the group, with its own set of books.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "fibo:be/le/lp/LegalPerson",
+        "xbrlGl:gl-cor:entityInformation"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:fibo"
+        },
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:LegalEntityShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": {
+        "@id": "ek:LegalEntity"
+      },
+      "sh:property": [
+        {
+          "sh:path": {
+            "@id": "ek:functionalCurrency"
+          },
+          "sh:name": "functional currency",
+          "sh:description": "Currency of the primary economic environment (ASC 830).",
+          "sh:class": {
+            "@id": "ek:Currency"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        }
+      ]
+    },
+    {
+      "@id": "ek:EliminationEntity",
+      "@type": "owl:Class",
+      "rdfs:label": "Elimination entity",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LegalEntity"
+        }
+      ],
+      "skos:definition": "A bookkeeping-only entity that holds consolidation eliminations; it is not a legal person.",
+      "skos:scopeNote": "Keeps eliminations out of the subsidiaries’ own books.",
+      "skos:example": "CONSOL — eliminates the US receivable against the UK payable.",
+      "rdfs:comment": "A scratch ledger where intercompany amounts are cancelled out for group reporting.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:ConsolidationGroup",
+      "@type": "owl:Class",
+      "rdfs:label": "Consolidation group",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A parent and its controlled subsidiaries reported as a single economic entity.",
+      "skos:scopeNote": "Consolidated statements require translation and elimination before they are true.",
+      "skos:example": "Kitewell Labs consolidated (US + UK + eliminations).",
+      "rdfs:comment": "The whole group, reported as if it were one company.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:Currency",
+      "@type": "owl:Class",
+      "rdfs:label": "Currency",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A medium of exchange identified by an ISO 4217 code, with a number of minor units.",
+      "skos:scopeNote": "Amounts are only comparable after conversion to the same currency.",
+      "skos:example": "USD (2 minor units).",
+      "rdfs:comment": "Money type, like US dollars or British pounds.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "fibo:fnd/acc/cur/Currency"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:fibo"
+        }
+      ],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:Dimension",
+      "@type": "owl:Class",
+      "rdfs:label": "Dimension",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "An analytical attribute tagged on journal lines independently of the account (segment).",
+      "skos:scopeNote": "Budgets, flux analysis and management reporting slice by dimensions.",
+      "skos:example": "Department = Engineering.",
+      "rdfs:comment": "An extra label on a transaction, like which department spent the money.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:measurable / gl-bus:..."
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "structure",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:Department",
+      "@type": "owl:Class",
+      "rdfs:label": "Department",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Dimension"
+        }
+      ],
+      "skos:definition": "Organisational unit responsible for costs (cost centre).",
+      "skos:scopeNote": "Operating expenses must carry a department so budget owners can be held accountable.",
+      "skos:example": "Marketing.",
+      "rdfs:comment": "The team the spend belongs to.",
+      "skos:altLabel": [
+        "cost center",
+        "cost centre"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:Location",
+      "@type": "owl:Class",
+      "rdfs:label": "Location",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Dimension"
+        }
+      ],
+      "skos:definition": "Geographic or site attribute of a transaction.",
+      "skos:scopeNote": "Drives tax, rent allocation and regional reporting.",
+      "skos:example": "London office.",
+      "rdfs:comment": "Where the spend happened or which office it belongs to.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:ClassDimension",
+      "@type": "owl:Class",
+      "rdfs:label": "Class",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Dimension"
+        }
+      ],
+      "skos:definition": "Business-line or product classification of a transaction.",
+      "skos:scopeNote": "Supports product-line profitability.",
+      "skos:example": "Platform vs. Services.",
+      "rdfs:comment": "Which product or business line the money relates to.",
+      "skos:altLabel": [
+        "business line",
+        "segment"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:Project",
+      "@type": "owl:Class",
+      "rdfs:label": "Project",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Dimension"
+        }
+      ],
+      "skos:definition": "Time-bound initiative to which costs are accumulated, possibly for capitalisation.",
+      "skos:scopeNote": "Project tags support capitalisation of internal-use software (ASC 350-40) and grant tracking.",
+      "skos:example": "Project Atlas (new data platform).",
+      "rdfs:comment": "A specific initiative the cost belongs to.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:FiscalPeriod",
+      "@type": "owl:Class",
+      "rdfs:label": "Fiscal period",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A contiguous accounting interval (here a calendar month) with a lifecycle state that governs posting.",
+      "skos:scopeNote": "Entries must land in the right period (cutoff), and closed periods must not change.",
+      "skos:example": "September 2026 for Kitewell Labs, Inc.",
+      "rdfs:comment": "The month being closed.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:periodCoveredStart / periodCoveredEnd"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        },
+        {
+          "@id": "cite:isa315"
+        }
+      ],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:FiscalPeriodShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": {
+        "@id": "ek:FiscalPeriod"
+      },
+      "sh:property": [
+        {
+          "sh:path": {
+            "@id": "ek:periodKey"
+          },
+          "sh:name": "period key",
+          "sh:description": "Year and month, YYYY-MM.",
+          "sh:datatype": {
+            "@id": "xsd:gYearMonth"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        },
+        {
+          "sh:path": {
+            "@id": "ek:state"
+          },
+          "sh:name": "state",
+          "sh:description": "Open, soft-close or hard-close.",
+          "sh:class": {
+            "@id": "ek:PeriodState"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        }
+      ]
+    },
+    {
+      "@id": "ek:PeriodState",
+      "@type": "owl:Class",
+      "rdfs:label": "Period state",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Lifecycle state of a fiscal period: Open → SoftClose → HardClose (locked).",
+      "skos:scopeNote": "Locking a period is the final control that keeps reported numbers stable.",
+      "skos:example": "August 2026 is hard-closed; September 2026 is open.",
+      "rdfs:comment": "Whether the month can still be changed.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "structure"
+    },
+    {
+      "@id": "ek:Workday",
+      "@type": "owl:Class",
+      "rdfs:label": "Close workday",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A business day counted relative to period end: WD0 is the last business day of the period, WD+n the n-th business day after it, WD−n before it.",
+      "skos:scopeNote": "Close calendars are planned in workdays so they stay comparable month to month.",
+      "skos:example": "For September 2026, WD+1 is Thu Oct 1 and WD+5 is Wed Oct 7.",
+      "rdfs:comment": "Close deadlines are counted in business days: WD+3 means the third working day after month end.",
+      "skos:altLabel": [
+        "WD",
+        "business day",
+        "close day"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "close"
+    },
+    {
+      "@id": "ek:Account",
+      "@type": "owl:Class",
+      "rdfs:label": "Account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A named, coded classification in the general ledger that accumulates debits and credits for one element of the financial statements.",
+      "skos:scopeNote": "Coding a transaction to the right account is the classification assertion.",
+      "skos:example": "6200 Software Subscriptions.",
+      "rdfs:comment": "A bucket in the books where similar amounts are collected.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:account",
+        "fibo:fnd/acc/aeq/..."
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:xbrl-gl"
+        },
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:AccountShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": {
+        "@id": "ek:Account"
+      },
+      "sh:property": [
+        {
+          "sh:path": {
+            "@id": "ek:code"
+          },
+          "sh:name": "code",
+          "sh:description": "Account number.",
+          "sh:datatype": {
+            "@id": "xsd:string"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        },
+        {
+          "sh:path": {
+            "@id": "ek:normalBalance"
+          },
+          "sh:name": "normal balance",
+          "sh:description": "Side that increases the account.",
+          "sh:class": {
+            "@id": "ek:NormalBalance"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        },
+        {
+          "sh:path": {
+            "@id": "ek:rollsUpTo"
+          },
+          "sh:name": "statement line",
+          "sh:description": "Line item the account presents in.",
+          "sh:class": {
+            "@id": "ek:FinancialStatementLineItem"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        }
+      ]
+    },
+    {
+      "@id": "ek:NormalBalance",
+      "@type": "owl:Class",
+      "rdfs:label": "Normal balance",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "The side (debit or credit) that increases an account; assets and expenses are debit-normal, liabilities, equity and revenue credit-normal.",
+      "skos:scopeNote": "A balance on the \"wrong\" side (e.g. a debit balance in accounts payable) is a red flag such as a duplicate payment.",
+      "skos:example": "Accounts payable is credit-normal.",
+      "rdfs:comment": "Which side makes the account go up.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:debitCreditCode"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:AssetAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Asset account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Account measuring probable future economic benefits controlled by the entity (CON 6). Debit-normal.",
+      "skos:scopeNote": "Asset balances must be substantiated by reconciliations each close (existence).",
+      "skos:example": "1000 Cash – Operating.",
+      "rdfs:comment": "Something the company owns or is owed.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:LiabilityAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Liability account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Account measuring present obligations to transfer economic benefits (CON 6). Credit-normal.",
+      "skos:scopeNote": "Liabilities are most at risk of being understated (completeness), e.g. unrecorded bills.",
+      "skos:example": "2000 Accounts Payable.",
+      "rdfs:comment": "Something the company owes.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:EquityAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Equity account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Residual interest in assets after deducting liabilities (CON 6). Credit-normal.",
+      "skos:scopeNote": "Equity movements outside of earnings need special approval.",
+      "skos:example": "3200 Retained Earnings.",
+      "rdfs:comment": "What belongs to the owners.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:RevenueAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Revenue account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Account measuring inflows from delivering goods or services (ASC 606). Credit-normal.",
+      "skos:scopeNote": "Revenue is a presumed fraud risk; manual revenue entries get extra scrutiny.",
+      "skos:example": "4000 Subscription Revenue.",
+      "rdfs:comment": "Money earned from customers.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        },
+        {
+          "@id": "cite:asc606"
+        },
+        {
+          "@id": "cite:pcaob-as2401"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:ExpenseAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Expense account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Account measuring outflows or using up of assets in delivering goods or services (CON 6). Debit-normal.",
+      "skos:scopeNote": "Expenses drive flux analysis and budget accountability.",
+      "skos:example": "6400 Marketing & Advertising.",
+      "rdfs:comment": "Money spent to run the business.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:ContraAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Contra account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Account carried opposite to the normal balance of its parent class to present a net amount.",
+      "skos:scopeNote": "Prevents false \"wrong-side balance\" alarms and presents assets at net book value.",
+      "skos:example": "1590 Accumulated Depreciation (credit balance under assets).",
+      "rdfs:comment": "An account that reduces another one, like accumulated depreciation.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:CashAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Cash account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:AssetAccount"
+        }
+      ],
+      "skos:definition": "Account for demand deposits and cash equivalents; reconciled to bank statements.",
+      "skos:scopeNote": "Cash is reconciled first; it anchors most other reconciliations.",
+      "skos:example": "1000 Cash – Operating (First Meridian Bank).",
+      "rdfs:comment": "Money in the bank.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:CashAndCashEquivalentsAtCarryingValue"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:ReceivableAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Receivable account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:AssetAccount"
+        }
+      ],
+      "skos:definition": "Amounts due from customers or others; the AR control account is backed by the AR subledger.",
+      "skos:scopeNote": "AR must tie to the AR subledger and be collectible (valuation).",
+      "skos:example": "1100 Accounts Receivable.",
+      "rdfs:comment": "Money customers owe the company.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:AccountsReceivableNetCurrent"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:PrepaidAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Prepaid expense account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:AssetAccount"
+        }
+      ],
+      "skos:definition": "Payments for goods or services to be received in future periods, deferred and amortised (ASC 340-10).",
+      "skos:scopeNote": "Without amortisation, expenses are understated and assets overstated.",
+      "skos:example": "1220 Prepaid Insurance.",
+      "rdfs:comment": "Money paid in advance for something you will use later.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:PrepaidExpenseCurrent",
+        "asc:340-10"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc340"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:FixedAssetAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Fixed asset account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:AssetAccount"
+        }
+      ],
+      "skos:definition": "Property, plant and equipment held for use over more than one year, recorded at cost (ASC 360).",
+      "skos:scopeNote": "Purchases above the capitalisation threshold belong here, not in expense.",
+      "skos:example": "1500 Computer Equipment.",
+      "rdfs:comment": "Long-lived equipment like laptops and furniture.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:PropertyPlantAndEquipmentGross",
+        "asc:360-10"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:AccumulatedDepreciationAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Accumulated depreciation account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ContraAccount"
+        },
+        {
+          "@id": "ek:AssetAccount"
+        }
+      ],
+      "skos:definition": "Contra-asset accumulating depreciation charged on fixed assets. Credit balance.",
+      "skos:scopeNote": "Net book value = cost − accumulated depreciation.",
+      "skos:example": "1590 Accumulated Depreciation.",
+      "rdfs:comment": "How much of the equipment’s value has been used up so far.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:IntercompanyAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Intercompany account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "Due-to / due-from or intercompany revenue/expense account recording transactions between entities of the same group; eliminated on consolidation.",
+      "skos:scopeNote": "Both sides must agree, then be eliminated, or consolidated numbers are inflated.",
+      "skos:example": "1300 Due from Kitewell UK / 2400 Due to Kitewell US.",
+      "rdfs:comment": "Money one group company owes another.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:DueFromAffiliateCurrent / DueToAffiliateCurrent"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:PayableAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Payable account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LiabilityAccount"
+        }
+      ],
+      "skos:definition": "Amounts owed to vendors for goods and services received and invoiced; the AP control account is backed by the AP subledger.",
+      "skos:scopeNote": "Must tie to the AP aging; a debit balance by vendor signals overpayment.",
+      "skos:example": "2000 Accounts Payable.",
+      "rdfs:comment": "Bills the company owes.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:AccountsPayableCurrent"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:AccruedLiabilityAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Accrued liability account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LiabilityAccount"
+        }
+      ],
+      "skos:definition": "Obligations for goods or services received but not yet invoiced or paid.",
+      "skos:scopeNote": "Accruals make expenses land in the month they happened (cutoff, completeness).",
+      "skos:example": "2100 Accrued Liabilities.",
+      "rdfs:comment": "Costs you owe for but have not been billed for yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:AccruedLiabilitiesCurrent"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        },
+        {
+          "@id": "cite:con6"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:CardPayableAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Card payable account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LiabilityAccount"
+        }
+      ],
+      "skos:definition": "Balance owed on corporate cards, backed by the card subledger.",
+      "skos:scopeNote": "Ties to the card statement each month.",
+      "skos:example": "2200 Corporate Card Payable.",
+      "rdfs:comment": "What the company owes on its corporate cards.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:DeferredRevenueAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Deferred revenue (contract liability)",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LiabilityAccount"
+        }
+      ],
+      "skos:definition": "Consideration received or due before performance obligations are satisfied (ASC 606 contract liability).",
+      "skos:scopeNote": "Recognising it too early overstates revenue.",
+      "skos:example": "2300 Deferred Revenue — annual plans billed upfront.",
+      "rdfs:comment": "Money collected for service you have not delivered yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:ContractWithCustomerLiabilityCurrent",
+        "asc:606-10-45"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc606"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:PayrollLiabilityAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Payroll liability account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:LiabilityAccount"
+        }
+      ],
+      "skos:definition": "Wages, withholdings and employer taxes owed but not yet remitted.",
+      "skos:scopeNote": "Payroll accruals keep labour cost in the right month.",
+      "skos:example": "2110 Accrued Payroll.",
+      "rdfs:comment": "Salaries and payroll taxes owed but not yet paid.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:EmployeeRelatedLiabilitiesCurrent"
+      ],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:RetainedEarningsAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Retained earnings",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EquityAccount"
+        }
+      ],
+      "skos:definition": "Cumulative net income retained in the business; income statement accounts close into it at year end.",
+      "skos:scopeNote": "Links the income statement to the balance sheet.",
+      "skos:example": "3200 Retained Earnings.",
+      "rdfs:comment": "All past profits kept in the business.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:RetainedEarningsAccumulatedDeficit"
+      ],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:CtaAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Cumulative translation adjustment",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EquityAccount"
+        }
+      ],
+      "skos:definition": "Component of other comprehensive income arising from translating a foreign subsidiary’s statements into the reporting currency (ASC 830-30).",
+      "skos:scopeNote": "Keeps the translated balance sheet in balance without hitting profit.",
+      "skos:example": "3300 CTA (OCI).",
+      "rdfs:comment": "The \"plug\" from converting a foreign subsidiary’s books into dollars.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:AccumulatedOtherComprehensiveIncomeLossForeignCurrencyTranslationAdjustmentNetOfTax",
+        "asc:830-30"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:FxGainLossAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "FX gain/loss account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExpenseAccount"
+        }
+      ],
+      "skos:definition": "Income statement account for transaction gains and losses from remeasuring monetary items (ASC 830-20).",
+      "skos:scopeNote": "Revaluation entries post here each month.",
+      "skos:example": "7000 FX Gain/Loss.",
+      "rdfs:comment": "Profit or loss caused by exchange-rate moves.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:ForeignCurrencyTransactionGainLossBeforeTax",
+        "asc:830-20"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:ControlAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Control account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Account"
+        }
+      ],
+      "skos:definition": "GL account whose balance is the summary of a subledger; detailed postings belong in the subledger.",
+      "skos:scopeNote": "Manual entries straight to a control account break the tie-out to the subledger.",
+      "skos:example": "2000 Accounts Payable is controlled by the AP subledger.",
+      "rdfs:comment": "A ledger account that should always equal the total of a detailed list (like all open vendor bills).",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:FinancialStatement",
+      "@type": "owl:Class",
+      "rdfs:label": "Financial statement",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A structured presentation of financial position or performance (balance sheet, income statement, cash flows, equity).",
+      "skos:scopeNote": "The close exists to make these right.",
+      "skos:example": "Balance sheet as of September 30, 2026.",
+      "rdfs:comment": "The reports the close produces.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "statements"
+    },
+    {
+      "@id": "ek:FinancialStatementLineItem",
+      "@type": "owl:Class",
+      "rdfs:label": "Statement line item",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A presentation line on a financial statement to which accounts roll up; aligned with an XBRL US-GAAP element.",
+      "skos:scopeNote": "Bridges internal accounts to standard external reporting.",
+      "skos:example": "Accounts payable, current (us-gaap:AccountsPayableCurrent).",
+      "rdfs:comment": "A line on the balance sheet or income statement.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "statements"
+    },
+    {
+      "@id": "ek:TrialBalance",
+      "@type": "owl:Class",
+      "rdfs:label": "Trial balance",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Listing of every account balance at a date; total debits equal total credits when the ledger is in balance.",
+      "skos:scopeNote": "First proof that the books are arithmetically sound.",
+      "skos:example": "Trial balance of Kitewell Labs, Inc. at 2026-09-30.",
+      "rdfs:comment": "A list of all account balances that must add up to zero.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        }
+      ],
+      "ek:module": "statements"
+    },
+    {
+      "@id": "ek:JournalEntry",
+      "@type": "owl:Class",
+      "rdfs:label": "Journal entry",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "A dated, balanced set of debit and credit lines recording an economic event in one entity and period. Posted entries are immutable; corrections are made by reversing entries.",
+      "skos:scopeNote": "Everything in the financial statements is the sum of journal entries.",
+      "skos:example": "Dr 6700 Insurance 3,000.00 / Cr 1220 Prepaid Insurance 3,000.00 — September amortisation.",
+      "rdfs:comment": "A record that moves money between accounts; debits must equal credits.",
+      "skos:altLabel": [
+        "JE",
+        "entry",
+        "posting"
+      ],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:entryHeader",
+        "rea:EconomicEvent (accounting artifact)"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        },
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:JournalEntryShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": {
+        "@id": "ek:JournalEntry"
+      },
+      "sh:property": [
+        {
+          "sh:path": {
+            "@id": "ek:entryDate"
+          },
+          "sh:name": "entry date",
+          "sh:description": "Accounting date.",
+          "sh:datatype": {
+            "@id": "xsd:date"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        },
+        {
+          "sh:path": {
+            "@id": "ek:entryType"
+          },
+          "sh:name": "entry type",
+          "sh:description": "Standard, accrual, reversing…",
+          "sh:class": {
+            "@id": "ek:EntryType"
+          },
+          "sh:minCount": 1,
+          "sh:maxCount": 1
+        },
+        {
+          "sh:path": {
+            "@id": "ek:hasLine"
+          },
+          "sh:name": "lines",
+          "sh:description": "Debit and credit lines.",
+          "sh:class": {
+            "@id": "ek:JournalLine"
+          },
+          "sh:minCount": 1
+        }
+      ]
+    },
+    {
+      "@id": "ek:JournalLine",
+      "@type": "owl:Class",
+      "rdfs:label": "Journal line",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "One debit or credit to one account, with dimensions and optional transaction-currency amount.",
+      "skos:scopeNote": "Lines carry the account and department that reports are built from.",
+      "skos:example": "Dr 6400 Marketing & Advertising, Department = Marketing, 95,000.00.",
+      "rdfs:comment": "One row of a journal entry.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:entryDetail"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:EntryType",
+      "@type": "owl:Class",
+      "rdfs:label": "Entry type",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Classification of a journal entry by purpose: standard, adjusting, accrual, reversing, recurring, reclass, elimination, FX revaluation, depreciation, amortisation.",
+      "skos:scopeNote": "Entry type decides who may post it, whether it auto-reverses, and when it is allowed in a soft-closed period.",
+      "skos:example": "Accrual (reverses on the first day of next month).",
+      "rdfs:comment": "What kind of entry it is.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:ReversingEntry",
+      "@type": "owl:Class",
+      "rdfs:label": "Reversing entry",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:JournalEntry"
+        }
+      ],
+      "skos:definition": "An entry that mirrors a posted entry with debits and credits swapped, cancelling its effect; the only permitted way to correct a posted entry.",
+      "skos:scopeNote": "Keeps a complete audit trail — nothing posted is ever edited or deleted.",
+      "skos:example": "Reversal of the August legal accrual on September 1.",
+      "rdfs:comment": "An undo entry: same amounts, opposite sides.",
+      "skos:altLabel": [
+        "reversal",
+        "undo"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:RecurringEntry",
+      "@type": "owl:Class",
+      "rdfs:label": "Recurring entry",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:JournalEntry"
+        }
+      ],
+      "skos:definition": "Entry generated each period from a template or schedule (rent, amortisation, depreciation).",
+      "skos:scopeNote": "Missing recurring entries are a classic close error.",
+      "skos:example": "Monthly rent.",
+      "rdfs:comment": "An entry that repeats every month.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "ledger"
+    },
+    {
+      "@id": "ek:EliminationEntry",
+      "@type": "owl:Class",
+      "rdfs:label": "Elimination entry",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:JournalEntry"
+        }
+      ],
+      "skos:definition": "Consolidation-only entry removing intercompany balances and transactions (ASC 810-10-45).",
+      "skos:scopeNote": "Without it, consolidated revenue and receivables are overstated.",
+      "skos:example": "Dr 2400 Due to US / Cr 1300 Due from UK in the CONSOL entity.",
+      "rdfs:comment": "An entry that cancels money the group owes itself.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "intercompany"
+    },
+    {
+      "@id": "ek:SourceDocument",
+      "@type": "owl:Class",
+      "rdfs:label": "Source document",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Original evidence of an economic event (statement, invoice, receipt, file) with a content hash for provenance.",
+      "skos:scopeNote": "Auditors trace every number back to a source document (existence, accuracy).",
+      "skos:example": "first-meridian-2026-09.bai2 (sha256 …).",
+      "rdfs:comment": "The original file a transaction came from.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:documentType / documentNumber"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        },
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Subledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Subledger",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Detailed ledger of one transaction class whose total must equal its GL control account.",
+      "skos:scopeNote": "Tie-outs between subledger and GL catch missing or duplicated postings.",
+      "skos:example": "The AP subledger lists every open vendor bill.",
+      "rdfs:comment": "A detailed list (bills, invoices, bank lines) that backs up a GL account.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ],
+      "ek:module": "subledgers",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:ApSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Accounts payable subledger",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Vendors, bills and payments; open bills aggregate to the AP control account.",
+      "skos:scopeNote": "Source of unrecorded-liability and duplicate-payment tests.",
+      "skos:example": "Open bills for Sparrow Print & Signage.",
+      "rdfs:comment": "All vendor bills and what is still unpaid.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:ArSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Accounts receivable subledger",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Customers, invoices and receipts; open invoices aggregate to the AR control account.",
+      "skos:scopeNote": "AR must tie out and age reasonably.",
+      "skos:example": "Open invoices for Bluefin Logistics.",
+      "rdfs:comment": "All customer invoices and what is still owed.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:BankSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank subledger",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Bank accounts, statements and statement lines imported from bank feeds (BAI2, CAMT.053, OFX, CSV).",
+      "skos:scopeNote": "Independent third-party evidence for cash.",
+      "skos:example": "September statement of First Meridian Bank operating account.",
+      "rdfs:comment": "What the bank says happened.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:bai2"
+        },
+        {
+          "@id": "cite:iso20022-camt053"
+        },
+        {
+          "@id": "cite:ofx"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:CardSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Card subledger",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Corporate card transactions with merchant, merchant category code (MCC), cardholder and coding.",
+      "skos:scopeNote": "High volume — the main place agents save time by coding automatically.",
+      "skos:example": "A $289.00 purchase at Quillsoft by an engineer.",
+      "rdfs:comment": "Every corporate card swipe.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:FixedAssetSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Fixed asset register",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Register of capitalised assets with cost, in-service date, useful life and depreciation schedule.",
+      "skos:scopeNote": "Drives monthly depreciation and ties to the fixed asset accounts.",
+      "skos:example": "24 laptops in service, 36-month life.",
+      "rdfs:comment": "The list of equipment the company owns and how it is depreciated.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:PrepaidSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Prepaid schedule register",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Register of prepaid schedules with monthly amortisation lines.",
+      "skos:scopeNote": "Ties to prepaid accounts; missing amortisation lines are found here.",
+      "skos:example": "D&O insurance, $36,000 over 12 months.",
+      "rdfs:comment": "The list of things paid in advance and how they are spread over time.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc340"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:PayrollSubledger",
+      "@type": "owl:Class",
+      "rdfs:label": "Payroll register",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Subledger"
+        }
+      ],
+      "skos:definition": "Payroll runs with gross wages, employer taxes and benefits by department.",
+      "skos:scopeNote": "Basis for payroll entries and payroll accruals.",
+      "skos:example": "Semi-monthly payroll for Sep 1–15.",
+      "rdfs:comment": "Who got paid what, by team.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Vendor",
+      "@type": "owl:Class",
+      "rdfs:label": "Vendor",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExternalAgent"
+        }
+      ],
+      "skos:definition": "Supplier of goods or services to the entity.",
+      "skos:scopeNote": "Vendor history is the strongest signal for coding; vendor master changes are SoD-sensitive.",
+      "skos:example": "Brightpath Legal LLP.",
+      "rdfs:comment": "A company you buy from.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "xbrlGl:gl-cor:identifierReference (vendor)"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Customer",
+      "@type": "owl:Class",
+      "rdfs:label": "Customer",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExternalAgent"
+        }
+      ],
+      "skos:definition": "Party that has contracted with the entity to obtain goods or services (ASC 606).",
+      "skos:scopeNote": "Customer receipts are matched to invoices and bank deposits.",
+      "skos:example": "Bluefin Logistics.",
+      "rdfs:comment": "A company that buys from you.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc606"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Bank",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExternalAgent"
+        }
+      ],
+      "skos:definition": "Financial institution holding the entity’s deposit accounts.",
+      "skos:scopeNote": "Its statement is the independent evidence for cash.",
+      "skos:example": "First Meridian Bank.",
+      "rdfs:comment": "Where the money is kept.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:PurchaseOrder",
+      "@type": "owl:Class",
+      "rdfs:label": "Purchase order",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Commitment"
+        }
+      ],
+      "skos:definition": "Authorised commitment to buy goods or services at an agreed price; receipt without invoice creates a GRNI accrual.",
+      "skos:scopeNote": "Received-not-invoiced POs are a primary source of unrecorded liabilities.",
+      "skos:example": "PO-1042: Northgate Consulting, $24,000, delivered Sep 15–30.",
+      "rdfs:comment": "An approved order to buy something.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:geerts-mccarthy2002"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Bill",
+      "@type": "owl:Class",
+      "rdfs:label": "Vendor bill",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Vendor invoice recognising a liability for goods or services received.",
+      "skos:scopeNote": "Service period on the bill decides which month the cost belongs to (cutoff).",
+      "skos:example": "Brightpath Legal invoice #BL-2208, August services.",
+      "rdfs:comment": "An invoice you received.",
+      "skos:altLabel": [
+        "invoice (payable)",
+        "AP invoice"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:VendorPayment",
+      "@type": "owl:Class",
+      "rdfs:label": "Vendor payment",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Disbursement settling one or more bills (ACH, wire, check, card).",
+      "skos:scopeNote": "Two payments for the same bill is a duplicate payment.",
+      "skos:example": "ACH to Sparrow Print & Signage, $6,480.00.",
+      "rdfs:comment": "Money paid to a vendor.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:mccarthy1982"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Invoice",
+      "@type": "owl:Class",
+      "rdfs:label": "Customer invoice",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Billing to a customer establishing a receivable; may create deferred revenue when billed in advance.",
+      "skos:scopeNote": "Billing ≠ revenue; ASC 606 recognises revenue as service is delivered.",
+      "skos:example": "Annual plan invoice to Bluefin Logistics.",
+      "rdfs:comment": "A bill you sent a customer.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc606"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:CustomerReceipt",
+      "@type": "owl:Class",
+      "rdfs:label": "Customer receipt",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Cash received from a customer applied to invoices.",
+      "skos:scopeNote": "Receipts recorded on the last day often reach the bank next month (deposit in transit).",
+      "skos:example": "Bluefin Logistics paid $42,180.00 on Sep 30.",
+      "rdfs:comment": "A customer payment that came in.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:BankAccount",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank account",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicResource"
+        }
+      ],
+      "skos:definition": "Deposit account at a bank, linked to one GL cash account.",
+      "skos:scopeNote": "Each one gets its own bank reconciliation every month.",
+      "skos:example": "First Meridian Operating ••4821.",
+      "rdfs:comment": "A bank account.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:BankStatement",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank statement",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:SourceDocument"
+        }
+      ],
+      "skos:definition": "Bank-issued statement with opening and closing balances and transactions for a date range.",
+      "skos:scopeNote": "Its closing balance is what the GL cash balance must reconcile to.",
+      "skos:example": "September 2026 statement, closing balance $2,184,330.12.",
+      "rdfs:comment": "The bank’s monthly report.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:bai2"
+        },
+        {
+          "@id": "cite:iso20022-camt053"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:BankTransaction",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank transaction",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "One statement line (credit or debit) with value date, amount, type code and free-text description.",
+      "skos:scopeNote": "Each must match a ledger entry or become a reconciling item. Its description is untrusted text.",
+      "skos:example": "ACH DEBIT CORELINK TEL 0923 −4,212.50.",
+      "rdfs:comment": "One line on the bank statement.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:bai2"
+        },
+        {
+          "@id": "cite:iso20022-camt053"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:CardTransaction",
+      "@type": "owl:Class",
+      "rdfs:label": "Card transaction",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Corporate card purchase with merchant, MCC, cardholder, amount, receipt and coding.",
+      "skos:scopeNote": "Agents code these to an account and department.",
+      "skos:example": "Kestrel Computers, MCC 5732, $8,697.00 (3 laptops).",
+      "rdfs:comment": "One corporate card purchase.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:FixedAsset",
+      "@type": "owl:Class",
+      "rdfs:label": "Fixed asset",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicResource"
+        }
+      ],
+      "skos:definition": "Tangible asset held for use for more than one period, capitalised at cost and depreciated over its useful life (ASC 360).",
+      "skos:scopeNote": "Expensing it immediately misstates both assets and profit.",
+      "skos:example": "Laptop, $2,899.00, 36-month life.",
+      "rdfs:comment": "Equipment that lasts years and is expensed gradually.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        }
+      ],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:PayrollRun",
+      "@type": "owl:Class",
+      "rdfs:label": "Payroll run",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "One pay cycle’s wages, employer taxes and benefits.",
+      "skos:scopeNote": "Days worked after the last payday need a payroll accrual.",
+      "skos:example": "Payroll for Sep 16–30, paid Oct 5.",
+      "rdfs:comment": "One payday.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "subledgers"
+    },
+    {
+      "@id": "ek:Budget",
+      "@type": "owl:Class",
+      "rdfs:label": "Budget",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Approved plan of amounts by account, dimension and period.",
+      "skos:scopeNote": "Budget-vs-actual variance is a core management review.",
+      "skos:example": "FY2026 operating budget.",
+      "rdfs:comment": "What the company planned to spend and earn.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:Forecast",
+      "@type": "owl:Class",
+      "rdfs:label": "Forecast",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Budget"
+        }
+      ],
+      "skos:definition": "Updated expectation of future amounts, typically re-run quarterly.",
+      "skos:scopeNote": "Used for forward-looking variance.",
+      "skos:example": "Q3 reforecast.",
+      "rdfs:comment": "The latest best guess, updated during the year.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:Reconciliation",
+      "@type": "owl:Class",
+      "rdfs:label": "Reconciliation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A control comparing a GL balance with independent evidence, explaining every difference until the unexplained difference is zero, then certified by a preparer and a reviewer.",
+      "skos:scopeNote": "Primary evidence for the existence, completeness and accuracy of balance sheet accounts.",
+      "skos:example": "September bank reconciliation for 1000 Cash – Operating.",
+      "rdfs:comment": "Proving an account balance is right by comparing it to something independent.",
+      "skos:altLabel": [
+        "rec",
+        "account reconciliation",
+        "balance sheet reconciliation"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:pcaob-as2201"
+        },
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ],
+      "ek:module": "reconciliation",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:BankReconciliation",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank reconciliation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Reconciliation"
+        }
+      ],
+      "skos:definition": "Reconciles the bank statement closing balance with the GL cash balance via matches and reconciling items.",
+      "skos:scopeNote": "Catches missing entries, bank fees, errors and fraud.",
+      "skos:example": "Statement $2,184,330.12 + deposits in transit − outstanding checks = GL.",
+      "rdfs:comment": "Checking the books against the bank statement.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:SubledgerTieOut",
+      "@type": "owl:Class",
+      "rdfs:label": "Subledger tie-out",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Reconciliation"
+        }
+      ],
+      "skos:definition": "Reconciles a subledger total (e.g. AP aging) with its GL control account.",
+      "skos:scopeNote": "Detects postings made around the subledger.",
+      "skos:example": "AP aging $418,220.50 vs GL 2000 $419,470.50 → $1,250 difference.",
+      "rdfs:comment": "Checking the detailed list adds up to the ledger account.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:IntercompanyReconciliation",
+      "@type": "owl:Class",
+      "rdfs:label": "Intercompany reconciliation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Reconciliation"
+        }
+      ],
+      "skos:definition": "Reconciles due-to/due-from and intercompany P&L between counterparties in a common currency.",
+      "skos:scopeNote": "Mismatches block clean eliminations.",
+      "skos:example": "US Due from UK $128,400 vs UK Due to US £…",
+      "rdfs:comment": "Checking two group companies agree on what they owe each other.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "intercompany"
+    },
+    {
+      "@id": "ek:BalanceSheetSubstantiation",
+      "@type": "owl:Class",
+      "rdfs:label": "Balance substantiation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Reconciliation"
+        }
+      ],
+      "skos:definition": "Reconciles a balance to a supporting schedule (prepaids, accruals, fixed assets).",
+      "skos:scopeNote": "Every balance sheet account needs support each close.",
+      "skos:example": "Prepaid schedule total = 1220 balance.",
+      "rdfs:comment": "Showing the schedule that backs up a balance.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:Match",
+      "@type": "owl:Class",
+      "rdfs:label": "Match",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Link between items on two sides of a reconciliation whose amounts net to zero.",
+      "skos:scopeNote": "Matched items need no further work; unmatched items become reconciling items.",
+      "skos:example": "Bank −4,212.50 ↔ AP payment −4,212.50.",
+      "rdfs:comment": "Pairing a bank line with the ledger entry it corresponds to.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:ExactMatch",
+      "@type": "owl:Class",
+      "rdfs:label": "Exact match",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Match"
+        }
+      ],
+      "skos:definition": "One-to-one match with identical amount and a decisive key (date and/or reference).",
+      "skos:scopeNote": "Safe to auto-accept under policy.",
+      "skos:example": "Check #10452 cleared for the exact amount.",
+      "rdfs:comment": "Same amount, same day or same reference.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:FuzzyMatch",
+      "@type": "owl:Class",
+      "rdfs:label": "Fuzzy match",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Match"
+        }
+      ],
+      "skos:definition": "One-to-one match on amount within a date window, supported by name similarity rather than a shared key.",
+      "skos:scopeNote": "Usually right but deserves a quick look.",
+      "skos:example": "\"ACH CORELINK TEL\" ↔ \"Corelink Telecom\" two days later.",
+      "rdfs:comment": "Same amount, a few days apart, similar description.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:OneToManyMatch",
+      "@type": "owl:Class",
+      "rdfs:label": "One-to-many match",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Match"
+        }
+      ],
+      "skos:definition": "One item on side A equals the sum of several items on side B (e.g. a batched deposit).",
+      "skos:scopeNote": "Common with lockbox and batched deposits.",
+      "skos:example": "Deposit $12,500 = three receipts.",
+      "rdfs:comment": "One bank deposit that covers several customer payments.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:ManyToOneMatch",
+      "@type": "owl:Class",
+      "rdfs:label": "Many-to-one match",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Match"
+        }
+      ],
+      "skos:definition": "Several items on side A sum to one item on side B.",
+      "skos:scopeNote": "Common with split payroll funding.",
+      "skos:example": "Two payroll funding debits = one payroll entry.",
+      "rdfs:comment": "Several bank lines that together equal one ledger entry.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:ReconcilingItem",
+      "@type": "owl:Class",
+      "rdfs:label": "Reconciling item",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A documented difference between the two sides of a reconciliation, with type, age and expected resolution.",
+      "skos:scopeNote": "Old or unexplained items are risk indicators.",
+      "skos:example": "Outstanding check #10458 for $3,215.00.",
+      "rdfs:comment": "A known, explained difference.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:TimingDifference",
+      "@type": "owl:Class",
+      "rdfs:label": "Timing difference",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ReconcilingItem"
+        }
+      ],
+      "skos:definition": "Difference that reverses in a subsequent period without action (recorded in books, not yet on the statement).",
+      "skos:scopeNote": "Evidence: it clears on the next statement.",
+      "skos:example": "A deposit recorded Sep 30 that the bank shows Oct 1.",
+      "rdfs:comment": "A difference that fixes itself in a few days.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:DepositInTransit",
+      "@type": "owl:Class",
+      "rdfs:label": "Deposit in transit",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:TimingDifference"
+        }
+      ],
+      "skos:definition": "Receipt recorded in the books before period end but credited by the bank after period end.",
+      "skos:scopeNote": "Adds to the bank balance in the reconciliation.",
+      "skos:example": "Bluefin Logistics $42,180.00 on Sep 30; bank Oct 1.",
+      "rdfs:comment": "Money received at month end that the bank had not posted yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:OutstandingCheck",
+      "@type": "owl:Class",
+      "rdfs:label": "Outstanding check",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:TimingDifference"
+        }
+      ],
+      "skos:definition": "Disbursement recorded in the books that has not cleared the bank by statement date.",
+      "skos:scopeNote": "Subtracts from the bank balance; stale checks may need escheatment.",
+      "skos:example": "Check #10459, $1,980.00, issued Sep 30.",
+      "rdfs:comment": "A check that was written but not cashed yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:BankOnlyItem",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank-only item",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ReconcilingItem"
+        }
+      ],
+      "skos:definition": "Item on the statement with no book entry yet (fees, interest, direct debits); requires a journal entry.",
+      "skos:scopeNote": "Needs a journal entry before the reconciliation can be certified.",
+      "skos:example": "Monthly service fee $145.00.",
+      "rdfs:comment": "Something the bank recorded that the books do not have yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:UnexplainedDifference",
+      "@type": "owl:Class",
+      "rdfs:label": "Unexplained difference",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ReconcilingItem"
+        }
+      ],
+      "skos:definition": "A difference without an identified cause; blocks certification until investigated.",
+      "skos:scopeNote": "May indicate error or fraud; never certify around it.",
+      "skos:example": "Wire out $1,850.00 with no matching entry.",
+      "rdfs:comment": "A difference nobody can explain yet.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2401"
+        }
+      ],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:Certification",
+      "@type": "owl:Class",
+      "rdfs:label": "Certification",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Signed attestation by the preparer and then an independent reviewer that a reconciliation is complete and accurate.",
+      "skos:scopeNote": "Creates accountability and audit evidence; reviewer must differ from preparer.",
+      "skos:example": "Prepared by Sam (Oct 2), reviewed by Casey (Oct 5).",
+      "rdfs:comment": "Signing off that the reconciliation is right.",
+      "skos:altLabel": [
+        "sign-off"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:sox404"
+        }
+      ],
+      "ek:module": "reconciliation"
+    },
+    {
+      "@id": "ek:Accrual",
+      "@type": "owl:Class",
+      "rdfs:label": "Accrual",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:JournalEntry"
+        }
+      ],
+      "skos:definition": "Entry recognising an expense (or revenue) in the period incurred (earned) before the related invoice or cash; normally auto-reverses on the first day of the next period.",
+      "skos:scopeNote": "Makes each month’s profit right (cutoff, completeness).",
+      "skos:example": "Accrue September legal fees $18,400 based on prior monthly bills.",
+      "rdfs:comment": "Recording a cost this month even though the bill comes later.",
+      "skos:altLabel": [
+        "accrued expense"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        },
+        {
+          "@id": "cite:isa315"
+        }
+      ],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:GrniAccrual",
+      "@type": "owl:Class",
+      "rdfs:label": "Received-not-invoiced accrual",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Accrual"
+        }
+      ],
+      "skos:definition": "Accrual for goods or services received against a purchase order without a vendor invoice.",
+      "skos:scopeNote": "Most direct evidence of an unrecorded liability.",
+      "skos:example": "PO-1042 delivered in September, no bill → accrue $24,000.",
+      "rdfs:comment": "You got the service; the bill has not arrived.",
+      "skos:altLabel": [
+        "GRNI"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:PayrollAccrual",
+      "@type": "owl:Class",
+      "rdfs:label": "Payroll accrual",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Accrual"
+        }
+      ],
+      "skos:definition": "Accrual of wages and employer taxes earned between the last pay period end and the period end.",
+      "skos:scopeNote": "Labour is the largest expense; missing it distorts margins.",
+      "skos:example": "Sep 16–30 wages paid Oct 5.",
+      "rdfs:comment": "Salaries earned this month but paid next month.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:Deferral",
+      "@type": "owl:Class",
+      "rdfs:label": "Deferral",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Postponement of recognising a cash flow in earnings until the related service is consumed or delivered.",
+      "skos:scopeNote": "Spreads annual payments over the months they cover.",
+      "skos:example": "An annual software subscription paid in September.",
+      "rdfs:comment": "Cash happened now; the expense or revenue belongs to later months.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        },
+        {
+          "@id": "cite:asc340"
+        },
+        {
+          "@id": "cite:asc606"
+        }
+      ],
+      "ek:module": "accruals",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:PrepaidSchedule",
+      "@type": "owl:Class",
+      "rdfs:label": "Prepaid schedule",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Deferral"
+        }
+      ],
+      "skos:definition": "Schedule amortising a prepaid asset straight-line over its service period (ASC 340-10).",
+      "skos:scopeNote": "Each month needs its amortisation entry.",
+      "skos:example": "D&O insurance $36,000, Mar 2026–Feb 2027, $3,000/month.",
+      "rdfs:comment": "A plan that spreads a prepayment evenly across months.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc340"
+        }
+      ],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:DepreciationSchedule",
+      "@type": "owl:Class",
+      "rdfs:label": "Depreciation schedule",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Systematic allocation of a fixed asset’s depreciable base over its useful life (straight-line).",
+      "skos:scopeNote": "Drives the monthly depreciation entry.",
+      "skos:example": "$2,899 laptop over 36 months = $80.53/month.",
+      "rdfs:comment": "How an asset’s cost is spread over its life.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        }
+      ],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:CapitalizationPolicy",
+      "@type": "owl:Class",
+      "rdfs:label": "Capitalisation policy",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Threshold and useful-life rules deciding whether a purchase is an asset or an expense.",
+      "skos:scopeNote": "Used by agents when coding large equipment purchases.",
+      "skos:example": "Capitalise items ≥ $2,500 per unit with a life over one year.",
+      "rdfs:comment": "The rule for when a purchase is equipment rather than an expense.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        }
+      ],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:ServicePeriod",
+      "@type": "owl:Class",
+      "rdfs:label": "Service period",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Date range over which goods or services are received or delivered; governs period assignment.",
+      "skos:scopeNote": "Determines accruals, prepaids and deferred revenue.",
+      "skos:example": "Sep 1, 2026 – Aug 31, 2027 for an annual plan.",
+      "rdfs:comment": "The months a bill or contract actually covers.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "accruals"
+    },
+    {
+      "@id": "ek:FluxAnalysis",
+      "@type": "owl:Class",
+      "rdfs:label": "Flux analysis",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Analytical review comparing balances or activity across periods or against budget, with explanations for variances above thresholds.",
+      "skos:scopeNote": "Catches errors and gives management the story behind the numbers.",
+      "skos:example": "Marketing up $121k vs August — conference sponsorship.",
+      "rdfs:comment": "Asking \"why did this number change?\" for the big moves.",
+      "skos:altLabel": [
+        "variance analysis",
+        "fluctuation analysis",
+        "analytical review"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2201"
+        },
+        {
+          "@id": "cite:isa315"
+        }
+      ],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:Variance",
+      "@type": "owl:Class",
+      "rdfs:label": "Variance",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Difference between a current amount and a comparison amount (prior month, prior year, budget), absolute and relative.",
+      "skos:scopeNote": "Large unexplained variances are red flags.",
+      "skos:example": "+$121,400 (+189%) vs prior month.",
+      "rdfs:comment": "How much a number moved.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:VarianceThreshold",
+      "@type": "owl:Class",
+      "rdfs:label": "Variance threshold",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Policy deciding which variances require explanation: absolute and percentage limits, combined with AND/OR.",
+      "skos:scopeNote": "Focuses reviewers on what matters.",
+      "skos:example": "Explain if ≥ $25,000 and ≥ 10%.",
+      "rdfs:comment": "The rule for which changes need an explanation.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:VarianceDriver",
+      "@type": "owl:Class",
+      "rdfs:label": "Variance driver",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Quantified cause of a variance: volume, rate, new or lost vendor, one-time item, timing, accrual, FX, headcount, mix.",
+      "skos:scopeNote": "Driver-based explanations are testable, unlike \"business as usual\".",
+      "skos:example": "New vendor Brightstage Events: +$95,000 (one-time sponsorship).",
+      "rdfs:comment": "A specific reason a number changed, with an amount.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:ComparisonBasis",
+      "@type": "owl:Class",
+      "rdfs:label": "Comparison basis",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "What a current amount is compared with: prior month, same month prior year, or budget.",
+      "skos:scopeNote": "Each basis answers a different question: trend, seasonality, or plan.",
+      "skos:example": "September 2026 vs August 2026 (prior month).",
+      "rdfs:comment": "What we compare this month against.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:VarianceExplanation",
+      "@type": "owl:Class",
+      "rdfs:label": "Variance explanation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Narrative plus drivers explaining a variance, with coverage (share explained) and approval.",
+      "skos:scopeNote": "Required for material variances before sign-off.",
+      "skos:example": "\"Marketing rose $121k on the Summit 2026 sponsorship ($95k, one-time)…\"",
+      "rdfs:comment": "The written reason for a change, backed by numbers.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "variance"
+    },
+    {
+      "@id": "ek:IntercompanyTransaction",
+      "@type": "owl:Class",
+      "rdfs:label": "Intercompany transaction",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:EconomicEvent"
+        }
+      ],
+      "skos:definition": "Transaction between two entities of the same consolidation group, recorded by both with mirrored accounts.",
+      "skos:scopeNote": "Both sides must be booked in the same period at agreed amounts.",
+      "skos:example": "US recharges UK $3,400 for shared software licences.",
+      "rdfs:comment": "A charge from one group company to another.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "intercompany"
+    },
+    {
+      "@id": "ek:IntercompanyBalance",
+      "@type": "owl:Class",
+      "rdfs:label": "Intercompany balance",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Due-from in one entity and due-to in the counterparty, compared in the reporting currency.",
+      "skos:scopeNote": "Must agree before elimination.",
+      "skos:example": "US Due from UK vs UK Due to US.",
+      "rdfs:comment": "How much one group company owes another, as each of them sees it.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ],
+      "ek:module": "intercompany"
+    },
+    {
+      "@id": "ek:ExchangeRate",
+      "@type": "owl:Class",
+      "rdfs:label": "Exchange rate",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Price of one currency in another at a date and of a rate type (spot, average, closing, historical).",
+      "skos:scopeNote": "Wrong rate type = wrong translation.",
+      "skos:example": "GBP/USD closing rate 2026-09-30 = 1.3412.",
+      "rdfs:comment": "How many dollars one pound buys.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:RateType",
+      "@type": "owl:Class",
+      "rdfs:label": "Rate type",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Which exchange rate applies: spot (transaction date), closing (balance sheet date), average (income statement), historical (equity).",
+      "skos:scopeNote": "ASC 830 prescribes rate types for remeasurement and translation.",
+      "skos:example": "Income statement uses the monthly average rate.",
+      "rdfs:comment": "Which rate to use for which number.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:MonetaryItem",
+      "@type": "owl:Class",
+      "rdfs:label": "Monetary item",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Asset or liability fixed in units of currency (cash, receivables, payables, IC balances); remeasured at closing rates.",
+      "skos:scopeNote": "Only monetary items in a non-functional currency get revalued.",
+      "skos:example": "The UK entity’s USD-denominated payable to the US parent.",
+      "rdfs:comment": "A balance that is a fixed amount of some currency.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:Revaluation",
+      "@type": "owl:Class",
+      "rdfs:label": "FX revaluation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:JournalEntry"
+        }
+      ],
+      "skos:definition": "Remeasurement of monetary items denominated in a foreign currency into the functional currency at the closing rate, with the difference in FX gain/loss (ASC 830-20).",
+      "skos:scopeNote": "Keeps balances true and puts FX effects in profit.",
+      "skos:example": "UK revalues its USD payable at 1.3412 → FX loss £214.",
+      "rdfs:comment": "Updating foreign-currency balances to today’s rate.",
+      "skos:altLabel": [
+        "remeasurement"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:Translation",
+      "@type": "owl:Class",
+      "rdfs:label": "Translation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Conversion of a foreign entity’s functional-currency statements into the reporting currency for consolidation, with differences to CTA (ASC 830-30).",
+      "skos:scopeNote": "Needed before consolidation.",
+      "skos:example": "UK balance sheet at closing rate, P&L at average rate.",
+      "rdfs:comment": "Converting a subsidiary’s whole set of books into dollars.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ],
+      "ek:module": "fx"
+    },
+    {
+      "@id": "ek:Control",
+      "@type": "owl:Class",
+      "rdfs:label": "Internal control",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A policy or procedure that prevents or detects misstatements (COSO control activity).",
+      "skos:scopeNote": "SOX 404 requires effective controls over financial reporting.",
+      "skos:example": "Bank reconciliations reviewed monthly by the Controller.",
+      "rdfs:comment": "A check that stops mistakes or catches them.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "coso:Principle 10–12: Control Activities"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:sox404"
+        },
+        {
+          "@id": "cite:pcaob-as2201"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:PreventiveControl",
+      "@type": "owl:Class",
+      "rdfs:label": "Preventive control",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Control"
+        }
+      ],
+      "skos:definition": "Control that stops an error before it is recorded.",
+      "skos:scopeNote": "Cheaper than finding errors later.",
+      "skos:example": "Posting blocked when debits ≠ credits.",
+      "rdfs:comment": "A gate that blocks bad entries.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:DetectiveControl",
+      "@type": "owl:Class",
+      "rdfs:label": "Detective control",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Control"
+        }
+      ],
+      "skos:definition": "Control that finds errors after recording.",
+      "skos:scopeNote": "Catches what preventive controls miss.",
+      "skos:example": "Monthly journal-entry anomaly review.",
+      "rdfs:comment": "A review that catches mistakes.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:AutomatedControl",
+      "@type": "owl:Class",
+      "rdfs:label": "Automated control",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Control"
+        }
+      ],
+      "skos:definition": "Control performed by the system without human intervention, relying on IT general controls.",
+      "skos:scopeNote": "Consistent and testable once.",
+      "skos:example": "Database trigger rejecting unbalanced entries.",
+      "rdfs:comment": "A check the software does every time.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2201"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:MakerChecker",
+      "@type": "owl:Class",
+      "rdfs:label": "Maker–checker",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:PreventiveControl"
+        }
+      ],
+      "skos:definition": "Two-person rule: the person (or agent) preparing an item cannot approve it.",
+      "skos:scopeNote": "Prevents a single actor from both creating and authorising a transaction.",
+      "skos:example": "Agent drafts an accrual; a Senior Accountant approves it.",
+      "rdfs:comment": "One prepares, a different person approves.",
+      "skos:altLabel": [
+        "four-eyes",
+        "dual control"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:SegregationOfDuties",
+      "@type": "owl:Class",
+      "rdfs:label": "Segregation of duties",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:PreventiveControl"
+        }
+      ],
+      "skos:definition": "Separation of incompatible duties (authorisation, custody, recording, reconciliation) across people.",
+      "skos:scopeNote": "Reduces the risk of error and fraud going undetected.",
+      "skos:example": "Whoever edits vendor bank details cannot approve vendor payments.",
+      "rdfs:comment": "No one person controls a whole transaction from start to finish.",
+      "skos:altLabel": [
+        "SoD"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:pcaob-as2201"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:SodRule",
+      "@type": "owl:Class",
+      "rdfs:label": "SoD rule",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A configured pair of incompatible duties with severity, evaluated on every approval.",
+      "skos:scopeNote": "Makes SoD enforceable by software.",
+      "skos:example": "SOD-01 Preparer is not approver.",
+      "rdfs:comment": "A specific \"these two jobs cannot be done by the same person\" rule.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:Evidence",
+      "@type": "owl:Class",
+      "rdfs:label": "Evidence",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Information supporting an assertion or control performance: records, calculations, documents, check results.",
+      "skos:scopeNote": "An unevidenced control is, for an auditor, a control that did not happen.",
+      "skos:example": "Bank statement line + matching ledger line + rule that matched them.",
+      "rdfs:comment": "The proof attached to a decision.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:Assertion",
+      "@type": "owl:Class",
+      "rdfs:label": "Financial statement assertion",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Management’s implicit claim about a balance or transaction class: existence/occurrence, completeness, accuracy/valuation, cutoff, classification, rights & obligations, presentation & disclosure.",
+      "skos:scopeNote": "Every control and test maps to the assertions it supports.",
+      "skos:example": "Completeness of accrued liabilities.",
+      "rdfs:comment": "What we are claiming is true about a number.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        },
+        {
+          "@id": "cite:isa315"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:Materiality",
+      "@type": "owl:Class",
+      "rdfs:label": "Materiality",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Magnitude of misstatement that could influence users’ decisions; set as overall materiality, performance materiality and a clearly-trivial threshold.",
+      "skos:scopeNote": "Sets thresholds for review, autonomy and escalation.",
+      "skos:example": "Overall $300,000; performance $225,000; clearly trivial $15,000.",
+      "rdfs:comment": "How big an error has to be before it matters.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2105"
+        },
+        {
+          "@id": "cite:isa320"
+        },
+        {
+          "@id": "cite:isa450"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:AuditTrail",
+      "@type": "owl:Class",
+      "rdfs:label": "Audit trail",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Evidence"
+        }
+      ],
+      "skos:definition": "Append-only, hash-chained log of every action with actor, time, before/after state.",
+      "skos:scopeNote": "Lets auditors re-perform and trust the system.",
+      "skos:example": "Event #4182: Casey approved proposal P-77, hash 9f2c…",
+      "rdfs:comment": "A tamper-evident history of who did what and when.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        },
+        {
+          "@id": "cite:iso42001"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:Exception",
+      "@type": "owl:Class",
+      "rdfs:label": "Exception",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Issue requiring human judgment raised by a control or agent (duplicate payment, SoD break, unexplained item, anomaly).",
+      "skos:scopeNote": "Agents surface judgment calls instead of guessing.",
+      "skos:example": "Duplicate payment of Sparrow invoice SP-2291.",
+      "rdfs:comment": "Something an agent found that a person needs to decide on.",
+      "skos:altLabel": [
+        "issue",
+        "flag"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:Role",
+      "@type": "owl:Class",
+      "rdfs:label": "Role",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A bundle of permissions granted to users (Staff Accountant, Controller, Auditor…).",
+      "skos:scopeNote": "RBAC plus SoD rules implement COSO control activities.",
+      "skos:example": "Controller.",
+      "rdfs:comment": "A job function that decides what someone can do.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "controls"
+    },
+    {
+      "@id": "ek:CloseCycle",
+      "@type": "owl:Class",
+      "rdfs:label": "Close cycle",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "The set of tasks, reconciliations, analyses and sign-offs that take a period from open to locked.",
+      "skos:scopeNote": "The unit of work the whole team and the agents coordinate around.",
+      "skos:example": "September 2026 close (target WD+5).",
+      "rdfs:comment": "Everything that has to happen to finish the month.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "close"
+    },
+    {
+      "@id": "ek:CloseTask",
+      "@type": "owl:Class",
+      "rdfs:label": "Close task",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A unit of close work with owner, reviewer, workday due date, dependencies, linked skill and control.",
+      "skos:scopeNote": "Dependencies decide the order agents and people can work in.",
+      "skos:example": "WD+2 — Accrue unbilled expenses (owner Sam, reviewer Priya).",
+      "rdfs:comment": "One item on the close checklist.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "close"
+    },
+    {
+      "@id": "ek:TaskDependency",
+      "@type": "owl:Class",
+      "rdfs:label": "Task dependency",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Finish-to-start relation between close tasks; must form a directed acyclic graph.",
+      "skos:scopeNote": "Flux analysis must wait for accruals, or it explains the wrong numbers.",
+      "skos:example": "Flux analysis depends on Accruals and Prepaids.",
+      "rdfs:comment": "\"Do this before that.\"",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "close"
+    },
+    {
+      "@id": "ek:ClosePackage",
+      "@type": "owl:Class",
+      "rdfs:label": "Close package",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Frozen, hashed bundle of trial balance, statements, commentary, reconciliation status and sign-offs for a period.",
+      "skos:scopeNote": "What management and auditors receive; its hash proves it was not altered.",
+      "skos:example": "September 2026 close package, sha256 …",
+      "rdfs:comment": "The finished month-end report pack.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "close"
+    },
+    {
+      "@id": "ek:SoftwareAgent",
+      "@type": "owl:Class",
+      "rdfs:label": "AI agent",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:InternalAgent"
+        }
+      ],
+      "skos:definition": "Software actor that executes a skill under delegated authority of a requesting user, bounded by the skill’s tools, permissions and autonomy.",
+      "skos:scopeNote": "Agents can prepare work; humans remain accountable for approvals.",
+      "skos:example": "Bank reconciliation agent started by Sam.",
+      "rdfs:comment": "An AI helper doing a close task on someone’s behalf.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:iso42001"
+        },
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:Skill",
+      "@type": "owl:Class",
+      "rdfs:label": "Skill",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Versioned package of instructions, resources, typed manifest (inputs, outputs, tools, permissions, controls, autonomy) and eval cases.",
+      "skos:scopeNote": "Makes agent work repeatable, reviewable and testable.",
+      "skos:example": "bank-reconciliation v1.2.0.",
+      "rdfs:comment": "A playbook an agent follows for one close task.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:agent-skills"
+        }
+      ],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:AgentRun",
+      "@type": "owl:Class",
+      "rdfs:label": "Agent run",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "One durable execution of a skill: plan → act → observe → verify → propose → approve → post → audit, with budgets and trace.",
+      "skos:scopeNote": "The trace is the evidence of how a proposal was produced.",
+      "skos:example": "Run #r-01J… bank reconciliation, 14 steps, 0 tokens (offline engine).",
+      "rdfs:comment": "One time an agent did a task, step by step.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:Proposal",
+      "@type": "owl:Class",
+      "rdfs:label": "Proposal",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "A typed change an agent wants to make (journal entry, match, explanation…) with evidence, plain-English rationale, confidence and verification results; applied only after approval or within autonomy policy.",
+      "skos:scopeNote": "Keeps humans in control of what reaches the ledger.",
+      "skos:example": "Accrue $24,000 for PO-1042 (confidence 0.92).",
+      "rdfs:comment": "Something the agent suggests, waiting for a person to approve.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:AutonomyLevel",
+      "@type": "owl:Class",
+      "rdfs:label": "Autonomy level",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "How far an agent may act without prior approval: L0 suggest, L1 draft for approval, L2 auto-post under threshold with sampled review, L3 auto with post-hoc review.",
+      "skos:scopeNote": "Controllers dial autonomy per skill as trust is earned.",
+      "skos:example": "Transaction coding at L2: auto-post under $2,500 with confidence ≥ 0.9; 10% sampled for review.",
+      "rdfs:comment": "How much the agent is allowed to do on its own.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [
+        {
+          "@id": "cite:iso42001"
+        },
+        {
+          "@id": "cite:coso2013"
+        }
+      ],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:Policy",
+      "@type": "owl:Class",
+      "rdfs:label": "Skill policy",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Versioned settings for a skill: thresholds, mappings and plain-English rules compiled to executable conditions.",
+      "skos:scopeNote": "Lets accountants tune agents without code; every change is audited.",
+      "skos:example": "\"Card spend at Quillsoft goes to 6200 Software Subscriptions, Engineering.\"",
+      "rdfs:comment": "Your team’s rules for how an agent should behave.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:CodingDecision",
+      "@type": "owl:Class",
+      "rdfs:label": "Coding decision",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:Thing"
+        }
+      ],
+      "skos:definition": "Assignment of a transaction to an account, dimensions and treatment (expense, prepaid, capitalise) with confidence and basis.",
+      "skos:scopeNote": "Bucketing drives every downstream report.",
+      "skos:example": "Quillsoft → 6200 Software, Engineering (vendor history 11/11).",
+      "rdfs:comment": "Deciding which account and team a purchase belongs to.",
+      "skos:altLabel": [
+        "bucketing",
+        "categorisation",
+        "GL coding"
+      ],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "agents"
+    },
+    {
+      "@id": "ek:OperatingExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Operating expense",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExpenseAccount"
+        }
+      ],
+      "skos:definition": "Expense incurred in normal operations, presented within operating income (R&D, S&M, G&A).",
+      "skos:scopeNote": "Operating expenses require a department for budget accountability.",
+      "skos:example": "Software, travel, rent.",
+      "rdfs:comment": "Day-to-day cost of running the business.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:OperatingExpenses"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        },
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "spend",
+      "ek:abstract": true
+    },
+    {
+      "@id": "ek:CostOfRevenue",
+      "@type": "owl:Class",
+      "rdfs:label": "Cost of revenue",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:ExpenseAccount"
+        }
+      ],
+      "skos:definition": "Costs directly attributable to delivering revenue (hosting, support).",
+      "skos:scopeNote": "Drives gross margin.",
+      "skos:example": "5000 Hosting (COGS).",
+      "rdfs:comment": "Cost of delivering the product to customers.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:CostOfRevenue"
+      ],
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-usgaap"
+        }
+      ],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:SoftwareExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Software & subscriptions",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Fees for software licences and SaaS subscriptions consumed in the period; annual prepayments are deferred (ASC 340-10).",
+      "skos:scopeNote": "Annual plans paid upfront should become prepaids, not one month’s expense.",
+      "skos:example": "Monthly design tool seats.",
+      "rdfs:comment": "Paying for apps and software tools.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:SoftwareSubscriptionsExpense (extension)"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:HostingExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Cloud hosting",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:CostOfRevenue"
+        }
+      ],
+      "skos:definition": "Usage-based infrastructure cost to run the production service.",
+      "skos:scopeNote": "Scales with usage; a common flux driver.",
+      "skos:example": "Nimbus Cloud Services monthly invoice.",
+      "rdfs:comment": "Paying for servers in the cloud.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:TravelExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Travel",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Business travel: transport, lodging and incidentals.",
+      "skos:scopeNote": "Policy-sensitive; often coded by the cardholder’s department.",
+      "skos:example": "Harborline Air ticket SFO–LHR.",
+      "rdfs:comment": "Flights, hotels, taxis for work trips.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:MealsExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Meals & entertainment",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Business meals and entertainment; partially deductible for tax.",
+      "skos:scopeNote": "Separate tracking supports tax deductibility limits.",
+      "skos:example": "Harbor Grill client dinner.",
+      "rdfs:comment": "Team lunches and client dinners.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:MarketingExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Marketing & advertising",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Demand generation: advertising, sponsorships, events and content.",
+      "skos:scopeNote": "Lumpy (events, campaigns): frequent flux driver.",
+      "skos:example": "Summit 2026 sponsorship.",
+      "rdfs:comment": "Spending to attract customers.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:MarketingAndAdvertisingExpense"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:ProfessionalFeesExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Professional fees",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Legal, audit, tax and consulting services.",
+      "skos:scopeNote": "Often billed in arrears — prime accrual candidates.",
+      "skos:example": "Brightpath Legal monthly retainer.",
+      "rdfs:comment": "Paying lawyers, auditors and consultants.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:ProfessionalFees"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:OfficeExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Office supplies",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Consumable office items below the capitalisation threshold.",
+      "skos:scopeNote": "Equipment above the threshold must not hide here.",
+      "skos:example": "Sparrow Print & Signage.",
+      "rdfs:comment": "Pens, paper, small office items.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:ComputerEquipment",
+      "@type": "owl:Class",
+      "rdfs:label": "Computer equipment",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Computing hardware; capitalised to fixed assets when unit cost exceeds the capitalisation threshold (ASC 360), otherwise expensed.",
+      "skos:scopeNote": "Expensive units are assets, not expenses.",
+      "skos:example": "3 laptops at $2,899 each → capitalise.",
+      "rdfs:comment": "Laptops and monitors.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "asc:360-10"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:TelecomExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Telecom & internet",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Phone, internet and connectivity services.",
+      "skos:scopeNote": "Recurring monthly — missing bills suggest an accrual.",
+      "skos:example": "Corelink Telecom.",
+      "rdfs:comment": "Phone and internet bills.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:RentExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Rent & facilities",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Occupancy cost; leases > 12 months are recognised under ASC 842 as right-of-use assets and lease liabilities (simplified here to straight-line lease cost).",
+      "skos:scopeNote": "Fixed and recurring; deviations are notable.",
+      "skos:example": "Atlas Workspace monthly rent.",
+      "rdfs:comment": "Office rent.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "asc:842-20"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:InsuranceExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Insurance",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Insurance premiums, usually paid annually in advance and amortised.",
+      "skos:scopeNote": "Annual premiums belong in prepaids.",
+      "skos:example": "Lumen Mutual D&O policy.",
+      "rdfs:comment": "Insurance policies.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:UtilitiesExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Utilities",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Electricity, water and similar utilities.",
+      "skos:scopeNote": "Billed in arrears — accrue when late.",
+      "skos:example": "Helio Utilities.",
+      "rdfs:comment": "Power and water bills.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:ShippingExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Shipping & postage",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Courier, freight and postage.",
+      "skos:scopeNote": "Small but frequent.",
+      "skos:example": "Parcelwise courier.",
+      "rdfs:comment": "Sending packages.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:TrainingExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Training & education",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Employee learning and certification.",
+      "skos:scopeNote": "Often budgeted per department.",
+      "skos:example": "Analytics certification course.",
+      "rdfs:comment": "Courses and training for staff.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:PayrollExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Salaries & wages",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Employee compensation, employer payroll taxes and benefits.",
+      "skos:scopeNote": "Largest cost; accrued for days worked but unpaid at month end.",
+      "skos:example": "Semi-monthly payroll.",
+      "rdfs:comment": "What the company pays its people.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:LaborAndRelatedExpense"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:BankFeesExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Bank fees",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Charges levied by banks for account services.",
+      "skos:scopeNote": "Often appear only on the statement — reconciliations create the entry.",
+      "skos:example": "Monthly service fee $145.00.",
+      "rdfs:comment": "Fees the bank charges.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:DepreciationExpense",
+      "@type": "owl:Class",
+      "rdfs:label": "Depreciation",
+      "rdfs:subClassOf": [
+        {
+          "@id": "ek:OperatingExpense"
+        }
+      ],
+      "skos:definition": "Periodic allocation of fixed asset cost (ASC 360).",
+      "skos:scopeNote": "System-generated from the asset register.",
+      "skos:example": "September depreciation.",
+      "rdfs:comment": "The monthly cost of using equipment.",
+      "skos:altLabel": [],
+      "skos:closeMatch": [
+        "usGaap:Depreciation"
+      ],
+      "dcterms:source": [],
+      "ek:module": "spend"
+    },
+    {
+      "@id": "ek:stockflow",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "changes resource",
+      "rdfs:domain": {
+        "@id": "ek:EconomicEvent"
+      },
+      "rdfs:range": {
+        "@id": "ek:EconomicResource"
+      },
+      "skos:definition": "Event increases or decreases a resource (REA stockflow)."
+    },
+    {
+      "@id": "ek:participates",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has participant",
+      "rdfs:domain": {
+        "@id": "ek:EconomicEvent"
+      },
+      "rdfs:range": {
+        "@id": "ek:EconomicAgent"
+      },
+      "skos:definition": "Agents providing and receiving in the event (REA participation)."
+    },
+    {
+      "@id": "ek:duality",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "is paired with",
+      "rdfs:domain": {
+        "@id": "ek:EconomicEvent"
+      },
+      "rdfs:range": {
+        "@id": "ek:EconomicEvent"
+      },
+      "skos:definition": "Give event paired with take event in an exchange (REA duality), e.g. bill ↔ payment."
+    },
+    {
+      "@id": "ek:fulfills",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "fulfils",
+      "rdfs:domain": {
+        "@id": "ek:EconomicEvent"
+      },
+      "rdfs:range": {
+        "@id": "ek:Commitment"
+      },
+      "skos:definition": "Event executes a commitment (e.g. bill fulfils a purchase order)."
+    },
+    {
+      "@id": "ek:belongsToEntity",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "belongs to entity",
+      "rdfs:domain": {
+        "@id": "ek:Thing"
+      },
+      "rdfs:range": {
+        "@id": "ek:LegalEntity"
+      },
+      "skos:definition": "Record is owned by one legal entity."
+    },
+    {
+      "@id": "ek:functionalCurrency",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has functional currency",
+      "rdfs:domain": {
+        "@id": "ek:LegalEntity"
+      },
+      "rdfs:range": {
+        "@id": "ek:Currency"
+      },
+      "skos:definition": "Currency of the entity’s primary economic environment (ASC 830)."
+    },
+    {
+      "@id": "ek:consolidatesInto",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "consolidates into",
+      "rdfs:domain": {
+        "@id": "ek:LegalEntity"
+      },
+      "rdfs:range": {
+        "@id": "ek:ConsolidationGroup"
+      },
+      "skos:definition": "Entity is part of a consolidation group."
+    },
+    {
+      "@id": "ek:inPeriod",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "in period",
+      "rdfs:domain": {
+        "@id": "ek:JournalEntry"
+      },
+      "rdfs:range": {
+        "@id": "ek:FiscalPeriod"
+      },
+      "skos:definition": "Accounting period the entry is recorded in (cutoff)."
+    },
+    {
+      "@id": "ek:hasState",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has state",
+      "rdfs:domain": {
+        "@id": "ek:FiscalPeriod"
+      },
+      "rdfs:range": {
+        "@id": "ek:PeriodState"
+      },
+      "skos:definition": "Current lifecycle state."
+    },
+    {
+      "@id": "ek:hasNormalBalance",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has normal balance",
+      "rdfs:domain": {
+        "@id": "ek:Account"
+      },
+      "rdfs:range": {
+        "@id": "ek:NormalBalance"
+      },
+      "skos:definition": "Side that increases the account."
+    },
+    {
+      "@id": "ek:rollsUpTo",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "presents in",
+      "rdfs:domain": {
+        "@id": "ek:Account"
+      },
+      "rdfs:range": {
+        "@id": "ek:FinancialStatementLineItem"
+      },
+      "skos:definition": "Statement line the account aggregates into (XBRL element)."
+    },
+    {
+      "@id": "ek:childOf",
+      "@type": [
+        "owl:ObjectProperty",
+        "owl:TransitiveProperty"
+      ],
+      "rdfs:label": "child of",
+      "rdfs:domain": {
+        "@id": "ek:Account"
+      },
+      "rdfs:range": {
+        "@id": "ek:Account"
+      },
+      "skos:definition": "Account hierarchy (summary accounts)."
+    },
+    {
+      "@id": "ek:conceptOf",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "measures concept",
+      "rdfs:domain": {
+        "@id": "ek:Account"
+      },
+      "rdfs:range": {
+        "@id": "ek:Thing"
+      },
+      "skos:definition": "Spend or balance concept an account measures (used for bucketing)."
+    },
+    {
+      "@id": "ek:controlledBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "controlled by",
+      "rdfs:domain": {
+        "@id": "ek:ControlAccount"
+      },
+      "rdfs:range": {
+        "@id": "ek:Subledger"
+      },
+      "skos:definition": "Subledger whose total must equal the control account."
+    },
+    {
+      "@id": "ek:hasLine",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has line",
+      "rdfs:domain": {
+        "@id": "ek:JournalEntry"
+      },
+      "rdfs:range": {
+        "@id": "ek:JournalLine"
+      },
+      "skos:definition": "Lines of the entry; Σ debits = Σ credits.",
+      "owl:inverseOf": {
+        "@id": "ek:lineOf"
+      }
+    },
+    {
+      "@id": "ek:lineOf",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "line of",
+      "rdfs:domain": {
+        "@id": "ek:JournalLine"
+      },
+      "rdfs:range": {
+        "@id": "ek:JournalEntry"
+      },
+      "skos:definition": "Entry the line belongs to.",
+      "owl:inverseOf": {
+        "@id": "ek:hasLine"
+      }
+    },
+    {
+      "@id": "ek:postsTo",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "posts to",
+      "rdfs:domain": {
+        "@id": "ek:JournalLine"
+      },
+      "rdfs:range": {
+        "@id": "ek:Account"
+      },
+      "skos:definition": "Account debited or credited."
+    },
+    {
+      "@id": "ek:taggedWith",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "tagged with",
+      "rdfs:domain": {
+        "@id": "ek:JournalLine"
+      },
+      "rdfs:range": {
+        "@id": "ek:Dimension"
+      },
+      "skos:definition": "Dimension values on the line."
+    },
+    {
+      "@id": "ek:hasEntryType",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has entry type",
+      "rdfs:domain": {
+        "@id": "ek:JournalEntry"
+      },
+      "rdfs:range": {
+        "@id": "ek:EntryType"
+      },
+      "skos:definition": "Purpose classification."
+    },
+    {
+      "@id": "ek:reverses",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "reverses",
+      "rdfs:domain": {
+        "@id": "ek:ReversingEntry"
+      },
+      "rdfs:range": {
+        "@id": "ek:JournalEntry"
+      },
+      "skos:definition": "Posted entry cancelled by this entry.",
+      "owl:inverseOf": {
+        "@id": "ek:reversedBy"
+      }
+    },
+    {
+      "@id": "ek:reversedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "reversed by",
+      "rdfs:domain": {
+        "@id": "ek:JournalEntry"
+      },
+      "rdfs:range": {
+        "@id": "ek:ReversingEntry"
+      },
+      "skos:definition": "Reversal that cancels this entry.",
+      "owl:inverseOf": {
+        "@id": "ek:reverses"
+      }
+    },
+    {
+      "@id": "ek:documentedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "documented by",
+      "rdfs:domain": {
+        "@id": "ek:Thing"
+      },
+      "rdfs:range": {
+        "@id": "ek:SourceDocument"
+      },
+      "skos:definition": "Provenance: originating document."
+    },
+    {
+      "@id": "ek:counterparty",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "counterparty entity",
+      "rdfs:domain": {
+        "@id": "ek:JournalLine"
+      },
+      "rdfs:range": {
+        "@id": "ek:LegalEntity"
+      },
+      "skos:definition": "Other group entity on an intercompany line."
+    },
+    {
+      "@id": "ek:billedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "billed by",
+      "rdfs:domain": {
+        "@id": "ek:Bill"
+      },
+      "rdfs:range": {
+        "@id": "ek:Vendor"
+      },
+      "skos:definition": "Vendor issuing the bill."
+    },
+    {
+      "@id": "ek:settles",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "settles",
+      "rdfs:domain": {
+        "@id": "ek:VendorPayment"
+      },
+      "rdfs:range": {
+        "@id": "ek:Bill"
+      },
+      "skos:definition": "Bills a payment settles (duality)."
+    },
+    {
+      "@id": "ek:appliesTo",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "applies to",
+      "rdfs:domain": {
+        "@id": "ek:CustomerReceipt"
+      },
+      "rdfs:range": {
+        "@id": "ek:Invoice"
+      },
+      "skos:definition": "Invoices a receipt settles."
+    },
+    {
+      "@id": "ek:heldAt",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "held at",
+      "rdfs:domain": {
+        "@id": "ek:BankAccount"
+      },
+      "rdfs:range": {
+        "@id": "ek:Bank"
+      },
+      "skos:definition": "Bank holding the account."
+    },
+    {
+      "@id": "ek:mapsToCash",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "maps to",
+      "rdfs:domain": {
+        "@id": "ek:BankAccount"
+      },
+      "rdfs:range": {
+        "@id": "ek:CashAccount"
+      },
+      "skos:definition": "GL cash account of the bank account."
+    },
+    {
+      "@id": "ek:coveredBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "covers service period",
+      "rdfs:domain": {
+        "@id": "ek:Bill"
+      },
+      "rdfs:range": {
+        "@id": "ek:ServicePeriod"
+      },
+      "skos:definition": "Service dates on the bill (cutoff)."
+    },
+    {
+      "@id": "ek:amortizedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "amortised by",
+      "rdfs:domain": {
+        "@id": "ek:PrepaidSchedule"
+      },
+      "rdfs:range": {
+        "@id": "ek:JournalEntry"
+      },
+      "skos:definition": "Monthly amortisation entries."
+    },
+    {
+      "@id": "ek:depreciatedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "depreciated by",
+      "rdfs:domain": {
+        "@id": "ek:FixedAsset"
+      },
+      "rdfs:range": {
+        "@id": "ek:DepreciationSchedule"
+      },
+      "skos:definition": "Schedule allocating cost."
+    },
+    {
+      "@id": "ek:reconciles",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "reconciles",
+      "rdfs:domain": {
+        "@id": "ek:Reconciliation"
+      },
+      "rdfs:range": {
+        "@id": "ek:Account"
+      },
+      "skos:definition": "GL account under reconciliation."
+    },
+    {
+      "@id": "ek:matchesItem",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "matches",
+      "rdfs:domain": {
+        "@id": "ek:Match"
+      },
+      "rdfs:range": {
+        "@id": "ek:Thing"
+      },
+      "skos:definition": "Items paired by the match (at least one on each side)."
+    },
+    {
+      "@id": "ek:hasReconcilingItem",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "has reconciling item",
+      "rdfs:domain": {
+        "@id": "ek:Reconciliation"
+      },
+      "rdfs:range": {
+        "@id": "ek:ReconcilingItem"
+      },
+      "skos:definition": "Explained differences."
+    },
+    {
+      "@id": "ek:resolvedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "resolved by",
+      "rdfs:domain": {
+        "@id": "ek:ReconcilingItem"
+      },
+      "rdfs:range": {
+        "@id": "ek:JournalEntry"
+      },
+      "skos:definition": "Entry clearing the item."
+    },
+    {
+      "@id": "ek:certifiedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "certified by",
+      "rdfs:domain": {
+        "@id": "ek:Reconciliation"
+      },
+      "rdfs:range": {
+        "@id": "ek:Certification"
+      },
+      "skos:definition": "Preparer and reviewer sign-offs."
+    },
+    {
+      "@id": "ek:explains",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "explains",
+      "rdfs:domain": {
+        "@id": "ek:VarianceExplanation"
+      },
+      "rdfs:range": {
+        "@id": "ek:Variance"
+      },
+      "skos:definition": "Variance being explained."
+    },
+    {
+      "@id": "ek:drivenBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "driven by",
+      "rdfs:domain": {
+        "@id": "ek:Variance"
+      },
+      "rdfs:range": {
+        "@id": "ek:VarianceDriver"
+      },
+      "skos:definition": "Quantified causes."
+    },
+    {
+      "@id": "ek:comparedAgainst",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "compared against",
+      "rdfs:domain": {
+        "@id": "ek:Variance"
+      },
+      "rdfs:range": {
+        "@id": "ek:Budget"
+      },
+      "skos:definition": "Budget/forecast used as comparison."
+    },
+    {
+      "@id": "ek:eliminatedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "eliminated by",
+      "rdfs:domain": {
+        "@id": "ek:IntercompanyBalance"
+      },
+      "rdfs:range": {
+        "@id": "ek:EliminationEntry"
+      },
+      "skos:definition": "Consolidation elimination."
+    },
+    {
+      "@id": "ek:measuredAt",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "measured at",
+      "rdfs:domain": {
+        "@id": "ek:ExchangeRate"
+      },
+      "rdfs:range": {
+        "@id": "ek:RateType"
+      },
+      "skos:definition": "Rate type."
+    },
+    {
+      "@id": "ek:mitigates",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "addresses assertion",
+      "rdfs:domain": {
+        "@id": "ek:Control"
+      },
+      "rdfs:range": {
+        "@id": "ek:Assertion"
+      },
+      "skos:definition": "Assertions the control supports."
+    },
+    {
+      "@id": "ek:preparedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "prepared by",
+      "rdfs:domain": {
+        "@id": "ek:Thing"
+      },
+      "rdfs:range": {
+        "@id": "ek:InternalAgent"
+      },
+      "skos:definition": "Maker."
+    },
+    {
+      "@id": "ek:approvedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "approved by",
+      "rdfs:domain": {
+        "@id": "ek:Thing"
+      },
+      "rdfs:range": {
+        "@id": "ek:InternalAgent"
+      },
+      "skos:definition": "Checker; must differ from maker."
+    },
+    {
+      "@id": "ek:evidencedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "evidenced by",
+      "rdfs:domain": {
+        "@id": "ek:Thing"
+      },
+      "rdfs:range": {
+        "@id": "ek:Evidence"
+      },
+      "skos:definition": "Supporting evidence."
+    },
+    {
+      "@id": "ek:conflictsWith",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "conflicts with",
+      "rdfs:domain": {
+        "@id": "ek:Role"
+      },
+      "rdfs:range": {
+        "@id": "ek:Role"
+      },
+      "skos:definition": "Incompatible duties (SoD)."
+    },
+    {
+      "@id": "ek:dependsOn",
+      "@type": [
+        "owl:ObjectProperty",
+        "owl:TransitiveProperty"
+      ],
+      "rdfs:label": "depends on",
+      "rdfs:domain": {
+        "@id": "ek:CloseTask"
+      },
+      "rdfs:range": {
+        "@id": "ek:CloseTask"
+      },
+      "skos:definition": "Finish-to-start dependency (acyclic)."
+    },
+    {
+      "@id": "ek:performedBySkill",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "performed by skill",
+      "rdfs:domain": {
+        "@id": "ek:CloseTask"
+      },
+      "rdfs:range": {
+        "@id": "ek:Skill"
+      },
+      "skos:definition": "Skill an agent runs for the task."
+    },
+    {
+      "@id": "ek:dueOn",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "due on",
+      "rdfs:domain": {
+        "@id": "ek:CloseTask"
+      },
+      "rdfs:range": {
+        "@id": "ek:Workday"
+      },
+      "skos:definition": "Workday offset due date."
+    },
+    {
+      "@id": "ek:partOfCycle",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "part of",
+      "rdfs:domain": {
+        "@id": "ek:CloseTask"
+      },
+      "rdfs:range": {
+        "@id": "ek:CloseCycle"
+      },
+      "skos:definition": "Close cycle."
+    },
+    {
+      "@id": "ek:executes",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "executes",
+      "rdfs:domain": {
+        "@id": "ek:AgentRun"
+      },
+      "rdfs:range": {
+        "@id": "ek:Skill"
+      },
+      "skos:definition": "Skill version run."
+    },
+    {
+      "@id": "ek:proposes",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "proposes",
+      "rdfs:domain": {
+        "@id": "ek:AgentRun"
+      },
+      "rdfs:range": {
+        "@id": "ek:Proposal"
+      },
+      "skos:definition": "Proposals produced by the run."
+    },
+    {
+      "@id": "ek:actsFor",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "acts for",
+      "rdfs:domain": {
+        "@id": "ek:SoftwareAgent"
+      },
+      "rdfs:range": {
+        "@id": "ek:InternalAgent"
+      },
+      "skos:definition": "User whose authority the agent exercises (least privilege)."
+    },
+    {
+      "@id": "ek:atAutonomy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "at autonomy",
+      "rdfs:domain": {
+        "@id": "ek:Skill"
+      },
+      "rdfs:range": {
+        "@id": "ek:AutonomyLevel"
+      },
+      "skos:definition": "Configured autonomy level."
+    },
+    {
+      "@id": "ek:governedBy",
+      "@type": "owl:ObjectProperty",
+      "rdfs:label": "governed by",
+      "rdfs:domain": {
+        "@id": "ek:Skill"
+      },
+      "rdfs:range": {
+        "@id": "ek:Policy"
+      },
+      "skos:definition": "Current policy version."
+    },
+    {
+      "@id": "ek:Debit",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:NormalBalance"
+      ],
+      "rdfs:label": "Debit",
+      "skos:definition": "Left side; increases assets and expenses."
+    },
+    {
+      "@id": "ek:Credit",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:NormalBalance"
+      ],
+      "rdfs:label": "Credit",
+      "skos:definition": "Right side; increases liabilities, equity and revenue."
+    },
+    {
+      "@id": "ek:Open",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:PeriodState"
+      ],
+      "rdfs:label": "Open",
+      "skos:definition": "All entry types may post (subject to approval).",
+      "ek:allowsPosting": true
+    },
+    {
+      "@id": "ek:SoftClose",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:PeriodState"
+      ],
+      "rdfs:label": "Soft close",
+      "skos:definition": "Subledgers closed; only adjusting-type entries by Senior Accountant or above.",
+      "ek:allowsPosting": "adjusting-only"
+    },
+    {
+      "@id": "ek:HardClose",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:PeriodState"
+      ],
+      "rdfs:label": "Hard close (locked)",
+      "skos:definition": "No postings; reopening requires CFO approval with a reason.",
+      "ek:allowsPosting": false
+    },
+    {
+      "@id": "ek:Standard",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Standard entry",
+      "skos:definition": "Ordinary transaction entry."
+    },
+    {
+      "@id": "ek:Adjusting",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Adjusting entry",
+      "skos:definition": "Top-side correction made during the close."
+    },
+    {
+      "@id": "ek:AccrualType",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Accrual entry",
+      "skos:definition": "Recognises incurred but unbilled amounts; auto-reverses next period."
+    },
+    {
+      "@id": "ek:Reversing",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Reversing entry",
+      "skos:definition": "Mirror of a posted entry; cancels it."
+    },
+    {
+      "@id": "ek:Recurring",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Recurring entry",
+      "skos:definition": "Template-generated each period."
+    },
+    {
+      "@id": "ek:Reclass",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Reclassification",
+      "skos:definition": "Moves an amount between accounts/dimensions without changing totals."
+    },
+    {
+      "@id": "ek:Elimination",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Elimination",
+      "skos:definition": "Consolidation-only intercompany elimination."
+    },
+    {
+      "@id": "ek:FxRevaluationType",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "FX revaluation",
+      "skos:definition": "Remeasures monetary items at closing rate."
+    },
+    {
+      "@id": "ek:DepreciationType",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Depreciation",
+      "skos:definition": "Fixed-asset depreciation from the register."
+    },
+    {
+      "@id": "ek:AmortizationType",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:EntryType"
+      ],
+      "rdfs:label": "Amortisation",
+      "skos:definition": "Prepaid amortisation from schedules."
+    },
+    {
+      "@id": "ek:Existence",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Existence",
+      "skos:definition": "Assets, liabilities and equity interests exist at the balance sheet date."
+    },
+    {
+      "@id": "ek:Occurrence",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Occurrence",
+      "skos:definition": "Recorded transactions and events have occurred and pertain to the entity."
+    },
+    {
+      "@id": "ek:Completeness",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Completeness",
+      "skos:definition": "All transactions and balances that should be recorded have been recorded."
+    },
+    {
+      "@id": "ek:Accuracy",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Accuracy",
+      "skos:definition": "Amounts and data have been recorded appropriately."
+    },
+    {
+      "@id": "ek:Valuation",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Valuation & allocation",
+      "skos:definition": "Balances are included at appropriate amounts and adjustments are recorded."
+    },
+    {
+      "@id": "ek:Cutoff",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Cutoff",
+      "skos:definition": "Transactions are recorded in the correct period."
+    },
+    {
+      "@id": "ek:Classification",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Classification",
+      "skos:definition": "Transactions are recorded in the proper accounts."
+    },
+    {
+      "@id": "ek:RightsAndObligations",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Rights & obligations",
+      "skos:definition": "The entity holds rights to assets and liabilities are its obligations."
+    },
+    {
+      "@id": "ek:PresentationAndDisclosure",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Assertion"
+      ],
+      "rdfs:label": "Presentation & disclosure",
+      "skos:definition": "Components are properly classified, described and disclosed."
+    },
+    {
+      "@id": "ek:OverallMateriality",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Materiality"
+      ],
+      "rdfs:label": "Overall materiality",
+      "skos:definition": "Threshold for the financial statements as a whole (e.g. 1% of revenue).",
+      "ek:basis": "revenue",
+      "ek:pct": 0.01
+    },
+    {
+      "@id": "ek:PerformanceMateriality",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Materiality"
+      ],
+      "rdfs:label": "Performance materiality",
+      "skos:definition": "Lower threshold used to reduce aggregation risk (typically 50–75% of overall).",
+      "ek:pctOfOverall": 0.75
+    },
+    {
+      "@id": "ek:ClearlyTrivial",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Materiality"
+      ],
+      "rdfs:label": "Clearly trivial",
+      "skos:definition": "Threshold below which misstatements are clearly inconsequential (typically ≤5% of overall).",
+      "ek:pctOfOverall": 0.05
+    },
+    {
+      "@id": "ek:L0",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:AutonomyLevel"
+      ],
+      "rdfs:label": "L0 — Suggest",
+      "skos:definition": "Agent suggests; a person must act."
+    },
+    {
+      "@id": "ek:L1",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:AutonomyLevel"
+      ],
+      "rdfs:label": "L1 — Draft for approval",
+      "skos:definition": "Agent drafts; every item needs approval before posting."
+    },
+    {
+      "@id": "ek:L2",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:AutonomyLevel"
+      ],
+      "rdfs:label": "L2 — Auto-post under threshold",
+      "skos:definition": "Agent posts items below the policy threshold and confidence floor; a sample is reviewed after posting."
+    },
+    {
+      "@id": "ek:L3",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:AutonomyLevel"
+      ],
+      "rdfs:label": "L3 — Auto with post-hoc review",
+      "skos:definition": "Agent posts verified items; all are reviewed after posting. Never above performance materiality."
+    },
+    {
+      "@id": "ek:Spot",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:RateType"
+      ],
+      "rdfs:label": "Spot rate",
+      "skos:definition": "Rate on the transaction date."
+    },
+    {
+      "@id": "ek:Closing",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:RateType"
+      ],
+      "rdfs:label": "Closing rate",
+      "skos:definition": "Rate at the balance sheet date; used for monetary items."
+    },
+    {
+      "@id": "ek:Average",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:RateType"
+      ],
+      "rdfs:label": "Average rate",
+      "skos:definition": "Period average; used for income statement translation."
+    },
+    {
+      "@id": "ek:Historical",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:RateType"
+      ],
+      "rdfs:label": "Historical rate",
+      "skos:definition": "Rate when the item arose; used for equity and non-monetary items."
+    },
+    {
+      "@id": "ek:ControlEnvironment",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Control"
+      ],
+      "rdfs:label": "Control environment",
+      "skos:definition": "COSO component 1 (principles 1–5)."
+    },
+    {
+      "@id": "ek:RiskAssessment",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Control"
+      ],
+      "rdfs:label": "Risk assessment",
+      "skos:definition": "COSO component 2 (principles 6–9)."
+    },
+    {
+      "@id": "ek:ControlActivities",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Control"
+      ],
+      "rdfs:label": "Control activities",
+      "skos:definition": "COSO component 3 (principles 10–12): approvals, reconciliations, SoD."
+    },
+    {
+      "@id": "ek:InformationCommunication",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Control"
+      ],
+      "rdfs:label": "Information & communication",
+      "skos:definition": "COSO component 4 (principles 13–15)."
+    },
+    {
+      "@id": "ek:MonitoringActivities",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:Control"
+      ],
+      "rdfs:label": "Monitoring activities",
+      "skos:definition": "COSO component 5 (principles 16–17)."
+    },
+    {
+      "@id": "ek:BalanceSheet",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:FinancialStatement"
+      ],
+      "rdfs:label": "Balance sheet",
+      "skos:definition": "Statement of financial position at a date."
+    },
+    {
+      "@id": "ek:IncomeStatement",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:FinancialStatement"
+      ],
+      "rdfs:label": "Income statement",
+      "skos:definition": "Statement of operations for a period."
+    },
+    {
+      "@id": "ek:CashFlowStatement",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:FinancialStatement"
+      ],
+      "rdfs:label": "Cash flow statement",
+      "skos:definition": "Statement of cash flows for a period."
+    },
+    {
+      "@id": "ek:PriorMonth",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:ComparisonBasis"
+      ],
+      "rdfs:label": "Prior month",
+      "skos:definition": "Compare with the immediately preceding period."
+    },
+    {
+      "@id": "ek:PriorYear",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:ComparisonBasis"
+      ],
+      "rdfs:label": "Prior year",
+      "skos:definition": "Compare with the same period last year (seasonality)."
+    },
+    {
+      "@id": "ek:BudgetComparison",
+      "@type": [
+        "owl:NamedIndividual",
+        "ek:ComparisonBasis"
+      ],
+      "rdfs:label": "Budget",
+      "skos:definition": "Compare with the approved budget."
+    },
+    {
+      "@id": "ek:axiom/AX-DE-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Debits equal credits",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ e ∈ JournalEntry: Σ_{l ∈ lines(e)} debit(l) = Σ_{l ∈ lines(e)} credit(l)",
+      "rdfs:comment": "Every journal entry must balance: total debits equal total credits.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-DE-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Each line is one-sided and positive",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ l ∈ lines(e): (debit(l) > 0 ∧ credit(l) = 0) ∨ (credit(l) > 0 ∧ debit(l) = 0); amounts ∈ ℤ",
+      "rdfs:comment": "Each line is either a debit or a credit (not both, not zero), in whole cents.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-DE-03",
+      "@type": "ek:Axiom",
+      "rdfs:label": "At least one debit and one credit",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∃ l1, l2 ∈ lines(e): debit(l1) > 0 ∧ credit(l2) > 0",
+      "rdfs:comment": "An entry needs at least one debit line and one credit line.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-DE-04",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Single-currency entries balance in transaction currency",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "If all lines share txnCurrency k ≠ functional: Σ txnAmount(l) = 0",
+      "rdfs:comment": "If every line is in the same foreign currency, the foreign amounts must also balance.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-DE-05",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Accounting equation holds",
+      "ek:appliesTo": {
+        "@id": "ek:TrialBalance"
+      },
+      "ek:severity": "error",
+      "ek:formal": "Σ debits = Σ credits over all accounts ⇔ Assets = Liabilities + Equity + (Revenue − Expenses)",
+      "rdfs:comment": "The trial balance must net to zero: assets equal liabilities plus equity plus current-period profit.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:ellerman1985"
+        },
+        {
+          "@id": "cite:con6"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-PER-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Posting requires an open period",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "state(period(e)) = Open ∨ (state = SoftClose ∧ type(e) ∈ AdjustingTypes ∧ role(actor) ≥ Senior)",
+      "rdfs:comment": "You can only post into an open month. In soft close, only adjusting-type entries by a senior accountant or above.",
+      "dcterms:source": [
+        {
+          "@id": "cite:isa315"
+        },
+        {
+          "@id": "cite:coso2013"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-PER-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Entry date within its period",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "start(period(e)) ≤ date(e) ≤ end(period(e))",
+      "rdfs:comment": "The entry date must fall inside the month it is posted to (cutoff).",
+      "dcterms:source": [
+        {
+          "@id": "cite:isa315"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-ACC-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Lines post to active, postable accounts",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ l: account(l) ∈ Accounts(tenant) ∧ postable(account(l)) ∧ active(account(l))",
+      "rdfs:comment": "Every line must use an existing, active, postable (non-summary) account.",
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-ACC-03",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Required dimensions present",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ l: requiresDepartment(account(l)) → department(l) ≠ ∅",
+      "rdfs:comment": "Operating expense lines must say which department the cost belongs to.",
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-ACC-04",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Control accounts are posted through their subledger",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "warning",
+      "ek:formal": "controlAccount(account(l)) ∧ source(e) ∈ {manual, agent} → flag",
+      "rdfs:comment": "Manual entries straight to AP, AR or cash bypass the subledger and break tie-outs.",
+      "dcterms:source": [
+        {
+          "@id": "cite:xbrl-gl"
+        },
+        {
+          "@id": "cite:pcaob-as2401"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-FX-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Ledger is kept in functional currency",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "currency(e) = functionalCurrency(entity(e))",
+      "rdfs:comment": "Each entity’s books are kept in its functional currency; foreign amounts are carried per line.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc830"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-JE-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Reversals mirror the original",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "reverses(e, o) → posted(o) ∧ ¬reversed(o) ∧ entity(e)=entity(o) ∧ date(e) ≥ date(o) ∧ lines(e) = swap(lines(o))",
+      "rdfs:comment": "A reversing entry must undo a posted, not-yet-reversed entry exactly, on or after its date.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pacioli1494"
+        },
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-JE-03",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Accruals auto-reverse next period",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "type(e) = Accrual → autoReverseDate(e) = start(period(e) + 1)",
+      "rdfs:comment": "An accrual must be set to reverse on the first day of the next month, so it is not double counted when the bill arrives.",
+      "dcterms:source": [
+        {
+          "@id": "cite:con6"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-JE-04",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Eliminations only in the elimination entity",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "(type(e) = Elimination → entity(e) ∈ EliminationEntity) ∧ (entity(e) ∈ EliminationEntity → type(e) ∈ {Elimination, Reversing ∘ Elimination})",
+      "rdfs:comment": "Elimination entries live only in the consolidation (elimination) entity, which holds nothing else apart from reversals of its own eliminations.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-IC-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Intercompany lines name the counterparty",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ l: intercompany(account(l)) → counterparty(l) ∈ Entities ∖ {entity(e)}",
+      "rdfs:comment": "Lines on intercompany accounts must say which other group company they relate to.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-SOD-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Preparer is not approver",
+      "ek:appliesTo": {
+        "@id": "ek:JournalEntry"
+      },
+      "ek:severity": "error",
+      "ek:formal": "approvedBy(e) ≠ ∅ → approvedBy(e) ∉ {preparedBy(e), requestedBy(e)}",
+      "rdfs:comment": "The person who prepared (or asked an agent to prepare) an entry cannot approve it.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:sox404"
+        },
+        {
+          "@id": "cite:pcaob-as2201"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-REC-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Reconciliation ties out",
+      "ek:appliesTo": {
+        "@id": "ek:Reconciliation"
+      },
+      "ek:severity": "error",
+      "ek:formal": "certified(r) → |GL(r) − (Statement(r) + Σ reconcilingItems(r))| ≤ tolerance ∧ unexplained(r) = 0",
+      "rdfs:comment": "A reconciliation can only be certified when the ledger equals the statement after explained items, with nothing unexplained.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-REC-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Certified reconciliations carry evidence",
+      "ek:appliesTo": {
+        "@id": "ek:Reconciliation"
+      },
+      "ek:severity": "error",
+      "ek:formal": "certified(r) → |evidence(r)| ≥ 1",
+      "rdfs:comment": "Attach the statement or schedule that supports the balance before certifying.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-REC-03",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Reviewer is not the preparer",
+      "ek:appliesTo": {
+        "@id": "ek:Reconciliation"
+      },
+      "ek:severity": "error",
+      "ek:formal": "reviewed(r) → reviewer(r) ≠ preparer(r)",
+      "rdfs:comment": "Someone other than the preparer must review a reconciliation.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:sox404"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-REC-04",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Reconciling items are not stale",
+      "ek:appliesTo": {
+        "@id": "ek:Reconciliation"
+      },
+      "ek:severity": "warning",
+      "ek:formal": "∀ i ∈ items(r): age(i) ≤ 90 days",
+      "rdfs:comment": "Reconciling items older than 90 days should be investigated or written off.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-FLX-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Material variances are explained",
+      "ek:appliesTo": {
+        "@id": "ek:Variance"
+      },
+      "ek:severity": "error",
+      "ek:formal": "material(v) → ∃ x ∈ VarianceExplanation: explains(x, v) ∧ approved(x)",
+      "rdfs:comment": "Every variance above threshold needs an approved explanation before the close is signed off.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2201"
+        },
+        {
+          "@id": "cite:isa315"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-FLX-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Explanations quantify most of the variance",
+      "ek:appliesTo": {
+        "@id": "ek:Variance"
+      },
+      "ek:severity": "warning",
+      "ek:formal": "explains(x, v) → Σ drivers(x) / variance(v) ≥ 0.8",
+      "rdfs:comment": "A good explanation puts numbers on at least 80% of the change.",
+      "dcterms:source": [
+        {
+          "@id": "cite:pcaob-as2201"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-FLX-03",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Explanation approver is not the author",
+      "ek:appliesTo": {
+        "@id": "ek:Variance"
+      },
+      "ek:severity": "error",
+      "ek:formal": "approved(x) → approver(x) ≠ author(x)",
+      "rdfs:comment": "Someone other than the author approves a flux explanation.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-IC-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Intercompany balances agree",
+      "ek:appliesTo": {
+        "@id": "ek:IntercompanyBalance"
+      },
+      "ek:severity": "error",
+      "ek:formal": "|dueFrom(A,B) − dueTo(B,A)|_{reporting ccy} ≤ tolerance",
+      "rdfs:comment": "What one group company says it is owed must equal what the other says it owes (after FX), before eliminating.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc810"
+        },
+        {
+          "@id": "cite:asc830"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-MAT-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Materiality levels are ordered",
+      "ek:appliesTo": {
+        "@id": "ek:Materiality"
+      },
+      "ek:severity": "error",
+      "ek:formal": "0 < clearlyTrivial < performance ≤ overall",
+      "rdfs:comment": "Clearly trivial must be smaller than performance materiality, which cannot exceed overall materiality.",
+      "dcterms:source": [
+        {
+          "@id": "cite:isa320"
+        },
+        {
+          "@id": "cite:isa450"
+        },
+        {
+          "@id": "cite:pcaob-as2105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-CLS-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Task dependencies are acyclic",
+      "ek:appliesTo": {
+        "@id": "ek:CloseCycle"
+      },
+      "ek:severity": "error",
+      "ek:formal": "dependsOn⁺ is irreflexive",
+      "rdfs:comment": "Close tasks cannot depend on themselves, directly or through a chain.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-CLS-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Lock only a finished close",
+      "ek:appliesTo": {
+        "@id": "ek:FiscalPeriod"
+      },
+      "ek:severity": "error",
+      "ek:formal": "lock(p) → tasks(p) complete ∧ recs(p) reviewed ∧ materialFlux(p) explained ∧ pendingProposals(p) = ∅ ∧ package(p) generated",
+      "rdfs:comment": "A month can be locked only when every task is done, every reconciliation is reviewed, material variances are explained, nothing awaits approval and the close package exists.",
+      "dcterms:source": [
+        {
+          "@id": "cite:coso2013"
+        },
+        {
+          "@id": "cite:sox404"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-PRP-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Proposals explain themselves",
+      "ek:appliesTo": {
+        "@id": "ek:Proposal"
+      },
+      "ek:severity": "error",
+      "ek:formal": "∀ p ∈ Proposal: |why(p)| > 0 ∧ |evidence(p)| ≥ 1 ∧ confidence(p) ∈ [0,1]",
+      "rdfs:comment": "Every agent proposal says why in plain English, shows its evidence and states a confidence.",
+      "dcterms:source": [
+        {
+          "@id": "cite:iso42001"
+        },
+        {
+          "@id": "cite:pcaob-as1105"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-PRP-02",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Autonomy ceiling",
+      "ek:appliesTo": {
+        "@id": "ek:AutonomyLevel"
+      },
+      "ek:severity": "error",
+      "ek:formal": "autoPost(p) → level ∈ {L2,L3} ∧ |amount| < performanceMateriality ∧ (level = L3 ∨ (|amount| < threshold ∧ confidence ≥ floor))",
+      "rdfs:comment": "Agents may only post on their own at L2/L3, never above performance materiality, and at L2 only under the threshold and above the confidence floor.",
+      "dcterms:source": [
+        {
+          "@id": "cite:iso42001"
+        },
+        {
+          "@id": "cite:isa320"
+        },
+        {
+          "@id": "cite:coso2013"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-CAP-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Equipment above threshold is capitalised",
+      "ek:appliesTo": {
+        "@id": "ek:CodingDecision"
+      },
+      "ek:severity": "warning",
+      "ek:formal": "concept(t) ⊑ ComputerEquipment ∧ unitCost(t) ≥ capThreshold → treatment(t) = capitalize",
+      "rdfs:comment": "Equipment that costs more than the capitalisation threshold per unit should be recorded as a fixed asset, not an expense.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc360"
+        }
+      ]
+    },
+    {
+      "@id": "ek:axiom/AX-PPD-01",
+      "@type": "ek:Axiom",
+      "rdfs:label": "Multi-month prepayments are deferred",
+      "ek:appliesTo": {
+        "@id": "ek:CodingDecision"
+      },
+      "ek:severity": "warning",
+      "ek:formal": "servicePeriodMonths(t) > 1 ∧ amount(t) ≥ prepaidThreshold → treatment(t) = prepaid",
+      "rdfs:comment": "A payment that covers several future months should be recorded as a prepaid and spread over those months.",
+      "dcterms:source": [
+        {
+          "@id": "cite:asc340"
+        }
+      ]
+    },
+    {
+      "@id": "cite:mccarthy1982",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "The REA Accounting Model: A Generalized Framework for Accounting Systems in a Shared Data Environment",
+      "dcterms:creator": "William E. McCarthy",
+      "dcterms:date": "1982",
+      "dcterms:publisher": "The Accounting Review 57(3): 554–578"
+    },
+    {
+      "@id": "cite:geerts-mccarthy2002",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "An ontological analysis of the economic primitives of the extended-REA enterprise information architecture",
+      "dcterms:creator": "Guido L. Geerts; William E. McCarthy",
+      "dcterms:date": "2002",
+      "dcterms:publisher": "International Journal of Accounting Information Systems 3(1): 1–16"
+    },
+    {
+      "@id": "cite:pacioli1494",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Summa de arithmetica, geometria, proportioni et proportionalità — Particularis de computis et scripturis",
+      "dcterms:creator": "Luca Pacioli",
+      "dcterms:date": "1494",
+      "dcterms:publisher": "Venice"
+    },
+    {
+      "@id": "cite:ellerman1985",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "The Mathematics of Double Entry Bookkeeping",
+      "dcterms:creator": "David P. Ellerman",
+      "dcterms:date": "1985",
+      "dcterms:publisher": "Mathematics Magazine 58(4): 226–233"
+    },
+    {
+      "@id": "cite:ijiri1975",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Theory of Accounting Measurement",
+      "dcterms:creator": "Yuji Ijiri",
+      "dcterms:date": "1975",
+      "dcterms:publisher": "American Accounting Association, Studies in Accounting Research No. 10"
+    },
+    {
+      "@id": "cite:con6",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Statement of Financial Accounting Concepts No. 6: Elements of Financial Statements",
+      "dcterms:date": "1985",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:xbrl-usgaap",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "US GAAP Financial Reporting Taxonomy",
+      "dcterms:date": "2026",
+      "dcterms:publisher": "FASB / XBRL US",
+      "schema:url": "https://xbrl.fasb.org/"
+    },
+    {
+      "@id": "cite:xbrl-gl",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "XBRL Global Ledger Taxonomy Framework (XBRL GL)",
+      "dcterms:date": "2016",
+      "dcterms:publisher": "XBRL International",
+      "schema:url": "https://www.xbrl.org/int/gl/2016-12-01/gl-framework-2016-12-01.html"
+    },
+    {
+      "@id": "cite:fibo",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Financial Industry Business Ontology (FIBO)",
+      "dcterms:publisher": "EDM Council",
+      "schema:url": "https://spec.edmcouncil.org/fibo/"
+    },
+    {
+      "@id": "cite:coso2013",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Internal Control — Integrated Framework",
+      "dcterms:date": "2013",
+      "dcterms:publisher": "Committee of Sponsoring Organizations of the Treadway Commission (COSO)"
+    },
+    {
+      "@id": "cite:sox404",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Sarbanes-Oxley Act of 2002, Section 404 — Management assessment of internal controls",
+      "dcterms:date": "2002",
+      "dcterms:publisher": "U.S. Congress; SEC Release 33-8810 (2007) interpretive guidance"
+    },
+    {
+      "@id": "cite:pcaob-as2201",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "AS 2201: An Audit of Internal Control Over Financial Reporting That Is Integrated with An Audit of Financial Statements",
+      "dcterms:publisher": "PCAOB"
+    },
+    {
+      "@id": "cite:pcaob-as1105",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "AS 1105: Audit Evidence",
+      "dcterms:publisher": "PCAOB"
+    },
+    {
+      "@id": "cite:pcaob-as2105",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "AS 2105: Consideration of Materiality in Planning and Performing an Audit",
+      "dcterms:publisher": "PCAOB"
+    },
+    {
+      "@id": "cite:pcaob-as2401",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "AS 2401: Consideration of Fraud in a Financial Statement Audit (journal entry testing, .58–.62)",
+      "dcterms:publisher": "PCAOB"
+    },
+    {
+      "@id": "cite:isa315",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ISA 315 (Revised 2019): Identifying and Assessing the Risks of Material Misstatement",
+      "dcterms:date": "2019",
+      "dcterms:publisher": "IAASB"
+    },
+    {
+      "@id": "cite:isa320",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ISA 320: Materiality in Planning and Performing an Audit",
+      "dcterms:publisher": "IAASB"
+    },
+    {
+      "@id": "cite:isa450",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ISA 450: Evaluation of Misstatements Identified during the Audit",
+      "dcterms:publisher": "IAASB"
+    },
+    {
+      "@id": "cite:asc606",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 606: Revenue from Contracts with Customers",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc842",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 842: Leases",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc340",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 340: Other Assets and Deferred Costs (340-10 prepaid expenses; 340-40 contract costs)",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc360",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 360: Property, Plant, and Equipment",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc830",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 830: Foreign Currency Matters",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc810",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 810: Consolidation",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:asc450",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ASC 450: Contingencies",
+      "dcterms:publisher": "FASB"
+    },
+    {
+      "@id": "cite:benford1938",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "The Law of Anomalous Numbers",
+      "dcterms:creator": "Frank Benford",
+      "dcterms:date": "1938",
+      "dcterms:publisher": "Proceedings of the American Philosophical Society 78(4): 551–572"
+    },
+    {
+      "@id": "cite:nigrini2012",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Benford's Law: Applications for Forensic Accounting, Auditing, and Fraud Detection",
+      "dcterms:creator": "Mark J. Nigrini",
+      "dcterms:date": "2012",
+      "dcterms:publisher": "Wiley"
+    },
+    {
+      "@id": "cite:bai2",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Cash Management Balance Reporting Specifications, Version 2 (BAI2)",
+      "dcterms:publisher": "Bank Administration Institute (maintained by ASC X9)"
+    },
+    {
+      "@id": "cite:iso20022-camt053",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ISO 20022 camt.053 BankToCustomerStatement",
+      "dcterms:publisher": "ISO 20022 Registration Authority"
+    },
+    {
+      "@id": "cite:ofx",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Open Financial Exchange (OFX) Specification 2.2",
+      "dcterms:publisher": "OFX Consortium"
+    },
+    {
+      "@id": "cite:iso42001",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "ISO/IEC 42001:2023 Artificial intelligence — Management system",
+      "dcterms:date": "2023",
+      "dcterms:publisher": "ISO/IEC"
+    },
+    {
+      "@id": "cite:shacl",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Shapes Constraint Language (SHACL)",
+      "dcterms:date": "2017",
+      "dcterms:publisher": "W3C Recommendation"
+    },
+    {
+      "@id": "cite:owl2",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "OWL 2 Web Ontology Language Document Overview",
+      "dcterms:date": "2012",
+      "dcterms:publisher": "W3C Recommendation"
+    },
+    {
+      "@id": "cite:agent-skills",
+      "@type": "dcterms:BibliographicResource",
+      "dcterms:title": "Agent Skills (SKILL.md with YAML frontmatter, progressive disclosure)",
+      "dcterms:date": "2025",
+      "dcterms:publisher": "Anthropic",
+      "schema:url": "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills"
+    }
+  ]
+}

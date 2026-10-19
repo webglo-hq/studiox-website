@@ -1,0 +1,27 @@
+{
+  "skill": "close-package",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "package-proposed",
+      "description": "Once every input is settled, the agent proposes the September close package with commentary.",
+      "expect": {
+        "kind": "close_package",
+        "max": 1
+      }
+    },
+    {
+      "id": "package-held",
+      "description": "The package always waits for a person.",
+      "expect": {
+        "kind": "close_package",
+        "notAutoPosted": true
+      }
+    },
+    {
+      "id": "explained",
+      "description": "The package proposal says what it contains and why it is ready.",
+      "check": "every_proposal_explained"
+    }
+  ]
+}

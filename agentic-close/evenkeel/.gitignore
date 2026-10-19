@@ -1,0 +1,23 @@
+# Evenkeel-local ignores. The repository root ignores lockfiles and .env*; re-include ours.
+!package-lock.json
+!.env.example
+
+# Build outputs
+dist/
+dist-demo/
+dist-site/
+*.tsbuildinfo
+
+# Local databases and runtime data (embedded PGlite, local Postgres clusters, demo credentials)
+.data/
+
+# Test reports
+test-results/
+playwright-report/
+blob-report/
+coverage/
+evals-report.json
+
+# Local env
+.env
+.env.local

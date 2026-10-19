@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Evenkeel Month-End Close</title>
+    <meta name="description" content="Evenkeel runs the month-end close with AI agents under your controls: agents prepare reconciliations, accruals, schedules and variance explanations; your team reviews the why, approves and signs." />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232a49c4'/%3E%3Cpath d='M16 6.5v8.5M7.5 15h17' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M10.5 18.6c1.6 3.1 3.6 4.7 5.5 4.7s3.9-1.6 5.5-4.7' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="top">
+      <div class="wrap top-row">
+        <a class="brand" href="#top" aria-label="Evenkeel home">
+          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--accent)" /><path d="M16 6.5v8.5M7.5 15h17" stroke="var(--accent-ink)" stroke-width="2.4" stroke-linecap="round" /><path d="M10.5 18.6c1.6 3.1 3.6 4.7 5.5 4.7s3.9-1.6 5.5-4.7" fill="none" stroke="var(--accent-ink)" stroke-width="2.4" stroke-linecap="round" /></svg>
+          <span>Evenkeel</span>
+        </a>
+        <nav aria-label="Main">
+          <a href="#how">How it works</a>
+          <a href="#controls">Controls</a>
+          <a href="#skills">Skills</a>
+          <a href="#pricing">Pricing</a>
+        </nav>
+        <a class="btn small primary" href="demo.html">Try the demo</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="wrap hero-grid">
+          <div>
+            <p class="eyebrow">Agentic month-end close</p>
+            <h1>Close the month on an even keel.</h1>
+            <p class="lede">Agents prepare reconciliations, accruals, schedules, variance explanations and the close package. Your team reads the why, approves and signs. Nothing posts above your policy without a person.</p>
+            <div class="cta">
+              <a class="btn primary" href="demo.html">Open the live demo</a>
+              <a class="btn" href="#how">See how it works</a>
+            </div>
+            <p class="fine">The demo runs entirely in your browser on a fictional company. No sign-up, nothing sent anywhere.</p>
+          </div>
+          <figure class="shot tilt">
+            <img src="shots/proposal.png" width="1440" height="900" alt="An agent proposal in Evenkeel: an accrual with the agent's reason, a 92% confidence, the journal lines it will post and the evidence behind it, waiting for approval." />
+          </figure>
+        </div>
+      </section>
+
+      <section class="band" aria-label="What Evenkeel covers">
+        <div class="wrap facts">
+          <div><strong>12</strong><span>close skills, from bank recs to the close package</span></div>
+          <div><strong>L0–L3</strong><span>autonomy you set per skill, with hard ceilings</span></div>
+          <div><strong>3</strong><span>entities with FX, intercompany and eliminations</span></div>
+          <div><strong>1</strong><span>hash-chained audit trail for people and agents</span></div>
+        </div>
+      </section>
+
+      <section id="how" class="section">
+        <div class="wrap">
+          <p class="eyebrow">How it works</p>
+          <h2>Four steps from open month to locked books.</h2>
+          <ol class="steps">
+            <li>
+              <span class="num">1</span>
+              <h3>Agents prepare</h3>
+              <p>An orchestrator runs each close task in dependency order: coding, bank and subledger reconciliations, accruals, prepaids, depreciation, intercompany, FX revaluation and journal-entry review.</p>
+            </li>
+            <li>
+              <span class="num">2</span>
+              <h3>You review the why</h3>
+              <p>Every proposal shows the agent's reason, its confidence, the evidence and exactly what will post. Approve in bulk or one at a time; rejecting needs a reason.</p>
+            </li>
+            <li>
+              <span class="num">3</span>
+              <h3>Certify and explain</h3>
+              <p>Preparers certify reconciliations that tie to zero; a different person reviews them. Material variances get explanations that someone other than the author approves.</p>
+            </li>
+            <li>
+              <span class="num">4</span>
+              <h3>Sign and lock</h3>
+              <p>The CFO signs a close package whose numbers are hashed. The controller locks the month, and the ledger then refuses any posting dated inside it.</p>
+            </li>
+          </ol>
+          <figure class="shot wide">
+            <img src="shots/cockpit.png" width="1440" height="900" loading="lazy" alt="The close cockpit: progress for the September close, a calendar of tasks by business day, and the checklist that must pass before the month can be locked." />
+          </figure>
+        </div>
+      </section>
+
+      <section id="controls" class="section alt">
+        <div class="wrap">
+          <p class="eyebrow">Controls your auditor can test</p>
+          <h2>Built so that speed never costs you control.</h2>
+          <div class="grid3">
+            <article class="card">
+              <h3>Maker-checker in the database</h3>
+              <p>Whoever an agent works for cannot approve its work. Posted entries are immutable and corrected only by mirror reversals. PostgreSQL enforces both, not just the screen.</p>
+            </article>
+            <article class="card">
+              <h3>Autonomy you set, with ceilings</h3>
+              <p>Choose per skill: suggest, draft for approval, auto-post under a threshold, or auto-post with review after. Material items and anything that failed a check always wait for a person.</p>
+            </article>
+            <article class="card">
+              <h3>Every proposal explains itself</h3>
+              <p>A plain-language reason, a confidence, the evidence and deterministic checks: balanced, postable accounts, open period, ties to source. Arithmetic is done by code, not by the model.</p>
+            </article>
+            <article class="card">
+              <h3>A tamper-evident trail</h3>
+              <p>Every change by a person or an agent is chained by hash, and edits or deletions are refused. Each agent run keeps its plan, tool calls, checks, cost and decisions.</p>
+            </article>
+            <article class="card">
+              <h3>Bank text is data, never instructions</h3>
+              <p>Statement memos and documents are treated as untrusted. Text that tries to instruct the agent is flagged, routed to a person and never auto-posted.</p>
+            </article>
+            <article class="card">
+              <h3>Evals you can rerun</h3>
+              <p>Every skill ships with test cases that run against a full close in CI. The skill catalog shows the latest results, instead of an accuracy claim you have to trust.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="skills" class="section">
+        <div class="wrap two">
+          <div>
+            <p class="eyebrow">Skills</p>
+            <h2>The close, as twelve skills.</h2>
+            <p class="lede small">Each skill has instructions, a typed manifest, the tools it may use, its controls and its evaluation cases. Policies are written in plain English, versioned and audited.</p>
+            <ul class="skills">
+              <li>Transaction coding</li>
+              <li>Bank reconciliation</li>
+              <li>AP and AR tie-outs</li>
+              <li>Accrual detection</li>
+              <li>Prepaid amortisation</li>
+              <li>Fixed-asset depreciation</li>
+              <li>Intercompany and eliminations</li>
+              <li>FX revaluation</li>
+              <li>Flux analysis</li>
+              <li>Journal-entry review</li>
+              <li>Close orchestration</li>
+              <li>Close package</li>
+            </ul>
+          </div>
+          <figure class="shot">
+            <img src="shots/reconciliation.png" width="1440" height="900" loading="lazy" alt="A bank reconciliation workbench: ledger and statement balances, reconciling items such as outstanding checks and deposits in transit, and an unexplained difference that blocks certification." />
+          </figure>
+        </div>
+      </section>
+
+      <section class="section alt">
+        <div class="wrap two reverse">
+          <figure class="shot">
+            <img src="shots/ontology.png" width="1440" height="900" loading="lazy" alt="The ontology explorer showing a graph of close concepts such as account, journal entry, reconciliation and economic event." />
+          </figure>
+          <div>
+            <p class="eyebrow">Speaks accounting</p>
+            <h2>A formal model of the close, not a prompt.</h2>
+            <p class="lede small">Agents reason over a versioned ontology grounded in double entry, REA, XBRL US-GAAP, COSO 2013, audit assertions and ASC 606, 842, 340 and 360. Its axioms validate every entry and proposal, and every hover definition in the app comes from it.</p>
+            <p class="lede small">Prefer your own assistant? A Model Context Protocol server exposes the close to Claude and other AI clients, with the same roles, approvals and audit trail as the web app.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" class="section">
+        <div class="wrap">
+          <p class="eyebrow">Pricing</p>
+          <h2>Priced by entity, not by seat.</h2>
+          <p class="lede small">Reviewers and auditors are always free, because more eyes make a better close.</p>
+          <div class="plans">
+            <article class="plan">
+              <h3>Team</h3>
+              <p class="price"><strong>$1,500</strong><span>per month, billed yearly</span></p>
+              <ul>
+                <li>Up to 3 entities and 15 preparers</li>
+                <li>All 12 close skills</li>
+                <li>Deterministic engine, or Claude with your Anthropic key</li>
+                <li>Autonomy up to L2</li>
+                <li>Embedded database or your PostgreSQL</li>
+              </ul>
+              <a class="btn" href="demo.html">Start with the demo</a>
+            </article>
+            <article class="plan featured">
+              <p class="tag">Most chosen</p>
+              <h3>Scale</h3>
+              <p class="price"><strong>$4,000</strong><span>per month, billed yearly</span></p>
+              <ul>
+                <li>Up to 15 entities, unlimited preparers</li>
+                <li>Multi-currency, intercompany and eliminations</li>
+                <li>Autonomy up to L3 with post-hoc review</li>
+                <li>MCP server and API tokens</li>
+                <li>Priority support during close week</li>
+              </ul>
+              <a class="btn primary" href="demo.html">Try the full close</a>
+            </article>
+            <article class="plan">
+              <h3>Enterprise</h3>
+              <p class="price"><strong>Custom</strong><span>for groups and regulated teams</span></p>
+              <ul>
+                <li>Unlimited entities</li>
+                <li>Single sign-on integration (OIDC or SAML)</li>
+                <li>Dedicated deployment in your cloud</li>
+                <li>Custom skills, policies and connectors</li>
+                <li>SOX control mapping with your auditors</li>
+              </ul>
+              <a class="btn" href="#faq">Read the FAQ</a>
+            </article>
+          </div>
+          <p class="fine center">Illustrative prices for a demonstration product. Not an offer.</p>
+        </div>
+      </section>
+
+      <section id="faq" class="section alt">
+        <div class="wrap narrow">
+          <p class="eyebrow">Questions</p>
+          <h2>What people ask first.</h2>
+          <details>
+            <summary>Does the AI post entries on its own?</summary>
+            <p>Only where you allow it. At L2 an agent may post verified, confident items under the amount you set, and a sample is reviewed afterwards; at L3 every auto-posted item is reviewed. Material items, anything that failed a check and anything with suspicious source text always wait for a person.</p>
+          </details>
+          <details>
+            <summary>Which model does it use?</summary>
+            <p>Claude, through the Anthropic API with your key, in three tiers chosen per skill: Haiku for fast work, Sonnet for most tasks and Opus for deep review. Without a key, a deterministic engine runs the same tools and controls, which is how the demo works.</p>
+          </details>
+          <details>
+            <summary>What can our auditors see?</summary>
+            <p>Everything, read-only: every entry with its provenance, every agent run with its trace, every approval and sign-off, and an audit log they can verify end to end.</p>
+          </details>
+          <details>
+            <summary>Does it replace our ERP?</summary>
+            <p>No. Evenkeel keeps its own double-entry ledger for the close and imports bank and subledger data (CSV, BAI2, OFX and ISO 20022 camt.053) with provenance and idempotent imports.</p>
+          </details>
+          <details>
+            <summary>Where does our data live?</summary>
+            <p>In your PostgreSQL 16 database. Nothing leaves it except the model calls you turn on.</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section closing">
+        <div class="wrap narrow center">
+          <h2>See a whole close in five minutes.</h2>
+          <p class="lede small">Sign in as the controller, run the agents, approve, certify, explain the variances, sign the package and lock the month.</p>
+          <a class="btn primary" href="demo.html">Open the live demo</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-row">
+        <span>Evenkeel is a demonstration product. Kitewell Labs and every name, number and document in the demo are fictional.</span>
+        <a href="#top">Back to top</a>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "skill": "subledger-tieout",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "duplicate-payment-item",
+      "description": "The AP tie-out explains the $6,480 duplicate payment as a reconciling item.",
+      "expect": {
+        "kind": "reconciling_item",
+        "amount": 648000
+      }
+    },
+    {
+      "id": "duplicate-payment-reclass",
+      "description": "The overpayment is reclassified to vendor refunds receivable.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "vendor refunds receivable",
+        "amount": 648000,
+        "payload": {
+          "entryType": "reclass"
+        }
+      }
+    },
+    {
+      "id": "manual-ap-posting-item",
+      "description": "The $1,250 manual posting to AP outside the subledger is explained.",
+      "expect": {
+        "kind": "reconciling_item",
+        "titleIncludes": "JE-US-202609-0110",
+        "amount": 125000
+      }
+    }
+  ]
+}

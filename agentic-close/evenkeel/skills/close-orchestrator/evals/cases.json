@@ -1,0 +1,26 @@
+{
+  "skill": "close-orchestrator",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "all-tasks-ran",
+      "description": "Following the close calendar, every agent task ran once its dependencies were approved.",
+      "check": "all_agent_tasks_ran"
+    },
+    {
+      "id": "dispatches-only",
+      "description": "The orchestrator runs other skills and never proposes postings or changes itself.",
+      "expect": {
+        "absent": true
+      }
+    },
+    {
+      "id": "no-journal-entries",
+      "description": "In particular it never drafts a journal entry.",
+      "expect": {
+        "kind": "journal_entry",
+        "absent": true
+      }
+    }
+  ]
+}
