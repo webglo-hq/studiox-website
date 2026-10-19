@@ -32,6 +32,7 @@ exclude:
   - Gemfile.lock
   - tmpclaude-*
   - "*.log"
+  - agentic-close
 
 collections:
   posts:
