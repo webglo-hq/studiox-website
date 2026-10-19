@@ -63,3 +63,4 @@ export function capitalizableMatches(text: string): string[] {
 
 export { FS_LINES, JE_TYPE_INFO } from './individuals';
 export * from './subjects';
+export { ONTOLOGY_VERSION } from './builder';

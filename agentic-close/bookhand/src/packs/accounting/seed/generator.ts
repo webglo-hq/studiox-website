@@ -454,7 +454,9 @@ export function generateScenario(): SeedDataset {
   plug(ukOpening);
   const openingUs = book.entry({ entity: 'BW-US', date: '2025-09-01', type: 'opening', description: 'Opening balances migrated from legacy ERP', source: 'import', module: 'gl', basis: 'import', lines: usOpening.filter((l) => (l.debit ?? 0) + (l.credit ?? 0) > 0).map((l) => ({ account: l.account, debit: l.debit, credit: l.credit, memo: l.memo })), externalRef: 'LEGACY-OB-US' });
   const openingUk = book.entry({ entity: 'BW-UK', date: '2025-09-01', type: 'opening', description: 'Opening balances migrated from legacy ERP', source: 'import', module: 'gl', basis: 'import', lines: ukOpening.filter((l) => (l.debit ?? 0) + (l.credit ?? 0) > 0).map((l) => ({ account: l.account, debit: l.debit, credit: l.credit, memo: l.memo })), externalRef: 'LEGACY-OB-UK' });
-  for (const r of invoiceRows) r.inv.journal_entry_id = r.inv.entity_id === entityIds['BW-UK'] ? openingUk.id : openingUs.id;
+  // Only invoices still open at migration came across in the opening entry; fully paid legacy invoices remain
+  // as documents (they anchor the deferred-revenue schedules) but are not part of the opening AR balance.
+  for (const r of invoiceRows) if (r.inv.status === 'open') r.inv.journal_entry_id = r.inv.entity_id === entityIds['BW-UK'] ? openingUk.id : openingUs.id;
 
   // Opening AP bills
   const billRecords: Array<{ bill: Insert<'bills'>; lines: Insert<'bill_lines'>[]; vendor: string }> = [];
@@ -501,7 +503,7 @@ export function generateScenario(): SeedDataset {
       entity, date: payDate, description: `Payment ${reference} to ${vendorName}`, module: 'ap',
       lines: [
         { account: '2000', debit: bill.amount_minor, vendorId: bill.vendor_id, memo: `${vendorName} ${bill.bill_number}` },
-        { account: cash, credit: bill.amount_minor, vendorId: bill.vendor_id, memo: `${method.toUpperCase()} ${reference} ${vendorName}` },
+        { account: cash, credit: bill.amount_minor, vendorId: bill.vendor_id, memo: `${method.toUpperCase()} ${reference} ${vendorName} ${bill.bill_number}` },
       ],
       cash: { lag, bankText: opts.bankText ?? textBase, reference: method === 'check' ? reference : bill.bill_number, typeCode: method === 'check' ? '475' : method === 'wire' ? '495' : '455', counterparty: vendorName },
     });
@@ -812,7 +814,7 @@ export function generateScenario(): SeedDataset {
               { account: '6010', debit: d.employerTaxes, dept: d.code, memo: 'employer taxes' },
               { account: '6020', debit: d.benefits, dept: d.code, memo: 'benefits' },
             ]),
-            { account: cash, credit: net + benefits, memo: `Net pay and benefits ${payDate}` },
+            { account: cash, credit: net + benefits, memo: `Net pay and benefits ${payDate.replace(/-/g, '')} ${externalId}` },
             { account: '2150', credit: withholdings + employerTaxes, memo: 'Withholdings and employer taxes payable' },
           ],
           cash: { lag: 0, bankText: `PAYSTREAM NET PAY AND BENEFITS ${payDate.replace(/-/g, '')}`, reference: externalId, typeCode: '455', counterparty: 'Paystream Payroll' },
@@ -1165,7 +1167,7 @@ function expandCashEvents(events: CashEvent[]): BankLine[] {
       continue;
     }
     if (e.splits?.length) {
-      e.splits.forEach((amount, i) => out.push({ ...e, amount: -Math.abs(amount), bankRef: `${e.bankRef}-${i + 1}`, bankText: `${e.bankText} ${i + 1}/${e.splits!.length}`, ledgerLineIds: [e.ledgerLineId] }));
+      e.splits.forEach((amount, i) => out.push({ ...e, amount: Math.sign(e.amount) * Math.abs(amount), bankRef: `${e.bankRef}-${i + 1}`, bankText: `${e.bankText} ${i + 1}/${e.splits!.length}`, ledgerLineIds: [e.ledgerLineId] }));
       continue;
     }
     out.push({ ...e, ledgerLineIds: [e.ledgerLineId] });

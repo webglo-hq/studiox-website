@@ -6,6 +6,8 @@ export interface Actor {
   userId: string | null;
   label: string;
   runId?: string;
+  /** Agents act on behalf of an accountable person (the run's requester). */
+  onBehalfOf?: string | null;
   roleKeys?: string[];
   requestId?: string;
   ip?: string;

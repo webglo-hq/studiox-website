@@ -117,6 +117,9 @@ export class Book {
       const lineId = this.id();
       lineIds.push(lineId);
       const net = (l.debit ?? 0) - (l.credit ?? 0);
+      // Cash lines carry the payment/receipt reference the bank will show (as real AP/AR postings do).
+      const ref = args.cash?.reference;
+      const memo = this.cashAccounts.has(l.account) && ref && !(l.memo ?? '').includes(ref) ? `${l.memo ?? ''} ${ref}`.trim() : (l.memo ?? null);
       return {
         id: lineId,
         tenant_id: this.ctx.tenantId,
@@ -136,7 +139,7 @@ export class Book {
         counterparty_entity_id: l.counterparty ? this.ctx.entity(l.counterparty).id : null,
         vendor_id: l.vendorId ?? null,
         customer_id: l.customerId ?? null,
-        memo: l.memo ?? null,
+        memo,
       };
     });
     const postedAt = args.postedAt ?? `${args.date}T18:00:00.000Z`;

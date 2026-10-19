@@ -121,6 +121,8 @@ export interface TaskState {
 }
 
 const DONE = new Set(['done', 'skipped']);
+/** Downstream work may start once the preparer is finished; reviewer sign-off gates the period lock instead. */
+const SATISFIES_DEPENDENCY = new Set(['done', 'skipped', 'ready_for_review']);
 
 export async function taskStates(tx: Tx, closeId: string): Promise<TaskState[]> {
   const tasks = await tx.find('close_tasks', { close_id: closeId }, { orderBy: [['sort_order', 'asc']] });
@@ -128,7 +130,7 @@ export async function taskStates(tx: Tx, closeId: string): Promise<TaskState[]> 
   const deps = await tx.find('close_task_dependencies', { task_id: { in: tasks.map((t) => t.id) } });
   return tasks.map((task) => {
     const mine = deps.filter((d) => d.task_id === task.id).map((d) => d.depends_on_task_id);
-    const blockedBy = mine.map((id) => byId.get(id)!).filter((d) => d && !DONE.has(d.status));
+    const blockedBy = mine.map((id) => byId.get(id)!).filter((d) => d && !SATISFIES_DEPENDENCY.has(d.status));
     return { task, dependsOn: mine, ready: blockedBy.length === 0, blockedBy };
   });
 }

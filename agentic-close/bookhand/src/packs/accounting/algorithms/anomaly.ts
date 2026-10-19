@@ -52,7 +52,7 @@ export interface ReviewPayment {
   date: string;
   amount: number;
   reference: string;
-  bills: Array<{ id: string; billNumber: string; amount: number; billDate: string }>;
+  bills: Array<{ id: string; billNumber: string; amount: number; billDate: string; accountNumber?: string; departmentCode?: string | null; entity?: string }>;
 }
 
 export interface AnomalyFinding {

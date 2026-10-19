@@ -190,7 +190,7 @@ export async function postPayrollRun(
     const account = l.category === 'employer_tax' ? accounts.taxes : l.category === 'benefits' ? accounts.benefits : accounts.wages;
     drafts.push({ account, debit: l.amount_minor, department: l.department_id, memo: `${l.category} ${run.pay_period_start}..${run.pay_period_end}` });
   }
-  drafts.push({ account: accounts.cash, credit: run.net_pay_minor + run.benefits_minor, memo: `Net pay and benefits ${run.pay_date}` });
+  drafts.push({ account: accounts.cash, credit: run.net_pay_minor + run.benefits_minor, memo: `Net pay and benefits ${run.pay_date.replace(/-/g, '')} ${run.external_id}` });
   drafts.push({ account: accounts.liabilities, credit: run.withholding_minor + run.employer_tax_minor, memo: 'Withholdings and employer taxes payable' });
   const entry = await createAndPost(
     tx,

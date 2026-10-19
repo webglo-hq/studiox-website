@@ -127,6 +127,23 @@ export function suggestCoding(input: CodingInput, ctx: CodingContext): CodingSug
     return { a, score: Math.min(1, score), semantic, sem, histCount, cls };
   });
   scores.sort((x, y) => y.score - x.score || x.a.number.localeCompare(y.a.number));
+  // Capitalization policy (ASC 360) outranks history: equipment above the threshold is an asset no matter how
+  // cheaper purchases from the same merchant were coded.
+  if (Math.abs(input.amount) >= ctx.capitalizationThresholdMinor) {
+    const cap = scores.filter((x) => x.cls?.bucketing.capitalizable && x.semantic >= 0.6).sort((x, y) => y.semantic - x.semantic)[0];
+    if (cap && cap !== scores[0]) {
+      const threshold = (ctx.capitalizationThresholdMinor / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      return {
+        accountNumber: cap.a.number,
+        accountName: cap.a.name,
+        departmentCode: input.defaultDepartmentCode ?? null,
+        confidence: Number(Math.min(0.95, 0.6 + cap.semantic * 0.35).toFixed(3)),
+        why: `Coded to ${cap.a.number} ${cap.a.name} because the purchase is above the ${threshold} capitalization threshold and ontology class ${cap.cls?.label} matches (${cap.sem.reasons.join(', ')}); the capitalization policy overrides how smaller purchases from this merchant were coded.`,
+        signals: [`capitalization policy: above ${threshold}`, `ontology: ${cap.cls?.label} via ${cap.sem.reasons.join(', ')}`],
+        alternatives: scores.slice(0, 3).filter((s) => s !== cap).map((s) => ({ accountNumber: s.a.number, accountName: s.a.name, score: Number(s.score.toFixed(3)) })),
+      };
+    }
+  }
   const best = scores[0];
   if (!best || best.score <= 0.05) return null;
   const second = scores[1]?.score ?? 0;
