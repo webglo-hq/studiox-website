@@ -68,7 +68,7 @@ Evenkeel runs a month-end close end to end on a fictional two-country company.
 | Deep modules; reusable framework plus accounting pack | `src/framework/*` (runtime, skills, ontology, store, LLM) and `src/packs/accounting/*`; boundaries enforced by `eslint.config.js` | `tests/unit/framework.test.ts` |
 | 2.1 Ontology (formal, versioned, grounded, executable) | `src/packs/accounting/ontology/` (classes, relations, axioms, citations, shapes), `src/framework/ontology/model.ts`; exports in `docs/ontology/` | `tests/unit/ontology.test.ts` |
 | 2.1 Used for grounding, bucketing, hover definitions, explorer | Proposal shapes and tool typing (`agents/tool-kit.ts`, `ontology/shapes.ts`), FS mapping, `src/web/ui/term.tsx`, `src/web/screens/Ontology.tsx` | e2e (`ontology` views) |
-| 2.2 Postgres schema, migrations, ERD | `db/migrations/0001–0003`, `src/server/db.ts` (checksummed migrator), `docs/erd.md` (`npm run docs:erd`) | Schema contract in `tests/integration/postgres.test.ts` |
+| 2.2 Postgres schema, migrations, ERD | `db/migrations/0001–0004`, `src/server/db.ts` (checksummed migrator), `docs/erd.md` (`npm run docs:erd`) | Schema contract in `tests/integration/postgres.test.ts` |
 | 2.2 Balancing, immutability, invariants in the database | `db/migrations/0002_invariants.sql` | `tests/shared/invariant-suite.ts` × memory, PGlite and PostgreSQL 16 |
 | 2.2 Hash-chained audit log | `ek_audit_chain` trigger, `src/framework/audit/chain.ts`, `src/packs/accounting/domain/audit.ts` | Invariant suite; full close checks the chain |
 | 2.3 Connectors (CSV and bank standards), idempotent, provenance | `src/framework/connectors/{csv,xml}.ts`, `src/packs/accounting/connectors/{bank-formats,importer,records}.ts`, `services/integrations.ts` | `tests/unit/connectors.test.ts` |
@@ -98,13 +98,38 @@ Evenkeel runs a month-end close end to end on a fictional two-country company.
 |---|---|
 | `npm run typecheck` | clean |
 | `npm run lint` | 0 problems |
-| `npm test` | 146 tests passed in 12 files |
-| `npm run test:integration` | 27 passed on PostgreSQL 16.15: server version, 17 invariants, 5 schema-contract checks, 3 concurrency tests, 1 full close through lock |
+| `npm test` | 176 tests passed in 17 files |
+| `npm run test:integration` | 28 passed on PostgreSQL 16.15: server version, 18 invariants, 5 schema-contract checks, 3 concurrency tests, 1 full close through lock |
 | `npm run evals` | 64/64 across 12 skills |
-| `npm run e2e` | 6 passed (server: demo script; demo: demo script, single-file and no network, worker fallback, sandboxed iframe, accessibility) |
+| `npm run e2e` | 9 passed (server: demo script; demo: demo script, single-file and no network, worker fallback, sandboxed iframe, accessibility, no sideways scrolling at phone width, accessible names and keyboard access, bulk approval) |
 | `npm audit --audit-level=high` | 0 vulnerabilities |
 | `dist-demo/index.html` | about 2.6 MB (budget 15 MB); title "Evenkeel Month-End Close" |
-| Screenshots | 23 PNGs (17 at 1440×900, 6 at 390×844), within the 6 MB budget |
+| Screenshots | 23 PNGs (17 at 1440×900, 6 at 390×844), 5.4 MB, within the 6 MB budget |
+
+## Independent review fixes (2026-10-19)
+
+An independent review (accounting, engineering and product) found the defects below; all are fixed. Each has a regression test named after the defect, which fails on the code before the fix and passes after it. The gates above were re-run afterwards.
+
+| ID | Severity | What was wrong | Fix | Regression test |
+|---|---|---|---|---|
+| E-1 | Critical | The prior-month balance-sheet column counted current-year earnings twice, so it did not foot. | Each column's totals are taken before the current-year-earnings line is added. Every column of every statement carries a footing check, shown under the statement. | `tests/unit/statements.test.ts` |
+| EK-C1 | Critical | Live (Claude) mode trusted the amount the model declared. A proposal declaring no amount, or a smaller one, could post automatically above the cap, and verification never compared it with the lines. | The server computes the amount and materiality from the entry lines and the records a proposal references. A money-moving item whose amount cannot be computed is held and treated as material. Verification refuses a declared amount that differs from the lines. | `tests/unit/agent-controls.test.ts` |
+| E-3 (accounting MAJOR 1) | Major | The CFO signed a package showing reconciliations not started, open exceptions and 1 of 15 tasks complete. Workflow status was a snapshot outside the signed hash, and approval compared numbers only. | Reconciliation, checklist and exception status are part of the signed content hash. Signing a version that no longer matches the close is refused; "Refresh" renders a new version with the same preparer of record. | `tests/unit/close-guidance.test.ts` |
+| E-2 | Major | The close-package step dead-ended. The agent's draft waited for the controller, who could not approve it; the CFO could not generate a package; the CFO's home said "All set" while the lock was blocked. The README demo script did not match the real path. | Close-package drafts are approved with the package-approval permission (the CFO); the draft is attributed to whoever started the run. My close never says "All set" while the month cannot lock and names who the close waits on. It offers "Continue the close" first when approvals unblock tasks, and sends the CFO to refresh and sign. The reporting task completes only by signing. The README demo script follows the real path. | `tests/unit/close-guidance.test.ts`, `tests/e2e/demo-script.spec.ts` |
+| ACC-M2 (accounting MAJOR 2) | Major | Retained earnings were translated at the closing rate, because only `ek:EquityAccount` was treated as historical. Consolidated retained earnings and the CTA were each off by $29,168.93. | `ek:RetainedEarningsAccount` translates at historical rates like other equity, leaving the CTA as the only plug. | `tests/unit/statements.test.ts` |
+| EK-M1 | Major | Runs were recorded as requested by the task owner, so whoever launched a run could approve its output. | Whoever starts a run, directly or by running the close, is its requester and cannot approve what it proposes (SOD-02). The CFO can approve entries and reconciliation items, so a third approver exists. | `tests/unit/agent-controls.test.ts` |
+| EK-M2 | Major | Entity scope could not be configured (grants were always tenant-wide) and guarded only some writes; reads showed every entity. | Admin sets the entities a person's roles cover. Every read path filters or refuses other entities. Consolidated views, the close package and the audit log need tenant-wide access. The writes that lacked the check (tasks, agent runs, entry rejection, flux approval, reconciling items, matches) now have it. | `tests/unit/entity-scope.test.ts` |
+| EK-M3 | Major | Live mode dropped injection flags and policy-rule holds, which only the offline playbooks set. | The server computes both for every draft, whatever drafted it. | `tests/unit/agent-controls.test.ts` |
+| E-4 | Minor | The inbox scrolled sideways at 390 px: the page was 640 px wide. | Scroll containers are positioned, so screen-reader text inside a table can no longer widen the page. | `tests/e2e/accessibility.spec.ts` |
+| E-5 | Minor | "Select all I can approve" included an injection-flagged exception and low-confidence items. | They are left out of select-all and bulk approval, and the server refuses them in a bulk decision. Each is opened and approved on its own. | `tests/unit/agent-controls.test.ts`, `tests/e2e/inbox.spec.ts` |
+| E-6 | Minor | Guidance mistakes: staff told to certify before the agents ran; counts not per person; "Complete 13 task reviews" on a button labelled "Open reconciliations"; "1 proposal wait". | Per-person counts that wait for the agent's preparation, button labels that match where they go, singular and plural, and no "work on" for tasks still blocked upstream. | `tests/unit/close-guidance.test.ts` |
+| E-7 | Minor | Persona buttons had `role="listitem"`; the search button's name differed from its visible label (WCAG 2.5.3); inbox rows were not reachable with Tab. | Buttons sit inside list items; the visible label is the accessible name; each inbox row has a link. | `tests/e2e/accessibility.spec.ts` |
+| EK-m1 | Minor | A manual entry could post with no approver (`0002:88`). | Migration `0004_review_fixes.sql`: a person-prepared entry posts only with an approver (mirror reversals excepted), emulated in the memory store. | `tests/shared/invariant-suite.ts` (memory, PGlite, PostgreSQL 16) |
+| EK-m2 | Minor | A locked account answered 423 to the right password and 401 to a wrong one, revealing whether a guess was right. | The lock is checked before the password. | `tests/unit/http.test.ts` |
+| EK-m3 | Minor | scrypt with N=2^15 and p=1 is below the OWASP minimum. | N=2^15, r=8, p=3 (an OWASP setting); weaker hashes are upgraded at the next sign-in. | `tests/unit/auth.test.ts`, `tests/unit/http.test.ts` |
+| ACC-m1 | Minor | The payroll accrual was about 10% high: a half-month salary scaled by 11/10 business days. | Accrued by pay period: the share of each later pay period that falls inside the month ($620,727.20, was $682,799.93). | `tests/unit/close-math.test.ts` |
+| ACC-m2 | Minor | Flux drivers dropped offsetting movements and did not add up to the variance; budget-vs-actual drivers used a trailing average instead of the budget. | Drivers keep both directions, group the rest and show any untraced remainder, so they reconcile (also a verification check). Budget-vs-actual drivers are measured against the budget. | `tests/unit/close-math.test.ts`, `tests/unit/statements.test.ts` |
+| E-9 | Minor | The ads had no call to action, and ad 3 showed the $450 gift-card purchase as "Posted automatically" although the demo holds it. | Every ad ends with "Try the demo". Ad 3 shows a coding that does post, the gift cards held by the policy rule and the corrected payroll accrual; ad 2 shows the demo's own flux lines. | `tests/unit/ads.test.ts` |
 
 ## Known gaps
 

@@ -211,10 +211,10 @@ Create a token in **Account → API tokens**: read-only or allowed to make chang
 |---|---|---|
 | Typecheck | `npm run typecheck` | clean (TypeScript 6.0, strict) |
 | Lint | `npm run lint` | 0 problems (typescript-eslint, React hooks, module boundaries) |
-| Unit tests | `npm test` | **146 passed** in 12 files: invariants on memory + PGlite, runtime, skills, auth, HTTP, MCP, connectors, close math, … |
-| Integration (real DB) | `npm run test:integration` | **27 passed** on PostgreSQL 16.15: invariant suite, schema contract, concurrency, full close through lock |
+| Unit tests | `npm test` | **176 passed** in 17 files: invariants on memory + PGlite, runtime, skills, auth, HTTP, MCP, connectors, close math, statements, agent controls, entity scope, … |
+| Integration (real DB) | `npm run test:integration` | **28 passed** on PostgreSQL 16.15: invariant suite, schema contract, concurrency, full close through lock |
 | Skill evals | `npm run evals` | **64/64** cases across 12 skills (offline engine) |
-| End to end | `npm run e2e` | **6 passed**: demo script on the server and on the static demo, three static-demo properties, accessibility (50 views, 0 violations) |
+| End to end | `npm run e2e` | **9 passed**: demo script on the server and on the static demo, three static-demo properties, accessibility (50 views, 0 violations), no sideways scrolling at phone width, accessible names and keyboard access, bulk approval |
 | Dependencies | `npm audit --audit-level=high` | 0 vulnerabilities |
 
 Integration tests start a throwaway PostgreSQL 16 cluster on a random free port under `.data/`. It runs as an unprivileged user when invoked as root, and is stopped and deleted afterwards. Set `DATABASE_URL` to use your own server instead.
