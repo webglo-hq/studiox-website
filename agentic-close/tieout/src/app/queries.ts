@@ -282,7 +282,8 @@ export async function fluxView(ctx: AppContext, u: RequestUser, entityId: string
     const users = await names(tx);
     const r = await svc.flux.compute(entityId, periodKey);
     const props = await tx.find('proposals', { entity_id: entityId, period_key: periodKey, kind: 'flux_explanation' });
-    const byAccount = new Map(props.map((p) => [(p.payload as { accountCode: string }).accountCode, p]));
+    // the newest explanation per account wins (a person's text supersedes an earlier draft)
+    const byAccount = new Map(props.filter((p) => p.status !== 'superseded').sort((a, b) => a.created_at.localeCompare(b.created_at)).map((p) => [(p.payload as { accountCode: string }).accountCode, p]));
     return { ...r, lines: r.lines.map((l) => ({ ...l, proposal: byAccount.has(l.code) ? slim(byAccount.get(l.code)!, users) : null, draftText: byAccount.has(l.code) ? String((byAccount.get(l.code)!.payload as { text?: string }).text ?? '') : null, explanationAuthor: l.explanation ? who(l.explanation.author_id, users) : null, explanationApprover: l.explanation?.approved_by ? who(l.explanation.approved_by, users) : null })) };
   });
 }
@@ -492,7 +493,7 @@ export async function auditList(ctx: AppContext, u: RequestUser, q: { limit?: nu
 }
 
 export async function auditVerify(ctx: AppContext, u: RequestUser) {
-  requirePermission(u, 'audit.view');
+  requirePermission(u, 'audit.verify');
   return ctx.db.tx(u.tenantId, async (tx) => {
     const rows = await tx.find('audit_log', {}, { orderBy: [['seq', 'asc']] });
     const v = verifyAuditChain(rows as unknown as AuditRecord[]);

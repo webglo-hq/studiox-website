@@ -1,5 +1,5 @@
 /**
- * End-to-end tests against the real server (in-memory store, fresh demo seed per run) on a random
+ * End-to-end tests against the real server (embedded PostgreSQL in memory, fresh demo seed per run) on a random
  * high port. Browsers come from PLAYWRIGHT_BROWSERS_PATH (never `playwright install` here).
  */
 import { defineConfig, devices } from '@playwright/test';
@@ -23,6 +23,7 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { STORE: 'memory', PORT: String(port), HOST: '127.0.0.1', SEED_DEMO: 'true' },
+    // embedded PostgreSQL in memory: the browser suite runs on the same SQL, triggers and RLS as production
+    env: { PGLITE_DIR: 'memory://', PORT: String(port), HOST: '127.0.0.1', SEED_DEMO: 'true' },
   },
 });

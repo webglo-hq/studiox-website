@@ -69,9 +69,14 @@ export async function boot(opts: BootOptions = {}): Promise<Booted> {
     storeLabel = 'PostgreSQL';
   } else if (mode === 'pglite') {
     const { createPgliteDriver } = await import('../core/store/drivers/pglite');
-    const dir = resolve(root, env.PGLITE_DIR ?? '.data/pglite');
-    mkdirSync(dir, { recursive: true });
-    driver = await createPgliteDriver(dir);
+    if (env.PGLITE_DIR === 'memory://') {
+      // throwaway embedded PostgreSQL (tests): same SQL, triggers and row-level security, nothing on disk
+      driver = await createPgliteDriver();
+    } else {
+      const dir = resolve(root, env.PGLITE_DIR ?? '.data/pglite');
+      mkdirSync(dir, { recursive: true });
+      driver = await createPgliteDriver(dir);
+    }
     db = createPgDb(driver);
     storeLabel = `PGlite (${env.PGLITE_DIR ?? '.data/pglite'})`;
   } else {

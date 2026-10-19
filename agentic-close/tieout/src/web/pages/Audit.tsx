@@ -3,7 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError, qs, type AuditData, type AuditVerify } from '../api';
 import { Badge, ErrorBox, Loading } from '../components/ui';
-import { useApp } from '../lib/app-state';
+import { can, useApp, useMe } from '../lib/app-state';
 import { dateTime } from '../lib/format';
 import { setQuery, useRoute } from '../lib/router';
 
@@ -24,6 +24,7 @@ const PREFIXES: [string, string][] = [
 ];
 
 export function Audit() {
+  const me = useMe();
   const route = useRoute();
   const action = route.query.get('action') ?? '';
   const subject = route.query.get('subject') ?? '';
@@ -79,11 +80,13 @@ export function Audit() {
             Append-only and hash-chained: each event stores the SHA-256 of its content and of the event before it, so any edit or deletion breaks the chain. The database rejects updates and deletes on this table. {total.toLocaleString()} events.
           </p>
         </div>
-        <div className="actions">
-          <button className="btn primary" onClick={() => void runVerify()} disabled={verifying}>
-            <ShieldCheck className="icon" aria-hidden="true" /> {verifying ? 'Verifying…' : 'Verify chain'}
-          </button>
-        </div>
+        {can(me, 'audit.verify') ? (
+          <div className="actions">
+            <button className="btn primary" onClick={() => void runVerify()} disabled={verifying}>
+              <ShieldCheck className="icon" aria-hidden="true" /> {verifying ? 'Verifying…' : 'Verify chain'}
+            </button>
+          </div>
+        ) : null}
       </div>
       {verify ? (
         <div className={`callout ${verify.ok ? 'good' : 'bad'}`} role="status" style={{ marginBottom: 14 }}>

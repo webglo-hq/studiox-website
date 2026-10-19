@@ -20,6 +20,7 @@ import * as proposals from '../app/proposals';
 import * as q from '../app/queries';
 import * as recs from '../app/recs';
 import * as skills from '../app/skills';
+import { writeFluxExplanation } from '../app/flux';
 
 export const SESSION_COOKIE = 'tieout_session';
 const OIDC_COOKIE = 'tieout_oidc';
@@ -227,6 +228,10 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     return c.json(await close.startCloseAgents(ctx, U(c), period(c), { only: Array.isArray(b.only) ? b.only.map(String).slice(0, 20) : undefined }));
   });
   app.post('/api/close/:period/lock', async (c) => c.json(await close.lockPeriod(ctx, U(c), period(c))));
+  app.post('/api/close/:period/reopen', async (c) => {
+    const b = await body<{ entityId?: string; reason?: string }>(c, 2000);
+    return c.json(await close.reopenPeriod(ctx, U(c), period(c), String(b.entityId ?? ''), String(b.reason ?? '')));
+  });
   app.post('/api/close/tasks/:id/complete', async (c) => c.json(await close.completeTask(ctx, U(c), c.req.param('id'), (await body<{ note?: string }>(c, 5000)).note)));
   app.post('/api/close/tasks/:id/signoff', async (c) => c.json(await close.signOffTask(ctx, U(c), c.req.param('id'))));
   app.get('/api/packages/:id', async (c) => c.json(await q.closePackage(ctx, U(c), c.req.param('id'))));
@@ -260,6 +265,10 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
 
   // ------------------------------------------------------------------ flux, ledger, reports
   app.get('/api/flux', async (c) => c.json(await q.fluxView(ctx, U(c), c.req.query('entity') ?? '', period(c))));
+  app.post('/api/flux/explanations', async (c) => {
+    const b = await body<{ entityId?: string; periodKey?: string; accountCode?: string; text?: string }>(c, 10_000);
+    return c.json(await writeFluxExplanation(ctx, U(c), { entityId: String(b.entityId ?? ''), periodKey: String(b.periodKey ?? ''), accountCode: String(b.accountCode ?? ''), text: String(b.text ?? '') }));
+  });
   app.get('/api/journal', async (c) => c.json(await q.journalList(ctx, U(c), { entity: c.req.query('entity'), period: c.req.query('period'), status: c.req.query('status'), source: c.req.query('source'), text: c.req.query('q') })));
   app.get('/api/journal/:id', async (c) => c.json(await q.journalDetail(ctx, U(c), c.req.param('id'))));
   app.post('/api/journal', async (c) => c.json(await ledger.prepareJournal(ctx, U(c), await body(c, 200_000))));

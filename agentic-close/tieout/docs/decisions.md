@@ -159,3 +159,23 @@ across reloads (by design).
 **Decision.** WCAG 2.2 AA tokens (contrast-checked in light and dark), status always icon + label,
 focus-trapped dialogs, skip link, keyboard shortcuts, and axe-core checks of every screen in both
 themes in the Playwright suite.
+
+## ADR-016 · People can always do the agent's work, through the same controls
+
+**Decision.** Wherever an agent drafts, a person can too, on the same path: a variance explanation
+written in the flux screen becomes a `flux_explanation` proposal with the drivers as evidence, the
+same AX-FLX checks and maker-checker approval (SOD-01). Drafting the close package and approving it
+are separate people (SOD-02), and finalizing it completes its checklist task.
+
+**Consequences.** One audit trail and one approval model whether the work came from an agent or a
+person; the lock (AX-CL-02) cannot tell them apart and does not need to.
+
+## ADR-017 · The browser suite runs on the production store
+
+**Context.** Store emulation passed every test while PostgreSQL turned application errors raised
+inside transactions into 500s.
+
+**Decision.** The end-to-end suite starts the real server on embedded PostgreSQL (PGlite in memory:
+same SQL, triggers and row-level security); the in-memory store remains for the static demo and fast
+tests, and one contract suite runs on all three stores. The whole close, to the lock, also runs over
+HTTP on PostgreSQL 16 in the integration tests.

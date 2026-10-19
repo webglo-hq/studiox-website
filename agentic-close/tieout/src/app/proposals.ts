@@ -110,6 +110,9 @@ export async function bulkApprove(ctx: AppContext, u: RequestUser, ids: string[]
   const out: { id: string; ok: boolean; ref?: string; error?: string }[] = [];
   for (const id of ids) {
     try {
+      // items flagged for instruction-like text are decided one at a time, never in bulk
+      const flagged = await ctx.db.tx(u.tenantId, async (tx) => (await tx.get('proposals', id))?.flags.includes('injection_suspected') ?? false);
+      if (flagged) throw precondition('It is flagged for instruction-like text; open it and decide it on its own.');
       const p = await approveProposal(ctx, u, id, note);
       out.push({ id, ok: true, ref: p.ref });
     } catch (e) {

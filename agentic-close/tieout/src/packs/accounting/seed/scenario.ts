@@ -49,6 +49,8 @@ export async function seedScenario(db: Db, opts: SeedOptions): Promise<SeedSumma
   for (const [code, name] of [['USD', 'US dollar'], ['GBP', 'Pound sterling'], ['EUR', 'Euro']] as const) b.add('currencies', { id: code, name, minor_units: 2 });
 
   // ------------------------------------------------------------- RBAC
+  // Row ids are drawn from the scenario's seeded RNG, so adding a role permission (or any row before
+  // the history) shifts every generated amount after it: re-baseline the skill goldens if you do.
   for (const [key, [category, description]] of Object.entries(PERMISSIONS)) b.add('permissions', { id: key, category, description, sensitive: /approve|lock|admin|policy|autonomy|reverse/.test(key) });
   const roleIds = new Map<string, string>();
   for (const r of ROLES) {

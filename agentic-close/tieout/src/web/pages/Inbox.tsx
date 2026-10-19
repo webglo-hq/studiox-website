@@ -66,7 +66,9 @@ export function Inbox() {
     }
   }
 
-  const decidable = items.filter((i) => i.canDecide);
+  // items flagged for instruction-like text are decided one at a time, never in bulk
+  const bulkable = (i: (typeof items)[number]) => i.canDecide && !i.flags.includes('injection_suspected');
+  const decidable = items.filter(bulkable);
   return (
     <div>
       <div className="page-head">
@@ -126,7 +128,7 @@ export function Inbox() {
       {!data ? (
         <Loading />
       ) : (
-        <section className={`card${loading ? ' skeleton' : ''}`} aria-label="Proposals" ref={listRef}>
+        <section className={`card${loading ? ' skeleton' : ''}`} aria-label="Proposals" aria-busy={loading || undefined} ref={listRef}>
           {items.length === 0 ? (
             <Empty title={status === 'open' ? 'Nothing needs a decision' : 'No items'}>{status === 'open' ? 'When agents propose work that needs a person, it lands here.' : 'Try another filter.'}</Empty>
           ) : (
@@ -136,7 +138,7 @@ export function Inbox() {
                   <input
                     type="checkbox"
                     aria-label={`Select ${p.ref}`}
-                    disabled={!p.canDecide}
+                    disabled={!bulkable(p)}
                     checked={selected.has(p.id)}
                     onChange={(e) => {
                       const s = new Set(selected);

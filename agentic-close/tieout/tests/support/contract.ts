@@ -4,6 +4,7 @@
  */
 import { expect, it } from 'vitest';
 import { audit, SYSTEM_ACTOR } from '../../src/core/audit/audit';
+import { DomainError, forbidden } from '../../src/core/util/errors';
 import { systemClock } from '../../src/core/util/time';
 import type { Db, DbTx, JournalEntryRow } from '../../src/schema';
 import { PEOPLE } from '../../src/packs/accounting/seed/company';
@@ -119,5 +120,20 @@ export function storeContract(getDb: () => Db) {
     expect(await db.tx('ten_someone_else', (tx) => tx.count('journal_entries', {}))).toBe(0);
     expect(await db.tx(T, (tx) => tx.count('journal_entries', {}))).toBeGreaterThan(2000);
     await expect(db.tx(T, (tx) => tx.insert('vendors', { tenant_id: 'ten_someone_else' } as never))).rejects.toThrow(/cross-tenant/);
+  });
+
+  it('rolls back and passes application errors through unchanged (a 403 stays a 403)', async () => {
+    const db = getDb();
+    const before = await db.tx(T, (tx) => tx.count('counters', {}));
+    const err = forbidden('You prepared this item, so someone else has to approve it.');
+    const thrown = await db
+      .tx(T, async (tx) => {
+        await tx.nextCounter('contract-rollback-probe');
+        throw err;
+      })
+      .catch((e: unknown) => e);
+    expect(thrown).toBe(err);
+    expect(thrown).toBeInstanceOf(DomainError);
+    expect(await db.tx(T, (tx) => tx.count('counters', {}))).toBe(before);
   });
 }

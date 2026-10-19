@@ -23,7 +23,7 @@ export interface TestApp {
 export async function testApp(over: Partial<AppConfig> = {}, db?: Db, oidcFetch?: typeof fetch): Promise<TestApp> {
   const fx = await bramblewoodFixture();
   const config: AppConfig = { publicOrigin: null, secureCookies: false, encryptionKey: TEST_KEY, sessionIdleMinutes: 30, sessionAbsoluteHours: 12, demoMode: true, demoPassword: null, oidc: null, version: 'test', ...over };
-  const ctx = createAppContext({ db: db ?? fx.db, clock: scenarioClock(SCENARIO.businessDate), config, hasher: new PasswordHasher(nobleScrypt, DEMO_SCRYPT), oidcFetch });
+  const ctx = createAppContext({ db: db ?? fx.db, clock: scenarioClock(SCENARIO.businessDate), config, hasher: new PasswordHasher(nobleScrypt, DEMO_SCRYPT), oidcFetch, log: process.env.TIEOUT_TEST_LOG ? (msg, data) => console.error('[app]', msg, data) : undefined });
   const app = createServerApp(ctx);
   return { ctx, app, fx, client: (origin = TEST_ORIGIN) => new HttpClient(app, origin) };
 }

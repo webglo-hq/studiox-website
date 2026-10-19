@@ -25,7 +25,9 @@ import { runCloseAgents } from '../../src/packs/accounting/close/orchestrate';
 import { PEOPLE, SCENARIO } from '../../src/packs/accounting/seed/company';
 import { DEMO_TENANT_ID, seedScenario } from '../../src/packs/accounting/seed/scenario';
 import { accountingSkills, installAccountingSkills } from '../../src/packs/accounting/skills/install';
+import { testApp, TEST_PASSWORD } from '../support/app';
 import { storeContract } from '../support/contract';
+import { closeTheMonth } from '../support/full-close';
 import { pgTestEnv } from '../support/pg';
 
 const env = pgTestEnv();
@@ -67,7 +69,7 @@ describe.skipIf(!env)('PostgreSQL 16 (real database)', () => {
 
   it('seeds the fictional company through the application role with balanced books', async () => {
     const hasher = new PasswordHasher(nobleScrypt, DEMO_SCRYPT);
-    const summary = await seedScenario(db, { demoPassword: 'pg-test-only-password', hashPassword: (p) => hasher.hash(p), installSkills: installAccountingSkills });
+    const summary = await seedScenario(db, { demoPassword: TEST_PASSWORD, hashPassword: (p) => hasher.hash(p), installSkills: installAccountingSkills });
     expect(summary.counts.journal_entries).toBeGreaterThan(2000);
     await db.tx(DEMO_TENANT_ID, async (tx) => {
       const chart = await Chart.load(tx);
@@ -120,6 +122,23 @@ describe.skipIf(!env)('PostgreSQL 16 (real database)', () => {
     expect(counts.proposals).toBeGreaterThan(100);
     expect(counts.applied).toBeGreaterThan(0);
     expect(counts.pending).toBeGreaterThan(20);
+    const chain = await db.tx(DEMO_TENANT_ID, (tx) => tx.find('audit_log', {}, { orderBy: [['seq', 'asc']] }));
+    expect(verifyAuditChain(chain as unknown as AuditRecord[]).ok).toBe(true);
+  }, 300_000);
+
+  it('finishes the close through the HTTP API and locks the period, with the database triggers on', async () => {
+    const t = await testApp({}, db);
+    const out = await closeTheMonth(t, { runAgents: false });
+    expect(out.readinessBeforeLock.ready).toBe(true);
+    // the database itself now refuses new entries in September (AX-PD-01 trigger), even as raw SQL
+    const periods = await admin.query("SELECT status FROM periods WHERE period_key = '2026-09'"); // superuser: sees past row-level security
+    expect(periods.rows.length).toBeGreaterThanOrEqual(2);
+    expect(periods.rows.every((r) => r.status === 'locked')).toBe(true);
+    await expect(
+      admin.exec(`INSERT INTO journal_entries (id, tenant_id, entity_id, period_id, je_number, entry_type, source, posting_date, memo, currency, status, total_minor, prepared_by, idempotency_key)
+        SELECT 'je_late_probe', p.tenant_id, p.entity_id, p.id, 'JE-LATE-1', 'adjusting', 'manual', '2026-09-30', 'late', 'USD', 'posted', 0, 'probe', 'late-probe'
+          FROM periods p JOIN entities e ON e.id = p.entity_id WHERE p.period_key = '2026-09' AND e.code = 'BWL-US'`),
+    ).rejects.toThrow(/AX-PD/);
     const chain = await db.tx(DEMO_TENANT_ID, (tx) => tx.find('audit_log', {}, { orderBy: [['seq', 'asc']] }));
     expect(verifyAuditChain(chain as unknown as AuditRecord[]).ok).toBe(true);
   }, 300_000);

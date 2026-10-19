@@ -39,10 +39,11 @@ Node 22.6+ is required. Every port is configurable and defaults to a random free
 | Alex Quinn | External Auditor | Read-only: ledger, runs, audit chain |
 | Avery Stone | IT Administrator | People, roles and entity scope (e.g. limit Sam to the UK subsidiary), SoD controls, security settings |
 
-## Demo script (≈5 minutes)
+## Demo script (≈5 minutes for the tour, ≈10 to finish the close)
 
-The same story runs as the end-to-end test suite (`tests/e2e/demo-script.spec.ts`), against the
-server and against the static demo.
+The same story, all the way to the locked period, runs as the end-to-end test suite
+(`tests/e2e/demo-script.spec.ts`), against the server (on embedded PostgreSQL) and against the static
+demo.
 
 1. **Sign in as Jordan Lee.** *My close* shows the September 2026 close at **WD+2** with the agents not
    yet run.
@@ -67,6 +68,22 @@ server and against the static demo.
 10. **Hover any underlined term** for its ontology definition; **Ontology → Axioms** for the rules.
 11. **Audit log → Verify chain**, then **Close cockpit**: the period cannot lock while work is open
     (AX-CL-02).
+
+**Finish the close:**
+
+12. **Decide everything (Casey).** *Inbox → Select all I can approve → Approve*. Items flagged for
+    instruction-like text never join a bulk selection: open the Riverside wire and reject it with a
+    reason. Then **Riley Chen (CFO)** approves what is above Casey's limit, such as the payroll accrual.
+13. **Certify the reconciliations (Sam Rivera).** In each bank workbench, *Certify as preparer*; the open
+    $2,750 needs a written justification (AX-REC-04). Certify the AP/AR tie-outs too; the duplicate
+    payment needs a note.
+14. **Explain the new variances (Sam).** Posting the payroll accrual pushed two payroll accounts past
+    the threshold: write one explanation yourself (*Flux → the row → Your explanation*) and let the
+    agent draft the other (*Draft 1 explanation*).
+15. **Casey** approves the explanations, *Review & sign*s each reconciliation, signs off the checklist and
+    clicks *Draft close package*.
+16. **Riley** approves the package draft in the inbox, *Finalize & sign*s it in the close cockpit, then
+    **Lock September 2026**. A locked entity can be reopened only with a documented reason.
 
 **Planted in the books** (what the agents should find): a deposit in transit ($27,500), an outstanding
 check (#10452, $1,236.40), a bank fee and interest, an unexplained bank debit ($2,750), the
@@ -109,7 +126,7 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
 npm run verify          # gen:check, typecheck, lint, unit + integration tests, skill evals
 npm run pg:start        # throwaway PostgreSQL 16 cluster in .pgtest/ (random port) for the PG tests
 npm run test:integration
-npm run e2e             # Playwright: demo script + axe on every screen (server on a random port)
+npm run e2e             # Playwright: the demo script to the locked period, scope, 2FA, axe (server on PGlite)
 npm run e2e:demo        # Playwright: the static demo from disk, in a sandboxed iframe, offline, phone
 npm run audit:deps      # npm audit --audit-level=high
 npm run pg:stop
@@ -136,6 +153,25 @@ In production set `DATABASE_URL`, `APP_ENCRYPTION_KEY`, `PUBLIC_ORIGIN` (https),
 and optionally `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_REDIRECT_URI` (`…/api/auth/oidc/callback`) and
 `OIDC_CLIENT_SECRET`. `docker compose up` builds the image and runs it against PostgreSQL 16 as an
 ordinary role (`compose.yaml`, `deploy/initdb/`).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  WEB["Web app<br/>src/web"] --> API
+  MCP["Claude / MCP client"] --> MCPS["MCP server<br/>src/mcp"] --> API
+  API["HTTP API: sessions, CSRF, RBAC, SoD<br/>src/server"] --> UC["Use cases + read models<br/>src/app"]
+  UC --> RT["Agent runtime<br/>plan, act, verify, propose, route, post<br/>src/core/agent"]
+  UC --> PACK
+  RT --> PACK["Accounting pack: ledger, services,<br/>typed tools, verifier<br/>src/packs/accounting"]
+  RT --> SK["Skills: SKILL.md + manifest + evals<br/>skills/"]
+  RT -. live mode .-> LLM["Claude API"]
+  PACK --> ONT["Close ontology<br/>executable axioms"]
+  PACK --> DB[("PostgreSQL / PGlite / memory<br/>triggers, RLS, audit chain")]
+```
+
+The same app (API, agents, ontology) runs on the Node server and inside the static demo page. Details in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Layout
 

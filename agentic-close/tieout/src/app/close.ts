@@ -73,11 +73,31 @@ export async function finalizePackage(ctx: AppContext, u: RequestUser, packageId
     const pkg = await tx.get('close_packages', packageId);
     if (!pkg) throw notFound('Close package', packageId);
     if (pkg.status === 'final') throw conflict('This package is already final.');
+    // maker-checker: whoever asked the agent for the package does not sign it (SOD-02)
+    const run = pkg.agent_run_id ? await tx.get('agent_runs', pkg.agent_run_id) : undefined;
+    if (run?.requested_by === u.actor.id) throw sodViolation('You asked the agent for this package, so someone else has to approve it (SOD-02).');
     const now = ctx.clock.now().toISOString();
     const hash = sha256Hex(canonicalJson(pkg.content as unknown as Record<string, unknown>));
     if (hash !== pkg.content_hash) throw invariant('AX-AUD-01', 'the package content no longer matches its hash');
     const updated = await tx.update('close_packages', pkg.id, { status: 'final' });
     await tx.insert('signoffs', { subject_type: 'close_package', subject_id: pkg.id, role: 'approver', user_id: u.actor.id, statement: `I approve the ${pkg.period_key} close package v${pkg.version}.`, content_hash: hash, signed_at: now });
+    // the checklist's "Generate the close package" task: prepared by whoever asked for the package,
+    // reviewed by this approver; it is done once its prerequisites are (AX-CL-01), otherwise ready for review
+    const cp = await tx.findOne('close_periods', { period_key: pkg.period_key });
+    const task = cp ? await tx.findOne('close_tasks', { close_period_id: cp.id, key: 'close-package' }) : undefined;
+    if (task && task.status !== 'done' && task.status !== 'skipped') {
+      let depsDone = true;
+      for (const d of await tx.find('close_task_dependencies', { task_id: task.id })) {
+        const dt = await tx.get('close_tasks', d.depends_on_task_id);
+        if (dt && dt.status !== 'done' && dt.status !== 'skipped') depsDone = false;
+      }
+      const preparer = run?.requested_by ?? task.completed_by ?? null;
+      const note = `${task.notes ? `${task.notes} · ` : ''}Package v${pkg.version} approved by ${u.actor.label}.`.slice(0, 2000);
+      if (depsDone && preparer !== u.actor.id) {
+        await tx.update('close_tasks', task.id, { status: 'done', completed_by: preparer, completed_at: task.completed_at ?? now, reviewed_by: u.actor.id, reviewed_at: now, agent_run_id: pkg.agent_run_id ?? task.agent_run_id, notes: note });
+        await tx.insert('signoffs', { subject_type: 'close_task', subject_id: task.id, role: 'reviewer', user_id: u.actor.id, statement: `I reviewed and signed off “${task.title}” (package v${pkg.version}).`, content_hash: hash, signed_at: now });
+      } else await tx.update('close_tasks', task.id, { status: 'ready_for_review', completed_by: preparer, completed_at: task.completed_at ?? now, agent_run_id: pkg.agent_run_id ?? task.agent_run_id, notes: note });
+    }
     await audit(tx, u.actor, ctx.clock, { action: 'close.package.finalize', subjectType: 'close_package', subjectId: pkg.id, summary: `Close package ${pkg.period_key} v${pkg.version} finalized`, data: { contentHash: hash } }, u.ip);
     return updated;
   });

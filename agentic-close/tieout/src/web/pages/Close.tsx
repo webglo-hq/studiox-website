@@ -2,7 +2,7 @@
 import { Check, FileText, Lock, Play } from 'lucide-react';
 import { useState } from 'react';
 import { api, ApiError, type CloseData, type CloseTask } from '../api';
-import { Badge, Dialog, ErrorBox, Loading, Meter, Term } from '../components/ui';
+import { Badge, Dialog, ErrorBox, Loading, Meter, ReasonDialog, Term } from '../components/ui';
 import { can, useApp, useData, useMe } from '../lib/app-state';
 import { date, periodName } from '../lib/format';
 
@@ -14,6 +14,7 @@ export function Close() {
   const { data, error, loading, reload } = useData(() => api<CloseData>(`/close/${period}`), [period]);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmLock, setConfirmLock] = useState(false);
+  const [reopening, setReopening] = useState<{ entityId: string; code: string } | null>(null);
 
   async function act(path: string, label: string, body: unknown = {}) {
     setBusy(label);
@@ -34,6 +35,7 @@ export function Close() {
   for (const t of data.tasks) byWd.set(t.dueLabel, [...(byWd.get(t.dueLabel) ?? []), t]);
   const done = data.tasks.filter((t) => t.status === 'done' || t.status === 'skipped').length;
   const latest = data.packages[0];
+  const locked = data.periods.length > 0 && data.periods.every((p) => p.status === 'locked');
   return (
     <div className={loading ? 'skeleton' : undefined}>
       <div className="page-head">
@@ -59,8 +61,8 @@ export function Close() {
             </button>
           ) : null}
           {can(me, 'close.lock') ? (
-            <button className="btn primary" disabled={!!busy || !data.readiness.ready} onClick={() => setConfirmLock(true)} title={data.readiness.ready ? 'Lock the period' : data.readiness.messages.join('; ')}>
-              <Lock className="icon" aria-hidden="true" /> Lock {periodName(period)}
+            <button className="btn primary" disabled={!!busy || !data.readiness.ready || locked} onClick={() => setConfirmLock(true)} title={locked ? 'Locked for every entity' : data.readiness.ready ? 'Lock the period' : data.readiness.messages.join('; ')}>
+              <Lock className="icon" aria-hidden="true" /> {locked ? `${periodName(period)} locked` : `Lock ${periodName(period)}`}
             </button>
           ) : null}
         </div>
@@ -152,9 +154,13 @@ export function Close() {
         <div className="stack">
           <section className="card card-pad" aria-labelledby="h-lock">
             <h2 id="h-lock" style={{ marginBottom: 8 }}>
-              Ready to lock?
+              {locked ? 'Period locked' : 'Ready to lock?'}
             </h2>
-            {data.readiness.ready ? (
+            {locked ? (
+              <p>
+                <Badge tone="good">Locked</Badge> {periodName(period)} is closed for every entity. Nothing more posts to it; reopening needs a documented reason.
+              </p>
+            ) : data.readiness.ready ? (
               <p>
                 <Badge tone="good">Ready</Badge> Every condition holds.
               </p>
@@ -174,14 +180,22 @@ export function Close() {
               Rule <a href="#/ontology?axiom=AX-CL-02">AX-CL-02</a>: no pending proposals, every reconciliation reviewed, significant variances explained, all tasks done and a final close package.
             </p>
             <ul className="checks" style={{ marginTop: 8 }}>
-              {data.periods.map((p) => (
-                <li key={p.entityId}>
-                  <Badge tone={p.status === 'locked' ? 'good' : p.status === 'open' ? 'neutral' : 'info'} icon={false}>
-                    {p.status.replace('_', ' ')}
-                  </Badge>
-                  {me.entities.find((e) => e.id === p.entityId)?.code ?? p.entityId}
-                </li>
-              ))}
+              {data.periods.map((p) => {
+                const code = me.entities.find((e) => e.id === p.entityId)?.code ?? p.entityId;
+                return (
+                  <li key={p.entityId}>
+                    <Badge tone={p.status === 'locked' ? 'good' : p.status === 'open' ? 'neutral' : 'info'} icon={false}>
+                      {p.status.replace('_', ' ')}
+                    </Badge>
+                    {code}
+                    {p.status === 'locked' && can(me, 'close.lock') ? (
+                      <button className="linklike" style={{ marginLeft: 'auto' }} onClick={() => setReopening({ entityId: p.entityId, code })}>
+                        Reopen
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </section>
           <section className="card card-pad" aria-labelledby="h-pkg">
@@ -227,6 +241,19 @@ export function Close() {
       >
         <p>Locking stops all posting to {periodName(period)} for every entity. Reopening later needs a Controller or CFO and a documented reason.</p>
       </Dialog>
+      <ReasonDialog
+        open={!!reopening}
+        title={`Reopen ${periodName(period)} for ${reopening?.code ?? ''}?`}
+        label="Why does the period need to reopen? (for the audit log and the auditors)"
+        min={10}
+        confirm="Reopen to soft-close"
+        onCancel={() => setReopening(null)}
+        onConfirm={(reason) => {
+          const r = reopening;
+          setReopening(null);
+          if (r) void act(`/close/${period}/reopen`, `${periodName(period)} reopened for ${r.code} (soft-closed: adjusting entries only).`, { entityId: r.entityId, reason });
+        }}
+      />
     </div>
   );
 }

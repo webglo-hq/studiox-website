@@ -348,7 +348,9 @@ export class PgStore<M, I = M> implements Store<M, I> {
 function normaliseError(e: unknown): unknown {
   if (e instanceof StoreError) return e;
   const err = e as { code?: string; message?: string };
-  if (err && typeof err === 'object' && typeof err.code === 'string' && typeof err.message === 'string') {
+  // only database errors (five-character SQLSTATE codes); application errors thrown inside the
+  // transaction (forbidden, validation, SoD...) pass through untouched
+  if (err && typeof err === 'object' && typeof err.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code) && typeof err.message === 'string') {
     return new StoreError(err.code === '23000' ? '23514' : err.code, err.message);
   }
   return e;
