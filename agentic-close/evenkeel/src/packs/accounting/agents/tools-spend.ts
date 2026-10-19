@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { addDays, addMonths, periodEnd, periodStart } from '../../../framework/util/dates';
-import { BusinessCalendar } from '../../../framework/util/workdays';
+import type { BusinessCalendar } from '../../../framework/util/workdays';
 import { detectGrni, detectRecurringGaps, detectSubsequentBills, payrollAccrual, type AccrualCandidate, type BillFact, type PayrollFact, type PoFact } from '../domain/accrual-math';
 import { buildHistory, codeTransaction, type CodingAccount, type CodingEnv, type CodingResult } from '../domain/coding-engine';
 import { memo } from '../domain/context';

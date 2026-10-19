@@ -5,10 +5,6 @@ import { expect, test } from '@playwright/test';
  * allowed, an on-page fallback when workers are blocked, and inside a sandboxed iframe
  * (opaque origin: storage throws, workers may be refused).
  */
-test.beforeEach(({}, info) => {
-  test.skip(info.project.name !== 'demo', 'static demo only');
-});
-
 test('boots from one file with no network calls, using a worker', async ({ page, baseURL }) => {
   const requests: string[] = [];
   page.on('request', (r) => {

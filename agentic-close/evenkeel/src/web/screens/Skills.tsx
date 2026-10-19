@@ -87,7 +87,12 @@ function AutonomyEditor({ d }: { d: Detail }) {
   const save = useAction('skills.setAutonomy', { success: (_o, i) => `Autonomy set to ${i.level}. Policy version saved.`, onSuccess: () => setNote('') });
   const maxIdx = LEVELS.indexOf(d.manifest.autonomy.max);
   const allowed = can('skill.autonomy.set');
-  useEffect(() => setLevel(d.policy.autonomy), [d.policy.autonomy]);
+  // A new policy version (saved here or elsewhere) resets the picker to what is in force.
+  const [levelInForce, setLevelInForce] = useState(d.policy.autonomy);
+  if (levelInForce !== d.policy.autonomy) {
+    setLevelInForce(d.policy.autonomy);
+    setLevel(d.policy.autonomy);
+  }
   return (
     <Card title="Autonomy" hint={allowed ? 'Only a controller can change this. Every change is a new, audited policy version.' : 'Set by the controller.'}>
       <fieldset style={{ border: 0, margin: 0, padding: 0 }} disabled={!allowed}>

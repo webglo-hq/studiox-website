@@ -366,7 +366,7 @@ export function createHandler(deps: HttpDeps) {
   }
 
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    let path = '/';
+    let path: string;
     try {
       path = new URL(req.url ?? '/', 'http://local').pathname;
     } catch {

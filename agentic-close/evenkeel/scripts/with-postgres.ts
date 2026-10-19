@@ -65,7 +65,7 @@ async function main(): Promise<number> {
       run(join(PG_BIN, 'pg_ctl'), ['-D', data, '-l', log, '-o', opts, '-w', 'start'], true);
     } catch (e) {
       const tail = existsSync(log) ? spawnSync('tail', ['-n', '15', log], { encoding: 'utf8' }).stdout : '';
-      throw new Error(`${(e as Error).message}\n${tail}`);
+      throw new Error(`${(e as Error).message}\n${tail}`, { cause: e });
     }
     started = true;
     const admin = new pg.Client({ connectionString: `postgres://evenkeel@127.0.0.1:${port}/postgres` });

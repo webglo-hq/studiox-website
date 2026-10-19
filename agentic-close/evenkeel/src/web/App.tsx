@@ -21,23 +21,37 @@ const queryClient = new QueryClient({
 export function App({ backend }: { backend: Backend }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
 
+  const apply = useCallback((info: SessionInfo) => {
+    if (!info.authenticated) {
+      queryClient.clear();
+      setPhase({ kind: 'signed-out', info });
+    } else if (info.mfaRequired || !info.user) setPhase({ kind: 'mfa', info });
+    else setPhase({ kind: 'ready', info });
+  }, []);
+
   const load = useCallback(async () => {
     try {
-      const info = await backend.session();
-      if (!info.authenticated) {
-        queryClient.clear();
-        setPhase({ kind: 'signed-out', info });
-      } else if (info.mfaRequired || !info.user) setPhase({ kind: 'mfa', info });
-      else setPhase({ kind: 'ready', info });
+      apply(await backend.session());
     } catch (e) {
       setPhase({ kind: 'error', error: e });
     }
-  }, [backend]);
+  }, [backend, apply]);
 
+  // Resolve the session on start, and again whenever the backend reports a sign-out.
   useEffect(() => {
-    void load();
-    return backend.onSignedOut(() => void load());
-  }, [backend, load]);
+    let alive = true;
+    const resolve = () =>
+      backend.session().then(
+        (info) => alive && apply(info),
+        (error: unknown) => alive && setPhase({ kind: 'error', error }),
+      );
+    void resolve();
+    const off = backend.onSignedOut(() => void resolve());
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [backend, apply]);
 
   const session = useMemo<SessionApi | null>(() => {
     if (phase.kind !== 'ready' || !phase.info.user) return null;

@@ -192,7 +192,7 @@ export class AgentRuntime<Ctx> {
 
     const adapter = this.opts.adapter;
     const atomically = <T,>(fn: (scope: AtomicScope<Ctx>) => Promise<T>): Promise<T> => this.atomically(fn);
-    const self = this;
+    const registry = this.opts.tools;
     const session: BrainSession = {
       run,
       skill,
@@ -234,7 +234,7 @@ export class AgentRuntime<Ctx> {
           if (recorded.status !== 'ok') throw new Error(recorded.error ?? 'tool failed');
           return recorded.output as O;
         }
-        const tool = self.opts.tools.get(name);
+        const tool = registry.get(name);
         if (!tool || !allowed.has(name)) {
           const s = await step('act', `Denied tool ${name}`, { reason: 'not in the skill manifest (least privilege)' }, 'error');
           await store.insertToolCall({ runId: run.id, stepSeq: s, toolName: name, input, output: null, status: 'denied', error: 'not allowed for this skill', durationMs: 0, idempotencyKey: key });

@@ -177,6 +177,11 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 
 /** Keeps focus inside a dialog, closes on Escape and restores focus on close (WCAG 2.4.3). */
 function useFocusTrap(ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
+  // The trap is set up once per dialog; Escape always calls the latest onClose.
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
@@ -185,7 +190,7 @@ function useFocusTrap(ref: React.RefObject<HTMLElement | null>, onClose: () => v
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        close.current();
         return;
       }
       if (e.key !== 'Tab' || !el) return;
@@ -209,8 +214,7 @@ function useFocusTrap(ref: React.RefObject<HTMLElement | null>, onClose: () => v
       document.body.style.overflow = overflow;
       prev?.focus?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ref]);
 }
 
 export function Dialog({ title, children, footer, onClose, wide, description }: { title: string; children: ReactNode; footer?: ReactNode; onClose: () => void; wide?: boolean; description?: string }) {

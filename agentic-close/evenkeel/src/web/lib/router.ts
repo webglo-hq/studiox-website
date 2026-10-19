@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 /**
  * Hash routing (#/path/segments?query). Works from any static host, from a file and inside
@@ -25,16 +25,9 @@ function subscribe(cb: () => void): () => void {
   return () => window.removeEventListener('hashchange', cb);
 }
 
-let cachedHash: string | null = null;
-let cachedRoute: Route = parseHash('');
-
 export function useRoute(): Route {
   const hash = useSyncExternalStore(subscribe, current, () => '');
-  if (hash !== cachedHash) {
-    cachedHash = hash;
-    cachedRoute = parseHash(hash);
-  }
-  return cachedRoute;
+  return useMemo(() => parseHash(hash), [hash]);
 }
 
 export function href(path: string, query?: Record<string, string | number | boolean | null | undefined>): string {

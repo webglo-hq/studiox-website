@@ -137,7 +137,8 @@ export function sanitizeUntrusted(text: string | null | undefined, maxLen = 500)
   if (!text) return '';
   // eslint-disable-next-line no-control-regex
   let s = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
-  s = s.replace(/[​-‏‪-‮⁠-⁤⁦-⁩﻿]/g, '');
+  // Zero-width and bidirectional-control characters (used to hide or reorder instructions).
+  s = s.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '');
   s = s.replace(/[<>]/g, (c) => (c === '<' ? '‹' : '›'));
   return truncate(s, maxLen);
 }

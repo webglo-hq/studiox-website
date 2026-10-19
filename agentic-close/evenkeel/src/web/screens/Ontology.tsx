@@ -1,5 +1,5 @@
 import { ArrowLeft, Download, ExternalLink, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { MethodOutput } from '../../app/methods';
 import { useApi, useBackend } from '../lib/api';
 import { humanize } from '../lib/format';
@@ -271,7 +271,12 @@ function GraphView({ modules }: { modules: string[] }) {
     return { nodes: data.nodes.filter((n) => keep.has(n.id)), edges: data.edges.filter((e) => keep.has(e.source) && keep.has(e.target)) };
   }, [data, module]);
   const pos = useMemo(() => (filtered ? layout(filtered, W, H) : null), [filtered]);
-  useEffect(() => setView({ x: 0, y: 0, k: 1 }), [module]);
+  // Choosing another module recentres the graph.
+  const [viewModule, setViewModule] = useState(module);
+  if (viewModule !== module) {
+    setViewModule(module);
+    setView({ x: 0, y: 0, k: 1 });
+  }
   const color = (m: string) => MODULE_COLORS[Math.max(0, modules.indexOf(m)) % MODULE_COLORS.length]!;
   return (
     <Card title="Class graph" hint="Drag to pan, scroll or pinch to zoom, select a class to open it" actions={

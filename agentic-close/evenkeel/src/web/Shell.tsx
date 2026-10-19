@@ -263,7 +263,10 @@ function ShellInner() {
   const route = useRoute();
   const { info, can, signOut } = useSession();
   const user = info.user;
-  const [navOpen, setNavOpen] = useState(false);
+  // The phone navigation drawer belongs to the page it was opened on: navigating closes it.
+  const [navOpenOn, setNavOpenOn] = useState<string | null>(null);
+  const navOpen = navOpenOn === route.raw;
+  const setNavOpen = (open: boolean) => setNavOpenOn(open ? route.raw : null);
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
   const activity = useAgents();
@@ -274,7 +277,6 @@ function ShellInner() {
   const current = items.find((i) => i.key === first);
 
   useEffect(() => {
-    setNavOpen(false);
     // Move focus to the page for screen-reader and keyboard users after navigation.
     main.current?.focus({ preventScroll: true });
     window.scrollTo({ top: 0 });

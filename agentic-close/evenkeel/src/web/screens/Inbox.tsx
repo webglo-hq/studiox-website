@@ -331,10 +331,14 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
   const items = useMemo(() => list.data?.items ?? [], [list.data]);
   const approvable = items.filter((p) => p.canApprove.ok);
 
-  useEffect(() => {
+  // A different view starts with nothing selected (adjusting state while rendering, not in an effect).
+  const view = `${tab}|${kind ?? ''}`;
+  const [viewSeen, setViewSeen] = useState(view);
+  if (viewSeen !== view) {
+    setViewSeen(view);
     setSelected(new Set());
     setCursor(0);
-  }, [tab, kind]);
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

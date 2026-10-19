@@ -1,5 +1,5 @@
 import { FileUp, KeyRound, Plug, ShieldCheck, UserCog } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { MethodOutput } from '../../app/methods';
 import { useAction, useApi } from '../lib/api';
 import { humanize, money, plural, ROLE_LABEL, when } from '../lib/format';
@@ -260,22 +260,31 @@ function SodRules() {
   );
 }
 
+type SettingsData = MethodOutput<'admin.settings'>;
+
+const settingsForm = (s: SettingsData) => ({
+  overall: String(s.materiality.overall / 100),
+  performance: String(s.materiality.performance / 100),
+  trivial: String(s.materiality.clearlyTrivial / 100),
+  cap: String(s.capitalizationThreshold / 100),
+  prepaid: String(s.prepaidThreshold / 100),
+  autoContinue: s.autoContinue,
+});
+
 function Settings() {
-  const { can } = useSession();
   const q = useApi('admin.settings', {});
-  const [form, setForm] = useState({ overall: '', performance: '', trivial: '', cap: '', prepaid: '', autoContinue: true });
+  // Keyed by the values in force, so the form starts over whenever the saved settings change.
+  return <Query q={q} rows={6}>{(s) => <SettingsForm key={JSON.stringify(settingsForm(s))} s={s} />}</Query>;
+}
+
+function SettingsForm({ s }: { s: SettingsData }) {
+  const { can } = useSession();
+  const [form, setForm] = useState(() => settingsForm(s));
   const [note, setNote] = useState('');
   const save = useAction('admin.updateSettings', { success: 'Settings saved.', onSuccess: () => setNote('') });
-  useEffect(() => {
-    if (!q.data) return;
-    const s = q.data;
-    setForm({ overall: String(s.materiality.overall / 100), performance: String(s.materiality.performance / 100), trivial: String(s.materiality.clearlyTrivial / 100), cap: String(s.capitalizationThreshold / 100), prepaid: String(s.prepaidThreshold / 100), autoContinue: s.autoContinue });
-  }, [q.data]);
   const c = (v: string) => Math.round(Number(v) * 100);
   const editable = can('period.lock');
   return (
-    <Query q={q} rows={6}>
-      {(s) => (
         <div className="grid grid-main">
           <Card title={<Term id="ek:Materiality">Materiality</Term>} hint="Drives which agent proposals always need a person, and how variances are judged">
             <div className="stack">
@@ -329,8 +338,6 @@ function Settings() {
             </div>
           </Card>
         </div>
-      )}
-    </Query>
   );
 }
 
