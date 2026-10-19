@@ -18,6 +18,7 @@ describe('accounting review fixes (ACC-1, ACC-2, ACC-3, B-4, B-8)', () => {
   let email: (key: string) => string;
   let maya: Client;
   let daniel: Client;
+  let fluxRunId: string;
   const userId = async (key: string) => (await app.read((tx) => tx.findOne('users', { email: email(key) })))!.id;
 
   beforeAll(async () => {
@@ -28,6 +29,10 @@ describe('accounting review fixes (ACC-1, ACC-2, ACC-3, B-4, B-8)', () => {
     await daniel.login(email('daniel'));
     expect((await maya.call('POST', `/api/closes/${seed.closeId}/run`, {})).status).toBe(202);
     await app.queue.idle();
+    // The flux agent drafts variance explanations (ACC-3, B-8).
+    const flux = await app.runtime.start(seed.tenantId, { skillKey: 'flux-analysis', input: { closeId: seed.closeId, period: '2026-09' }, requestedBy: await userId('maya'), requestedByLabel: 'Maya Chen' });
+    await app.runtime.execute(flux.id);
+    fluxRunId = flux.id;
   }, 240_000);
 
   it('ACC-1: the recurring accrual for Copperline leaves out the duplicate bill', async () => {
@@ -63,9 +68,7 @@ describe('accounting review fixes (ACC-1, ACC-2, ACC-3, B-4, B-8)', () => {
     const consolidated = await maya.ok<{ checks: Array<{ axiom: string; severity: string }> | null }>('GET', '/api/reports/trial-balance');
     expect(consolidated.checks!.filter((c) => c.axiom.startsWith('AX-TB'))).toEqual([]);
 
-    const run = await app.runtime.start(seed.tenantId, { skillKey: 'flux-analysis', input: { closeId: seed.closeId, period: '2026-09' }, requestedBy: await userId('maya'), requestedByLabel: 'Maya Chen' });
-    await app.runtime.execute(run.id);
-    const explanation = (await app.read((tx) => tx.find('proposals', { run_id: run.id, kind: 'flux_explanation' })))[0]!;
+    const explanation = (await app.read((tx) => tx.find('proposals', { run_id: fluxRunId, kind: 'flux_explanation' })))[0]!;
     const ids = (explanation.verification as Array<{ id: string; label: string }>).map((c) => c.id);
     expect(ids).toEqual(expect.arrayContaining(['AX-FLX-04', 'AX-FLX-05']));
     expect(ids).not.toContain('AX-FLX-02');
@@ -97,6 +100,13 @@ describe('accounting review fixes (ACC-1, ACC-2, ACC-3, B-4, B-8)', () => {
     const briar = (await app.read((tx) => tx.find('proposals', { tenant_id: seed.tenantId, kind: 'rec_match' }))).find((p) => /BRIAR STUDIOS/.test(p.title))!;
     const routing = (briar.verification as Array<{ id: string; label: string }>).find((c) => c.id === 'DISPOSITION')!.label;
     expect(routing).toContain('$254,760.00 is above the auto-apply limit of $250,000.00');
+    // A variance explanation shows the variance it covers, not "$0.00".
+    const explanations = (await daniel.ok<{ items: Array<{ kind: string; amount: number; display: { kind: string; minor: number | null } }> }>('GET', '/api/proposals?view=all&kind=flux_explanation&limit=50')).items;
+    expect(explanations.length).toBeGreaterThan(0);
+    for (const x of explanations) {
+      expect(x.display.kind).toBe('variance');
+      expect(x.display.minor).not.toBe(0);
+    }
     const uk = (await app.read(async (tx) => {
       const e = (await tx.findOne('entities', { tenant_id: seed.tenantId, code: 'BW-UK' }))!;
       return tx.find('proposals', { tenant_id: seed.tenantId, entity_id: e.id, kind: 'rec_match' });
