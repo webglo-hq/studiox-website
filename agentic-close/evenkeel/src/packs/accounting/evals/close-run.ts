@@ -35,7 +35,8 @@ export interface CloseRunResult {
   auditChecked: number;
 }
 
-export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; through?: 'proposals' | 'lock'; log?: (s: string) => void }): Promise<CloseRunResult> {
+/** `through`: stop once the proposals are decided, once every review is done (before signing), or after locking. */
+export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; through?: 'proposals' | 'reviews' | 'lock'; log?: (s: string) => void }): Promise<CloseRunResult> {
   const log = opts.log ?? (() => undefined);
   const db = opts.db ?? createMemoryDb();
   const info = await loadScenario(db, { skills: opts.skills });
@@ -68,11 +69,10 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
 
   let locked = false;
   let lockFailures: string[] = [];
-  if (opts.through === 'lock') {
+  if (opts.through === 'lock' || opts.through === 'reviews') {
     const sam = await as('sam');
     const priya = await as('priya');
     const casey = await as('casey');
-    const jordan = await as('jordan');
     for (const r of await listRecs(sam, SCENARIO.openPeriod)) if (r.status === 'in_progress' || r.status === 'not_started') await certifyRec(sam, r.id).catch((e: Error) => log(`certify ${r.title}: ${e.message}`));
     for (const r of await listRecs(priya, SCENARIO.openPeriod)) if (r.status === 'prepared') await reviewRec(priya, r.id, { approve: true });
     for (const i of await listIssues(casey, { periodKey: SCENARIO.openPeriod, status: ['open', 'acknowledged'] })) {
@@ -86,6 +86,10 @@ export async function runFullClose(opts: { db?: EkDb; skills: SkillPackage[]; th
         if ((await completionReadiness(who, t.id)).ok) await updateTask(who, { taskId: t.id, action: 'complete' });
       }
     }
+  }
+  if (opts.through === 'lock') {
+    const casey = await as('casey');
+    const jordan = await as('jordan');
     // The draft was generated before the reviews finished: refresh it to the current close, then sign.
     let draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft');
     if (draft && (await getPackage(jordan, draft.id)).stale) draft = await refreshPackage(jordan, draft.id);

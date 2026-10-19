@@ -6,7 +6,8 @@ import { runFullClose } from '../../src/packs/accounting/evals/close-run';
 import { SCENARIO, type UserKey } from '../../src/packs/accounting/seed/scenario';
 import { myClose } from '../../src/packs/accounting/services/home';
 import { listProposals } from '../../src/packs/accounting/services/inbox';
-import { approvePackage, buildPackageContent, contentHash, getPackage, listPackages, type PackageContent } from '../../src/packs/accounting/services/package';
+import { completionReadiness } from '../../src/packs/accounting/services/close';
+import { approvePackage, buildPackageContent, contentHash, getPackage, listPackages, refreshPackage, type PackageContent } from '../../src/packs/accounting/services/package';
 import { lockReadiness } from '../../src/packs/accounting/services/periods';
 import { listRecs } from '../../src/packs/accounting/services/recs';
 import { loadSkillsFromDisk } from '../../src/server/skills-fs';
@@ -83,6 +84,17 @@ describe('what to do next', () => {
     expect(alex.next.detail).toMatch(/agent proposals wait for .*(Priya Natarajan|Jordan Blake)/);
   }, 120_000);
 
+  it('E-2: when approvals that do not restart the agents unblock tasks, a close lead is told to continue the close first', async () => {
+    const s = await loadTestScenario();
+    await s.engine.orchestrate(null, s.user('casey'));
+    // Only the CFO approves here, and the CFO's approvals do not start agents.
+    for (let i = 0; i < 6 && !(await s.engine.hasReadyTasks(SCENARIO.openPeriod)); i++) {
+      for (const p of await s.db.find('proposal', { tenant_id: s.info.tenantId, status: { in: ['pending', 'suggested'] } })) await s.engine.decide({ proposalIds: [p.id], decision: 'approve', userId: s.user('jordan') });
+    }
+    expect(await s.engine.hasReadyTasks(SCENARIO.openPeriod)).toBe(true);
+    for (const k of ['casey', 'priya'] as const) expect((await myClose(await as(s, k))).next).toMatchObject({ title: 'Continue the close', action: 'orchestrate', cta: 'Continue the close' });
+  }, 120_000);
+
   it('E-2: routes the agent’s close-package draft to the CFO, who is told to approve it and then sign', async () => {
     const s = await loadTestScenario();
     await s.engine.orchestrate(null, s.user('casey'));
@@ -103,6 +115,23 @@ describe('what to do next', () => {
     const pkg = (await listPackages(jordan, SCENARIO.openPeriod))[0]!;
     expect(pkg.generatedBy?.id).toBe(draft.requested_by);
     expect((await myClose(jordan)).next.title).toMatch(/close package/);
+  }, 180_000);
+});
+
+describe('signing the close package', () => {
+  it('E-2: once the reviews are done the CFO is told to refresh and sign; the reporting task completes only by signing', async () => {
+    const r = await runFullClose({ skills: loadSkillsFromDisk(), through: 'reviews' });
+    const jordan = await as(r, 'jordan');
+    const home = await myClose(jordan);
+    expect(home.next).toMatchObject({ title: 'Refresh and sign the close package', href: '#/package', cta: 'Open the package' });
+    // Nobody completes "Prepare the close package" in the cockpit before the package is signed.
+    const cycle = (await r.db.findOne('close_cycle', { tenant_id: r.info.tenantId, period_key: SCENARIO.openPeriod }))!;
+    const reporting = (await r.db.find('close_task', { close_cycle_id: cycle.id, category: 'reporting' }))[0]!;
+    for (const k of ['jordan', 'priya'] as const) expect((await completionReadiness(await as(r, k), reporting.id)).reasons).toContain('Sign the close package first; signing it completes this task.');
+    const draft = (await listPackages(jordan, SCENARIO.openPeriod)).find((p) => p.status === 'draft')!;
+    await approvePackage(jordan, (await refreshPackage(jordan, draft.id)).id);
+    expect((await r.db.get('close_task', reporting.id))!.status).toBe('complete');
+    expect((await myClose(await as(r, 'casey'))).next.title).toBe('Lock September 2026');
   }, 180_000);
 });
 

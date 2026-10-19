@@ -234,6 +234,11 @@ export async function completionReadiness(ctx: ServiceContext, taskId: string): 
     if (pending) reasons.push(`${pending} agent proposal${pending === 1 ? '' : 's'} still need a decision.`);
   }
   for (const rc of await recsForTask(ctx, t)) if (rc.status !== 'reviewed') reasons.push(`Reconciliation “${rc.notes}” is ${rc.status.replace('_', ' ')}, not reviewed.`);
+  // The reporting task's review is the signature on the close package (approvePackage completes it).
+  if (t.category === 'reporting') {
+    const cycle = await ctx.db.get('close_cycle', t.close_cycle_id);
+    if (!cycle || !(await ctx.db.count('close_package', { tenant_id: ctx.tenantId, period_key: cycle.period_key, status: 'final' }))) reasons.push('Sign the close package first; signing it completes this task.');
+  }
   const preparer = t.prepared_by ?? t.owner_id;
   if (preparer && preparer === ctx.actor.userId) reasons.push('You prepared this task, so someone else must review and complete it.');
   if (!hasPermission(ctx.actor, 'close.task.review')) reasons.push('Your role cannot complete tasks.');

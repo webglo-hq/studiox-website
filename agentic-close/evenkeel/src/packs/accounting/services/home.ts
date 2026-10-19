@@ -107,7 +107,8 @@ export async function myClose(ctx: ServiceContext) {
       }
     }
   }
-  const draftPkg = packages.find((p) => p.status === 'draft');
+  // Only the newest version can be signed; older drafts were superseded by a refresh.
+  const draftPkg = packages[0]?.status === 'draft' ? packages[0] : undefined;
   const finalPkg = packages.find((p) => p.status === 'final');
   const neverRan = cal.tasks.filter((t) => t.skillId).every((t) => t.runs === 0);
   const readyToRun = cal.tasks.filter((t) => t.skillId && t.runs === 0 && t.blockedBy.length === 0 && t.status !== 'complete');
@@ -125,6 +126,9 @@ export async function myClose(ctx: ServiceContext) {
   let next: NextAction;
   if (locked) next = { title: `${label} is locked`, detail: 'The close is complete. Every number is signed off and the period is protected.', href: '#/package', action: 'none', cta: 'Open the package', kicker: 'All set', tone: 'done' };
   else if (neverRan && can('agent.orchestrate')) next = step({ title: 'Run the close agents', detail: `Agents will prepare ${cal.tasks.filter((t) => t.skillId).length} tasks in dependency order. Nothing posts above your policy thresholds without a person.`, href: '#/cockpit', action: 'orchestrate', cta: 'Run the close agents' });
+  // Approvals that only a CFO may give do not restart the agents; a close lead continues the close,
+  // which comes first because the agents' next proposals are other people's work.
+  else if (readyToRun.length && can('agent.orchestrate')) next = step({ title: 'Continue the close', detail: `${count(readyToRun.length, 'task')} ${verb(readyToRun.length, 'is', 'are')} ready for ${verb(readyToRun.length, 'its agent', 'their agents')} now that upstream work is approved.`, href: '#/cockpit', action: 'orchestrate', cta: 'Continue the close' });
   else if (neverRan) next = step({ title: 'Waiting for the close agents', detail: `${names(await people('agent.orchestrate'))} starts them from My close. Your reconciliations and approvals appear here once the agents have prepared them.`, href: '#/cockpit', action: 'none', cta: null, kicker: WAITING, tone: 'calm' });
   else if (packageDraft && inbox.counts.mine === 1) next = step({ title: 'Approve the close package draft', detail: 'The close-package agent assembled the statements, reconciliations, variance commentary and exceptions. Approving it creates the version you sign next.', href: `#/inbox/${packageDraft.id}`, action: 'approve', cta: 'Open the draft' });
   else if (inbox.counts.mine > 0) next = step({ title: `Review ${count(inbox.counts.mine, 'agent proposal')}`, detail: `${inbox.counts.material ? `${inbox.counts.material} at or above materiality. ` : ''}Each shows why the agent proposed it, the evidence and how confident it is.`, href: '#/inbox', action: 'approve', cta: 'Open the inbox' });
@@ -136,7 +140,6 @@ export async function myClose(ctx: ServiceContext) {
     const stale = (await getPackage(ctx, draftPkg.id)).stale;
     next = step({ title: stale ? 'Refresh and sign the close package' : 'Approve the close package', detail: stale ? `The close moved on since version ${draftPkg.version} was generated. Refresh it to the current figures and status, review it, then sign.` : `Version ${draftPkg.version} is ready for your signature.`, href: '#/package', action: 'package', cta: 'Open the package' });
   } else if (ready.ok && can('period.lock')) next = step({ title: `Lock ${label}`, detail: 'Every check passes. Locking prevents any further posting to the month.', href: '#/cockpit', action: 'lock', cta: 'Go to lock' });
-  else if (readyToRun.length && can('agent.orchestrate')) next = step({ title: 'Continue the close', detail: `${count(readyToRun.length, 'task')} ${verb(readyToRun.length, 'is', 'are')} ready for ${verb(readyToRun.length, 'its agent', 'their agents')} now that upstream work is approved.`, href: '#/cockpit', action: 'orchestrate', cta: 'Continue the close' });
   else if (myTasks.length) next = step({ title: `Work on ${count(myTasks.length, 'task')} you own`, detail: myTasks[0]!.blockedBy.length ? `${myTasks[0]!.title} is waiting on ${myTasks[0]!.blockedBy.map((b) => b.title).join(', ')}.` : `${myTasks[0]!.title} is due ${myTasks[0]!.dueLabel}.`, href: '#/cockpit', action: 'none', cta: null, tone: 'calm' });
   else if (ready.ok) next = step({ title: `${label} is ready to lock`, detail: `Every check passes. ${names(await people('period.lock'))} can lock the month.`, href: '#/cockpit', action: 'none', cta: null, kicker: WAITING, tone: 'calm' });
   else next = step({ title: 'Nothing for you right now', detail: await waitingOn(ctx, { ready, tasks: cal.tasks, recs, periodKey }), href: '#/cockpit', action: 'none', cta: null, kicker: WAITING, tone: 'calm' });
