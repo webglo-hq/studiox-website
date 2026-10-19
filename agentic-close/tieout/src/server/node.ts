@@ -1,7 +1,8 @@
 /**
  * Node server entry. `npm run dev` / `npm start`.
  *   PORT (default 0 = a random free port), HOST (default 127.0.0.1), DATABASE_URL or PGLITE_DIR,
- *   ANTHROPIC_API_KEY (optional: live agents), SEED_DEMO (default true), DEMO_PASSWORD.
+ *   ANTHROPIC_API_KEY (optional: live agents), SEED_DEMO (default true), DEMO_PASSWORD,
+ *   TRUST_PROXY (true only behind your own reverse proxy).
  * Serves the built web app from dist/web when present.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -34,14 +35,18 @@ const booted = await boot({ root });
 const webRoot = resolve(root, 'dist/web');
 const app = createServerApp(booted.ctx, { static: staticRoutes(webRoot) as never });
 const host = process.env.HOST ?? '127.0.0.1';
+const trustProxy = process.env.TRUST_PROXY === 'true';
 const port = Number(process.env.PORT ?? 0);
 
 const server = serve({
   fetch: (req, env) => {
-    // the client address comes from the socket, never from a client-supplied header
+    // The client address comes from the socket; proxy headers are honoured only with TRUST_PROXY=true
+    // (set it when Tieout runs behind your own reverse proxy), so clients cannot spoof rate-limit keys.
     const headers = new Headers(req.headers);
     headers.delete('x-tieout-client-ip');
-    const ip = (env as { incoming?: { socket?: { remoteAddress?: string } } })?.incoming?.socket?.remoteAddress;
+    const socketIp = (env as { incoming?: { socket?: { remoteAddress?: string } } })?.incoming?.socket?.remoteAddress;
+    const proxied = trustProxy ? (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip')) : null;
+    const ip = proxied || socketIp;
     if (ip) headers.set('x-tieout-client-ip', ip);
     return app.fetch(new Request(req, { headers }), env);
   },

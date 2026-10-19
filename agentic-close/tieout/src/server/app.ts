@@ -37,8 +37,9 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'Cross-Origin-Resource-Policy': 'same-origin',
 };
 
+/** Client address as resolved by the Node entry (socket, or a trusted proxy header when TRUST_PROXY=true). */
 function ipOf(c: Context): string | null {
-  return c.req.header('x-tieout-client-ip') ?? c.req.header('x-real-ip') ?? null;
+  return c.req.header('x-tieout-client-ip') ?? null;
 }
 
 async function body<T = Record<string, unknown>>(c: Context, max = 1_000_000): Promise<T> {
@@ -57,9 +58,24 @@ async function body<T = Record<string, unknown>>(c: Context, max = 1_000_000): P
 export interface ServerOptions {
   /** register static asset routes (Node server) */
   static?: (app: Hono<Env>) => void;
+  /**
+   * In-page demo only: browsers drop Set-Cookie from script-constructed Responses, so the session
+   * is also handed to the in-page cookie jar in a custom header. Never enable on a network server.
+   */
+  cookieBridge?: boolean;
 }
 
+export const SESSION_BRIDGE_HEADER = 'x-tieout-session';
+
 export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
+  const issueSession = (c: Context, token: string) => {
+    setCookie(c, SESSION_COOKIE, token, { httpOnly: true, sameSite: 'Strict', secure: ctx.config.secureCookies, path: '/', maxAge: ctx.config.sessionAbsoluteHours * 3600 });
+    if (opts.cookieBridge) c.header(SESSION_BRIDGE_HEADER, token);
+  };
+  const clearSession = (c: Context) => {
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    if (opts.cookieBridge) c.header(SESSION_BRIDGE_HEADER, '');
+  };
   const app = new Hono<Env>();
 
   app.use('*', async (c, next) => {
@@ -97,7 +113,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
     if (!sameOrigin(c, ctx)) throw new DomainError('forbidden', 'Cross-site sign-in blocked.');
     const b = await body<{ email: string; password: string }>(c, 10_000);
     const r = await login(ctx, b.email, b.password, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
-    setCookie(c, SESSION_COOKIE, r.sessionToken, { httpOnly: true, sameSite: 'Strict', secure: ctx.config.secureCookies, path: '/', maxAge: ctx.config.sessionAbsoluteHours * 3600 });
+    issueSession(c, r.sessionToken);
     return c.json({ user: r.user, csrfToken: r.csrfToken, mfa: r.mfa });
   });
 
@@ -113,7 +129,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
       c.set('token', null);
       return next();
     }
-    const token = getCookie(c, SESSION_COOKIE) ?? null;
+    const token = getCookie(c, SESSION_COOKIE) ?? (opts.cookieBridge ? c.req.header(SESSION_BRIDGE_HEADER) || undefined : undefined) ?? null;
     const allowPending = path.startsWith('/api/auth/');
     const a = await authenticate(ctx, token, { ip: ipOf(c), allowPendingMfa: allowPending });
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
@@ -137,14 +153,14 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   });
   app.post('/api/auth/logout', async (c) => {
     await logout(ctx, U(c));
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    clearSession(c);
     return c.json({ ok: true });
   });
   app.post('/api/auth/mfa/enroll', async (c) => c.json(await mfaEnroll(ctx, c.get('auth')!)));
   app.post('/api/auth/mfa/verify', async (c) => {
     const b = await body<{ code: string }>(c, 1000);
     const r = await mfaVerify(ctx, c.get('auth')!, b.code, { ip: ipOf(c), userAgent: c.req.header('user-agent') ?? null });
-    setCookie(c, SESSION_COOKIE, r.sessionToken, { httpOnly: true, sameSite: 'Strict', secure: ctx.config.secureCookies, path: '/', maxAge: ctx.config.sessionAbsoluteHours * 3600 });
+    issueSession(c, r.sessionToken);
     return c.json({ ok: true, csrfToken: r.csrfToken });
   });
   app.post('/api/auth/password', async (c) => {
@@ -261,7 +277,7 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   if (ctx.resetDemo && ctx.config.demoMode) {
     app.post('/api/demo/reset', async (c) => {
       await ctx.resetDemo!();
-      deleteCookie(c, SESSION_COOKIE, { path: '/' });
+      clearSession(c);
       return c.json({ ok: true });
     });
   }
