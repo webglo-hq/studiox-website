@@ -107,20 +107,20 @@ one typeface and lots of air; (4) naming the pain in the buyer's own words (rece
 
 | Finding | Product decision in **Tieout** | Where |
 |---|---|---|
-| Customer-set controls; "you decide where agents run autonomously" | **Autonomy ladder L0–L3** per skill and entity, set by a Controller, with materiality-tied thresholds; every change is versioned and audited | `src/domain/skills/policy.ts`, Skills → Policy editor |
-| Human > rule > AI precedence; fill blanks only when confident | Bucketing engine never overwrites human or rule coding; confidence floor per policy; policy-required dimensions block auto-coding | `src/domain/bucketing/` |
-| Hover-for-why badges; reasoning + confidence + audit trail (BlackLine) | Every proposal has a plain-English **why**, a **confidence** score, **evidence** links and a full **run trace** | Inbox, Run trace viewer |
-| Smart Groups | Inbox groups by skill and kind, with **bulk approve** limited to high-confidence items | `web/screens/Inbox.tsx` |
-| Accruals with scheduled reversal | Accrual JEs carry `auto_reverse_on`; a reversal is generated and posted on day 1 of the next period | `skills/accrual-detection` |
-| Schedules roll-forward (Stack) | Prepaid and depreciation schedule skill drafts monthly JEs and catches missed amortization | `skills/schedule-rollforward` |
-| Checklist tasks assignable to staff **or** agents; close shepherding | Close template DAG with WD-n/WD+n, owners, reviewers and `skill` bindings; an orchestrator runs agents in dependency order | `src/domain/close/`, Close cockpit |
-| Deterministic math, AI judgment (Numeric) | Matching, tie-outs and flux math are deterministic algorithms exposed as **tools**; the LLM (live mode) only plans, classifies and explains; verification is always deterministic | `src/agent/runtime.ts`, `src/domain/*` |
-| Approvals and payments stay in the audited product | Agents have **no approve or post tool**. Approval is a human (or a Controller-signed policy) action through the app, with SoD | `src/domain/controls/sod.ts` |
-| MCP/CLI adoption | MCP server exposing the same tools under the same RBAC + audit (P2) | `src/mcp/` |
-| Background vs on-demand agents (Campfire) | Orchestrator runs on demand ("Run close agents"); skills are idempotent so they can also run on a schedule | `src/agent/orchestrator.ts` |
-| Rollout in beta stages | Autonomy defaults: L1 everywhere except depreciation (L2), with L3 restricted to clearly trivial amounts | `src/seed/policies.ts` |
-| Ad craft: one claim, product-as-proof, restraint | Brand: one serif display + one grotesk; paper and ink with a single *tick-red* accent; ads lead with one claim over real product UI | `web/styles/tokens.css`, `docs/ads/` |
+| Customer-set controls; "you decide where agents run autonomously" | **Autonomy ladder L0–L3** per skill (and per entity override), set by a Controller, capped by the skill manifest's maximum, with materiality-tied ceilings; every change is a new policy version with a reason, in the audit log | `src/core/agent/autonomy.ts`, `src/core/skills/policy.ts`, Skills & policy screen (`src/web/pages/Skills.tsx`) |
+| Human > rule > AI precedence; fill blanks only when confident | Coding combines Controller mappings, plain-English rules, coding history, the vendor master and ontology signals in that fixed precedence, with a confidence floor; posted items are only re-coded through a reviewed reclass | `src/packs/accounting/services/coding.ts`, `src/packs/accounting/agent/rules.ts` |
+| Hover-for-why badges; reasoning + confidence + audit trail (BlackLine) | Every proposal carries a plain-English **why**, a **confidence**, **evidence** links and the verifier's checks; every run has a step-by-step **trace** | Inbox (`src/web/pages/Inbox.tsx`), run trace (`src/web/pages/Runs.tsx`) |
+| Smart Groups | Inbox filters by status, kind and skill with keyboard triage (j/k/a); bulk approve covers only the items you are allowed to decide, each re-checked server-side | `src/web/pages/Inbox.tsx`, `src/app/proposals.ts` |
+| Accruals with scheduled reversal | Accrual entries carry `auto_reverse_on`; when the accrual posts after month-end, the reversal posts automatically on day 1 of the next period | `skills/accrual-detection`, `src/packs/accounting/agent/apply.ts`, `src/packs/accounting/ledger/journal.ts` |
+| Schedules roll-forward (Stack) | The schedule skill drafts monthly depreciation and prepaid entries and catches missed amortization | `skills/schedule-rollforward`, `src/packs/accounting/services/schedules.ts` |
+| Checklist tasks assignable to staff **or** agents; close shepherding | Close template DAG with WD-n/WD+n due dates, owners, reviewers and skill bindings; the orchestrator runs agents in dependency waves per entity and updates the checklist | `src/packs/accounting/seed/company.ts` (template), `src/packs/accounting/close/orchestrate.ts`, Close cockpit (`src/web/pages/Close.tsx`) |
+| Deterministic math, AI judgment (Numeric) | Matching, tie-outs, accrual detection and flux math are deterministic services exposed as typed **tools**; live Claude plans, classifies and explains; verification is always deterministic | `src/packs/accounting/services/`, `src/packs/accounting/agent/tools.ts`, `src/packs/accounting/agent/verify.ts` |
+| Approvals and payments stay in the audited product | Agents have **no approve, post or pay tool**; approval is a person (or a Controller-signed policy) through the app, with SoD and approval limits; journal-entry maker-checker is also a database trigger | `src/packs/accounting/controls/sod.ts`, `src/app/proposals.ts`, `migrations/0002_accounting.sql` |
+| MCP/CLI adoption | MCP server over the same HTTP API and RBAC, with personal tokens that can read and start agent runs but never approve or post | `src/mcp/server.ts` |
+| Background vs on-demand agents (Campfire) | Close agents run on demand ("Run close agents"); runs are idempotent and resumable, so a scheduler can run them too | `src/core/agent/orchestrator.ts`, `src/core/agent/runtime.ts` |
+| Rollout in beta stages | Manifest defaults: L2 for bank reconciliation, coding and schedules (with ceilings), L1 for judgment-heavy skills, L0 for journal-entry risk review; L3 only where a manifest allows it | `skills/*/SKILL.md` (`autonomy.default` / `autonomy.max`), `src/packs/accounting/skills/install.ts` |
+| Ad craft: one claim, product-as-proof, restraint | One serif display face and one grotesk, paper-and-ink with a single ledger-green accent (tick red only for errors); each ad leads with one claim over product UI | `src/web/styles.css`, `docs/ads/`, `scripts/render-ads.ts` |
 
 Original brand, no borrowed identity: name **Tieout** ("does it tie out?" is the accountant's question),
-ledger-green and tick-red palette (an auditor's red tickmark on green columnar paper), Instrument Serif +
-Inter. Nothing from Ramp's name, logo, copy, typeface or color is used.
+ledger-green palette with tick red reserved for errors (an auditor's red tickmark on green columnar paper),
+Instrument Serif + Inter + JetBrains Mono. Nothing from Ramp's name, logo, copy, typeface or color is used.
