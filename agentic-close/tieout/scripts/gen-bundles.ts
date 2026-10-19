@@ -71,6 +71,11 @@ function parseEnumChecks(sql: string): { table: string; column: string; values: 
   return out;
 }
 
+/** `ALTER TABLE t ALTER COLUMN c SET NOT NULL;` (a column added nullable, backfilled, then required). */
+function parseNotNulls(sql: string): { table: string; column: string }[] {
+  return [...sql.matchAll(/ALTER TABLE ([a-z_][a-z0-9_]*) ALTER COLUMN ([a-z_][a-z0-9_]*) SET NOT NULL;/g)].map((m) => ({ table: m[1]!, column: m[2]! }));
+}
+
 function parseColumn(name: string, line: string): Col {
   const cm = /^([a-z_][a-z0-9_]*) (TEXT|BIGINT|INT|NUMERIC(?:\(\d+,\d+\))?|BOOLEAN|DATE|TIMESTAMPTZ|JSONB)\b(.*)$/.exec(line);
   if (!cm) throw new Error(`gen: cannot parse column line in ${name}: ${line}`);
@@ -279,6 +284,11 @@ for (const f of migFiles) {
     const t = tables.find((x) => x.name === a.table);
     if (!t) throw new Error(`gen: ALTER TABLE for unknown table ${a.table}`);
     t.columns.push(parseColumn(a.table, a.line));
+  }
+  for (const n of parseNotNulls(f.sql)) {
+    const col = tables.find((x) => x.name === n.table)?.columns.find((c) => c.name === n.column);
+    if (!col) throw new Error(`gen: SET NOT NULL for unknown column ${n.table}.${n.column}`);
+    col.nullable = false;
   }
   for (const e of parseEnumChecks(f.sql)) {
     const col = tables.find((x) => x.name === e.table)?.columns.find((c) => c.name === e.column);

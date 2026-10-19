@@ -283,6 +283,7 @@ export interface AgentToolCallRow {
   untrusted_flags: InjectionFlag[];
   duration_ms: number;
   created_at: string;
+  call_key: string;
 }
 
 export interface AgentMessageRow {
@@ -1673,6 +1674,7 @@ export const tableMeta = {
       {"name":"untrusted_flags","type":"jsonb","nullable":false,"default":{"kind":"literal","value":[]}},
       {"name":"duration_ms","type":"int","nullable":false,"default":{"kind":"literal","value":0}},
       {"name":"created_at","type":"timestamptz","nullable":false,"default":{"kind":"now"}},
+      {"name":"call_key","type":"text","nullable":false},
     ],
   },
   agent_messages: {

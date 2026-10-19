@@ -31,7 +31,8 @@ function staticRoutes(webRoot: string) {
 }
 
 const root = process.cwd();
-const booted = await boot({ root });
+// the server resumes agent runs left behind by a crash, at start-up and then every minute
+const booted = await boot({ root, recoverRuns: true });
 const webRoot = resolve(root, 'dist/web');
 const app = createServerApp(booted.ctx, { static: staticRoutes(webRoot) as never });
 const host = process.env.HOST ?? '127.0.0.1';

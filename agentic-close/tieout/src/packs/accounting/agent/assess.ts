@@ -8,6 +8,7 @@ import { periodEnd } from '../../../core/util/time';
 import { fxRate } from '../fx/rates';
 import { convert } from '../ledger/money';
 import type { AccountingServices } from '../services';
+import { neverAutoRule } from '../services/coding';
 import { CodingPayloadSchema, FluxPayloadSchema, JePayloadSchema, RecMatchPayloadSchema, ReconcilingItemPayloadSchema } from './payloads';
 
 /** Approver role by USD-equivalent amount (role approval limits from controls/permissions.ts). */
@@ -54,9 +55,12 @@ export async function assessDraft(svc: AccountingServices, draft: ProposalDraft,
     }
     case 'coding': {
       const p = CodingPayloadSchema.parse(draft.payload);
-      amount = Math.abs(p.amountMinor);
-      if (p.neverAuto) flags.push('policy_never_auto');
-      autoEligible = true;
+      // the amount and the Controller's rules apply to the card charge itself, never to what the
+      // drafter (a model in live mode) says about it
+      const t = await svc.tx.get('card_transactions', p.target.id);
+      amount = Math.abs(t?.amount_minor ?? p.amountMinor);
+      if (p.neverAuto || neverAutoRule(run.policy.rules, t?.merchant_name ?? p.merchant, p.accountCode)) flags.push('policy_never_auto');
+      autoEligible = !!t;
       break;
     }
     case 'rec_match': {

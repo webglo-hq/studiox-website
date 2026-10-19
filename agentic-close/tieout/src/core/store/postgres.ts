@@ -89,6 +89,15 @@ export class PgStore<M, I = M> implements Store<M, I> {
     }
   }
 
+  async tenantIds(): Promise<string[]> {
+    try {
+      const r = await this.driver.query('SELECT DISTINCT "tenant_id" FROM "tenant_directory" ORDER BY 1');
+      return r.rows.map((x) => String(x.tenant_id));
+    } catch (e) {
+      throw normaliseError(e);
+    }
+  }
+
   async tenantOf(kind: DirectoryKind, key: string): Promise<string | null> {
     // the tenant directory (migration 0010) has no row-level security and holds only lookup keys
     try {

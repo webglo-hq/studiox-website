@@ -133,6 +133,8 @@ export interface Store<M, I = M> {
    * tenant, so nothing ever switches tenant isolation off (migration 0010).
    */
   tenantOf(kind: DirectoryKind, key: string): Promise<string | null>;
+  /** Ids of the tenants that have people (no tenant data): for background work such as crash recovery. */
+  tenantIds(): Promise<string[]>;
   close(): Promise<void>;
 }
 

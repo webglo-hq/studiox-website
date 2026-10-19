@@ -104,7 +104,11 @@ export async function verifyDraft(svc: AccountingServices, draft: ProposalDraft,
       const p = CodingPayloadSchema.parse(draft.payload);
       const t = await tx.get('card_transactions', p.target.id);
       if (!t) out.push(fail('Card transaction exists', p.target.id));
-      else out.push(t.status === 'pending_coding' ? ok('Still waiting for coding', `${t.merchant_name} ${t.txn_date}`) : fail('Still waiting for coding', `status is ${t.status}`));
+      else {
+        out.push(t.status === 'pending_coding' ? ok('Still waiting for coding', `${t.merchant_name} ${t.txn_date}`) : fail('Still waiting for coding', `status is ${t.status}`));
+        // the charge decides the amount; a drafter that restates it differently is wrong about the charge
+        out.push(t.amount_minor === p.amountMinor ? ok('Amount matches the card charge', money(t.amount_minor, t.currency)) : fail('Amount matches the card charge', `the charge is ${money(t.amount_minor, t.currency)}, not ${money(p.amountMinor, t.currency)}`));
+      }
       const a = chart.tryAccount(p.accountCode);
       if (!a) out.push(fail('Account exists', p.accountCode, 'AX-AC-01'));
       else {
