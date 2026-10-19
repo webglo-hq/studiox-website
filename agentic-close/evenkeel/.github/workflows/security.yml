@@ -1,0 +1,112 @@
+# Evenkeel security scanning: dependency review, CodeQL (security-extended), Semgrep and
+# secret scanning (Gitleaks and TruffleHog). Lives inside agentic-close/evenkeel/ like ci.yml;
+# copy to the repository root .github/workflows/ to run.
+name: evenkeel-security
+
+on:
+  push:
+    paths: ['agentic-close/evenkeel/**']
+  pull_request:
+    paths: ['agentic-close/evenkeel/**']
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+  codeql:
+    name: CodeQL (security-extended)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          config: |
+            paths:
+              - agentic-close/evenkeel/src
+              - agentic-close/evenkeel/scripts
+            paths-ignore:
+              - '**/node_modules/**'
+              - '**/dist/**'
+              - '**/dist-demo/**'
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: evenkeel
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: semgrep/semgrep:1.140.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Scan
+        working-directory: agentic-close/evenkeel
+        run: >-
+          semgrep scan --error --metrics=off
+          --config p/default --config p/typescript --config p/react
+          --config p/nodejs --config p/secrets --config p/owasp-top-ten
+          --exclude node_modules --exclude dist --exclude dist-demo --exclude docs
+          .
+
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan history of the Evenkeel directory
+        run: >-
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0
+          git /repo --log-opts="-- agentic-close/evenkeel" --redact --verbose
+          --config /repo/agentic-close/evenkeel/.gitleaks.toml
+
+  trufflehog:
+    name: TruffleHog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: trufflesecurity/trufflehog@v3.93.6
+        with:
+          path: agentic-close/evenkeel
+          extra_args: --results=verified,unknown

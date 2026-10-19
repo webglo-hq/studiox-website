@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { dirname, join, relative } from 'node:path';
 import { createServerApp } from './app';
 import { loadConfig } from './config';
 
@@ -8,6 +9,12 @@ import { loadConfig } from './config';
 const config = loadConfig();
 const log = (m: string) => console.log(m);
 const app = await createServerApp(config, { log });
+
+/** A path relative to the working directory when it is inside it, else absolute. */
+function shown(p: string): string {
+  const r = relative(process.cwd(), p);
+  return r && !r.startsWith('..') ? r : p;
+}
 
 const server = createServer((req, res) => {
   void app.handler(req, res);
@@ -34,16 +41,16 @@ server.on('listening', () => {
   const url = config.publicOrigin ?? `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${addr.port}`;
   log('');
   log(`Evenkeel is running at ${url}`);
-  log(`  database: ${app.dbKind === 'pglite' ? 'embedded PGlite (.data/pglite)' : 'PostgreSQL (DATABASE_URL)'}`);
+  log(`  database: ${app.dbKind === 'pglite' ? `embedded PGlite (${shown(join(dirname(app.credentialsFile), 'pglite'))})` : 'PostgreSQL (DATABASE_URL)'}`);
   log(`  agents:   ${app.env.engine.mode === 'live' ? 'live (Claude via the Anthropic API)' : 'offline deterministic engine (set ANTHROPIC_API_KEY for live Claude)'}`);
   if (app.seededNow && app.seededNow !== 'password-from-env') {
     log('');
-    log('Demo accounts (fictional company; generated now, saved to .data/demo-credentials.json):');
+    log(`Demo accounts (fictional company; generated now, saved to ${shown(app.credentialsFile)}):`);
     for (const u of app.seededNow.users) log(`  ${u.title.padEnd(30)} ${u.email.padEnd(28)} ${u.password}`);
   } else if (app.seededNow === 'password-from-env') {
     log('Demo accounts use DEMO_PASSWORD from your environment.');
   } else {
-    log('Demo account passwords: see .data/demo-credentials.json (or DEMO_PASSWORD if you set one).');
+    log(`Demo account passwords: see ${shown(app.credentialsFile)} (or DEMO_PASSWORD if you set one).`);
   }
   log('');
 });

@@ -1,0 +1,18 @@
+# Gitleaks configuration for Evenkeel: the default rules, plus a narrow allowlist for
+# documented, non-secret placeholders (example connection strings and the CI-only database
+# password used by the throwaway PostgreSQL service).
+title = "evenkeel"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders, not secrets"
+regexes = [
+  '''CHANGE_ME''',
+  '''ci-only-not-a-secret''',
+  '''kitewell-test-password''',
+]
+paths = [
+  '''agentic-close/evenkeel/package-lock\.json''',
+]

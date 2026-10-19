@@ -1,0 +1,115 @@
+# Evenkeel quality gates. This file lives inside agentic-close/evenkeel/ because the project
+# may not change anything outside its directory; copy it to the repository's root
+# .github/workflows/ to run it (paths below already point into the subdirectory).
+name: evenkeel-ci
+
+on:
+  push:
+    paths: ['agentic-close/evenkeel/**']
+  pull_request:
+    paths: ['agentic-close/evenkeel/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evenkeel-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: agentic-close/evenkeel
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests, skill evals, audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: agentic-close/evenkeel/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run evals
+      - run: npm audit --audit-level=high
+      - name: Ontology and ERD exports are up to date
+        run: |
+          npm run ontology:export
+          npm run docs:erd
+          git diff --exit-code -- docs/ontology docs/erd.md
+
+  integration:
+    name: Integration tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: evenkeel
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: evenkeel_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U evenkeel -d evenkeel_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      # with-postgres.ts uses this server instead of starting its own cluster.
+      DATABASE_URL: postgres://evenkeel:ci-only-not-a-secret@127.0.0.1:5432/evenkeel_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: agentic-close/evenkeel/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:integration
+
+  e2e:
+    name: End-to-end demo script (server and static demo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: agentic-close/evenkeel/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      # CI runners have no browsers; install the version pinned by @playwright/test.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - name: Static demo size budget (15 MB)
+        run: |
+          size=$(stat -c %s dist-demo/index.html)
+          echo "dist-demo/index.html: $size bytes"
+          test "$size" -le 15728640
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evenkeel-playwright-report
+          path: agentic-close/evenkeel/playwright-report
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evenkeel-static-demo
+          path: agentic-close/evenkeel/dist-demo/index.html
+          retention-days: 14

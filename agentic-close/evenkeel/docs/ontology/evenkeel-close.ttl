@@ -1,0 +1,1562 @@
+@prefix ek: <https://evenkeel.example/ontology/close#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<https://evenkeel.example/ontology/close> a owl:Ontology ; dcterms:title "Evenkeel Financial Close Ontology" ; owl:versionInfo "1.3.0" .
+
+ek:Thing a owl:Class ;
+    rdfs:label "Close concept" ;
+    skos:definition "Root of the Evenkeel close ontology." ;
+    rdfs:comment "Anything the close platform knows about." .
+
+ek:EconomicResource a owl:Class ;
+    rdfs:label "Economic resource" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A thing of economic value that is scarce and under the control of the enterprise (REA Resource)." ;
+    rdfs:comment "Something valuable the company controls, like cash or equipment." .
+
+ek:EconomicEvent a owl:Class ;
+    rdfs:label "Economic event" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A phenomenon that increases or decreases economic resources (REA Event); journal entries are its accounting record." ;
+    rdfs:comment "Something that happened that changed what the company owns or owes." .
+
+ek:EconomicAgent a owl:Class ;
+    rdfs:label "Economic agent" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A person or organisation participating in economic events (REA Agent): internal agents (employees) and external agents (vendors, customers)." ;
+    rdfs:comment "Who took part: an employee, a vendor, a customer." .
+
+ek:Commitment a owl:Class ;
+    rdfs:label "Commitment" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "An agreement to execute an economic event in the future (extended REA)." ;
+    rdfs:comment "A promise to do something later, like a purchase order." .
+
+ek:InternalAgent a owl:Class ;
+    rdfs:label "Internal agent" ;
+    rdfs:subClassOf ek:EconomicAgent ;
+    skos:definition "An agent acting on behalf of the reporting entity: a user, or a software agent acting under a user’s delegated authority." ;
+    rdfs:comment "Someone (or an AI agent) working for the company." .
+
+ek:ExternalAgent a owl:Class ;
+    rdfs:label "External agent" ;
+    rdfs:subClassOf ek:EconomicAgent ;
+    skos:definition "A counterparty outside the reporting entity." ;
+    rdfs:comment "Someone outside the company: a vendor, customer or bank." .
+
+ek:LegalEntity a owl:Class ;
+    rdfs:label "Legal entity" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A legally distinct organisation that keeps its own books in a functional currency." ;
+    rdfs:comment "One company in the group, with its own set of books." .
+
+ek:EliminationEntity a owl:Class ;
+    rdfs:label "Elimination entity" ;
+    rdfs:subClassOf ek:LegalEntity ;
+    skos:definition "A bookkeeping-only entity that holds consolidation eliminations; it is not a legal person." ;
+    rdfs:comment "A scratch ledger where intercompany amounts are cancelled out for group reporting." .
+
+ek:ConsolidationGroup a owl:Class ;
+    rdfs:label "Consolidation group" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A parent and its controlled subsidiaries reported as a single economic entity." ;
+    rdfs:comment "The whole group, reported as if it were one company." .
+
+ek:Currency a owl:Class ;
+    rdfs:label "Currency" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A medium of exchange identified by an ISO 4217 code, with a number of minor units." ;
+    rdfs:comment "Money type, like US dollars or British pounds." .
+
+ek:Dimension a owl:Class ;
+    rdfs:label "Dimension" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "An analytical attribute tagged on journal lines independently of the account (segment)." ;
+    rdfs:comment "An extra label on a transaction, like which department spent the money." .
+
+ek:Department a owl:Class ;
+    rdfs:label "Department" ;
+    rdfs:subClassOf ek:Dimension ;
+    skos:definition "Organisational unit responsible for costs (cost centre)." ;
+    rdfs:comment "The team the spend belongs to." ;
+    skos:altLabel "cost center" ;
+    skos:altLabel "cost centre" .
+
+ek:Location a owl:Class ;
+    rdfs:label "Location" ;
+    rdfs:subClassOf ek:Dimension ;
+    skos:definition "Geographic or site attribute of a transaction." ;
+    rdfs:comment "Where the spend happened or which office it belongs to." .
+
+ek:ClassDimension a owl:Class ;
+    rdfs:label "Class" ;
+    rdfs:subClassOf ek:Dimension ;
+    skos:definition "Business-line or product classification of a transaction." ;
+    rdfs:comment "Which product or business line the money relates to." ;
+    skos:altLabel "business line" ;
+    skos:altLabel "segment" .
+
+ek:Project a owl:Class ;
+    rdfs:label "Project" ;
+    rdfs:subClassOf ek:Dimension ;
+    skos:definition "Time-bound initiative to which costs are accumulated, possibly for capitalisation." ;
+    rdfs:comment "A specific initiative the cost belongs to." .
+
+ek:FiscalPeriod a owl:Class ;
+    rdfs:label "Fiscal period" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A contiguous accounting interval (here a calendar month) with a lifecycle state that governs posting." ;
+    rdfs:comment "The month being closed." .
+
+ek:PeriodState a owl:Class ;
+    rdfs:label "Period state" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Lifecycle state of a fiscal period: Open → SoftClose → HardClose (locked)." ;
+    rdfs:comment "Whether the month can still be changed." .
+
+ek:Workday a owl:Class ;
+    rdfs:label "Close workday" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A business day counted relative to period end: WD0 is the last business day of the period, WD+n the n-th business day after it, WD−n before it." ;
+    rdfs:comment "Close deadlines are counted in business days: WD+3 means the third working day after month end." ;
+    skos:altLabel "WD" ;
+    skos:altLabel "business day" ;
+    skos:altLabel "close day" .
+
+ek:Account a owl:Class ;
+    rdfs:label "Account" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A named, coded classification in the general ledger that accumulates debits and credits for one element of the financial statements." ;
+    rdfs:comment "A bucket in the books where similar amounts are collected." .
+
+ek:NormalBalance a owl:Class ;
+    rdfs:label "Normal balance" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "The side (debit or credit) that increases an account; assets and expenses are debit-normal, liabilities, equity and revenue credit-normal." ;
+    rdfs:comment "Which side makes the account go up." .
+
+ek:AssetAccount a owl:Class ;
+    rdfs:label "Asset account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Account measuring probable future economic benefits controlled by the entity (CON 6). Debit-normal." ;
+    rdfs:comment "Something the company owns or is owed." .
+
+ek:LiabilityAccount a owl:Class ;
+    rdfs:label "Liability account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Account measuring present obligations to transfer economic benefits (CON 6). Credit-normal." ;
+    rdfs:comment "Something the company owes." .
+
+ek:EquityAccount a owl:Class ;
+    rdfs:label "Equity account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Residual interest in assets after deducting liabilities (CON 6). Credit-normal." ;
+    rdfs:comment "What belongs to the owners." .
+
+ek:RevenueAccount a owl:Class ;
+    rdfs:label "Revenue account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Account measuring inflows from delivering goods or services (ASC 606). Credit-normal." ;
+    rdfs:comment "Money earned from customers." .
+
+ek:ExpenseAccount a owl:Class ;
+    rdfs:label "Expense account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Account measuring outflows or using up of assets in delivering goods or services (CON 6). Debit-normal." ;
+    rdfs:comment "Money spent to run the business." .
+
+ek:ContraAccount a owl:Class ;
+    rdfs:label "Contra account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Account carried opposite to the normal balance of its parent class to present a net amount." ;
+    rdfs:comment "An account that reduces another one, like accumulated depreciation." .
+
+ek:CashAccount a owl:Class ;
+    rdfs:label "Cash account" ;
+    rdfs:subClassOf ek:AssetAccount ;
+    skos:definition "Account for demand deposits and cash equivalents; reconciled to bank statements." ;
+    rdfs:comment "Money in the bank." .
+
+ek:ReceivableAccount a owl:Class ;
+    rdfs:label "Receivable account" ;
+    rdfs:subClassOf ek:AssetAccount ;
+    skos:definition "Amounts due from customers or others; the AR control account is backed by the AR subledger." ;
+    rdfs:comment "Money customers owe the company." .
+
+ek:PrepaidAccount a owl:Class ;
+    rdfs:label "Prepaid expense account" ;
+    rdfs:subClassOf ek:AssetAccount ;
+    skos:definition "Payments for goods or services to be received in future periods, deferred and amortised (ASC 340-10)." ;
+    rdfs:comment "Money paid in advance for something you will use later." .
+
+ek:FixedAssetAccount a owl:Class ;
+    rdfs:label "Fixed asset account" ;
+    rdfs:subClassOf ek:AssetAccount ;
+    skos:definition "Property, plant and equipment held for use over more than one year, recorded at cost (ASC 360)." ;
+    rdfs:comment "Long-lived equipment like laptops and furniture." .
+
+ek:AccumulatedDepreciationAccount a owl:Class ;
+    rdfs:label "Accumulated depreciation account" ;
+    rdfs:subClassOf ek:ContraAccount ;
+    rdfs:subClassOf ek:AssetAccount ;
+    skos:definition "Contra-asset accumulating depreciation charged on fixed assets. Credit balance." ;
+    rdfs:comment "How much of the equipment’s value has been used up so far." .
+
+ek:IntercompanyAccount a owl:Class ;
+    rdfs:label "Intercompany account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "Due-to / due-from or intercompany revenue/expense account recording transactions between entities of the same group; eliminated on consolidation." ;
+    rdfs:comment "Money one group company owes another." .
+
+ek:PayableAccount a owl:Class ;
+    rdfs:label "Payable account" ;
+    rdfs:subClassOf ek:LiabilityAccount ;
+    skos:definition "Amounts owed to vendors for goods and services received and invoiced; the AP control account is backed by the AP subledger." ;
+    rdfs:comment "Bills the company owes." .
+
+ek:AccruedLiabilityAccount a owl:Class ;
+    rdfs:label "Accrued liability account" ;
+    rdfs:subClassOf ek:LiabilityAccount ;
+    skos:definition "Obligations for goods or services received but not yet invoiced or paid." ;
+    rdfs:comment "Costs you owe for but have not been billed for yet." .
+
+ek:CardPayableAccount a owl:Class ;
+    rdfs:label "Card payable account" ;
+    rdfs:subClassOf ek:LiabilityAccount ;
+    skos:definition "Balance owed on corporate cards, backed by the card subledger." ;
+    rdfs:comment "What the company owes on its corporate cards." .
+
+ek:DeferredRevenueAccount a owl:Class ;
+    rdfs:label "Deferred revenue (contract liability)" ;
+    rdfs:subClassOf ek:LiabilityAccount ;
+    skos:definition "Consideration received or due before performance obligations are satisfied (ASC 606 contract liability)." ;
+    rdfs:comment "Money collected for service you have not delivered yet." .
+
+ek:PayrollLiabilityAccount a owl:Class ;
+    rdfs:label "Payroll liability account" ;
+    rdfs:subClassOf ek:LiabilityAccount ;
+    skos:definition "Wages, withholdings and employer taxes owed but not yet remitted." ;
+    rdfs:comment "Salaries and payroll taxes owed but not yet paid." .
+
+ek:RetainedEarningsAccount a owl:Class ;
+    rdfs:label "Retained earnings" ;
+    rdfs:subClassOf ek:EquityAccount ;
+    skos:definition "Cumulative net income retained in the business; income statement accounts close into it at year end." ;
+    rdfs:comment "All past profits kept in the business." .
+
+ek:CtaAccount a owl:Class ;
+    rdfs:label "Cumulative translation adjustment" ;
+    rdfs:subClassOf ek:EquityAccount ;
+    skos:definition "Component of other comprehensive income arising from translating a foreign subsidiary’s statements into the reporting currency (ASC 830-30)." ;
+    rdfs:comment "The \"plug\" from converting a foreign subsidiary’s books into dollars." .
+
+ek:FxGainLossAccount a owl:Class ;
+    rdfs:label "FX gain/loss account" ;
+    rdfs:subClassOf ek:ExpenseAccount ;
+    skos:definition "Income statement account for transaction gains and losses from remeasuring monetary items (ASC 830-20)." ;
+    rdfs:comment "Profit or loss caused by exchange-rate moves." .
+
+ek:ControlAccount a owl:Class ;
+    rdfs:label "Control account" ;
+    rdfs:subClassOf ek:Account ;
+    skos:definition "GL account whose balance is the summary of a subledger; detailed postings belong in the subledger." ;
+    rdfs:comment "A ledger account that should always equal the total of a detailed list (like all open vendor bills)." .
+
+ek:FinancialStatement a owl:Class ;
+    rdfs:label "Financial statement" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A structured presentation of financial position or performance (balance sheet, income statement, cash flows, equity)." ;
+    rdfs:comment "The reports the close produces." .
+
+ek:FinancialStatementLineItem a owl:Class ;
+    rdfs:label "Statement line item" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A presentation line on a financial statement to which accounts roll up; aligned with an XBRL US-GAAP element." ;
+    rdfs:comment "A line on the balance sheet or income statement." .
+
+ek:TrialBalance a owl:Class ;
+    rdfs:label "Trial balance" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Listing of every account balance at a date; total debits equal total credits when the ledger is in balance." ;
+    rdfs:comment "A list of all account balances that must add up to zero." .
+
+ek:JournalEntry a owl:Class ;
+    rdfs:label "Journal entry" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "A dated, balanced set of debit and credit lines recording an economic event in one entity and period. Posted entries are immutable; corrections are made by reversing entries." ;
+    rdfs:comment "A record that moves money between accounts; debits must equal credits." ;
+    skos:altLabel "JE" ;
+    skos:altLabel "entry" ;
+    skos:altLabel "posting" .
+
+ek:JournalLine a owl:Class ;
+    rdfs:label "Journal line" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "One debit or credit to one account, with dimensions and optional transaction-currency amount." ;
+    rdfs:comment "One row of a journal entry." .
+
+ek:EntryType a owl:Class ;
+    rdfs:label "Entry type" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Classification of a journal entry by purpose: standard, adjusting, accrual, reversing, recurring, reclass, elimination, FX revaluation, depreciation, amortisation." ;
+    rdfs:comment "What kind of entry it is." .
+
+ek:ReversingEntry a owl:Class ;
+    rdfs:label "Reversing entry" ;
+    rdfs:subClassOf ek:JournalEntry ;
+    skos:definition "An entry that mirrors a posted entry with debits and credits swapped, cancelling its effect; the only permitted way to correct a posted entry." ;
+    rdfs:comment "An undo entry: same amounts, opposite sides." ;
+    skos:altLabel "reversal" ;
+    skos:altLabel "undo" .
+
+ek:RecurringEntry a owl:Class ;
+    rdfs:label "Recurring entry" ;
+    rdfs:subClassOf ek:JournalEntry ;
+    skos:definition "Entry generated each period from a template or schedule (rent, amortisation, depreciation)." ;
+    rdfs:comment "An entry that repeats every month." .
+
+ek:EliminationEntry a owl:Class ;
+    rdfs:label "Elimination entry" ;
+    rdfs:subClassOf ek:JournalEntry ;
+    skos:definition "Consolidation-only entry removing intercompany balances and transactions (ASC 810-10-45)." ;
+    rdfs:comment "An entry that cancels money the group owes itself." .
+
+ek:SourceDocument a owl:Class ;
+    rdfs:label "Source document" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Original evidence of an economic event (statement, invoice, receipt, file) with a content hash for provenance." ;
+    rdfs:comment "The original file a transaction came from." .
+
+ek:Subledger a owl:Class ;
+    rdfs:label "Subledger" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Detailed ledger of one transaction class whose total must equal its GL control account." ;
+    rdfs:comment "A detailed list (bills, invoices, bank lines) that backs up a GL account." .
+
+ek:ApSubledger a owl:Class ;
+    rdfs:label "Accounts payable subledger" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Vendors, bills and payments; open bills aggregate to the AP control account." ;
+    rdfs:comment "All vendor bills and what is still unpaid." .
+
+ek:ArSubledger a owl:Class ;
+    rdfs:label "Accounts receivable subledger" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Customers, invoices and receipts; open invoices aggregate to the AR control account." ;
+    rdfs:comment "All customer invoices and what is still owed." .
+
+ek:BankSubledger a owl:Class ;
+    rdfs:label "Bank subledger" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Bank accounts, statements and statement lines imported from bank feeds (BAI2, CAMT.053, OFX, CSV)." ;
+    rdfs:comment "What the bank says happened." .
+
+ek:CardSubledger a owl:Class ;
+    rdfs:label "Card subledger" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Corporate card transactions with merchant, merchant category code (MCC), cardholder and coding." ;
+    rdfs:comment "Every corporate card swipe." .
+
+ek:FixedAssetSubledger a owl:Class ;
+    rdfs:label "Fixed asset register" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Register of capitalised assets with cost, in-service date, useful life and depreciation schedule." ;
+    rdfs:comment "The list of equipment the company owns and how it is depreciated." .
+
+ek:PrepaidSubledger a owl:Class ;
+    rdfs:label "Prepaid schedule register" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Register of prepaid schedules with monthly amortisation lines." ;
+    rdfs:comment "The list of things paid in advance and how they are spread over time." .
+
+ek:PayrollSubledger a owl:Class ;
+    rdfs:label "Payroll register" ;
+    rdfs:subClassOf ek:Subledger ;
+    skos:definition "Payroll runs with gross wages, employer taxes and benefits by department." ;
+    rdfs:comment "Who got paid what, by team." .
+
+ek:Vendor a owl:Class ;
+    rdfs:label "Vendor" ;
+    rdfs:subClassOf ek:ExternalAgent ;
+    skos:definition "Supplier of goods or services to the entity." ;
+    rdfs:comment "A company you buy from." .
+
+ek:Customer a owl:Class ;
+    rdfs:label "Customer" ;
+    rdfs:subClassOf ek:ExternalAgent ;
+    skos:definition "Party that has contracted with the entity to obtain goods or services (ASC 606)." ;
+    rdfs:comment "A company that buys from you." .
+
+ek:Bank a owl:Class ;
+    rdfs:label "Bank" ;
+    rdfs:subClassOf ek:ExternalAgent ;
+    skos:definition "Financial institution holding the entity’s deposit accounts." ;
+    rdfs:comment "Where the money is kept." .
+
+ek:PurchaseOrder a owl:Class ;
+    rdfs:label "Purchase order" ;
+    rdfs:subClassOf ek:Commitment ;
+    skos:definition "Authorised commitment to buy goods or services at an agreed price; receipt without invoice creates a GRNI accrual." ;
+    rdfs:comment "An approved order to buy something." .
+
+ek:Bill a owl:Class ;
+    rdfs:label "Vendor bill" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Vendor invoice recognising a liability for goods or services received." ;
+    rdfs:comment "An invoice you received." ;
+    skos:altLabel "invoice (payable)" ;
+    skos:altLabel "AP invoice" .
+
+ek:VendorPayment a owl:Class ;
+    rdfs:label "Vendor payment" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Disbursement settling one or more bills (ACH, wire, check, card)." ;
+    rdfs:comment "Money paid to a vendor." .
+
+ek:Invoice a owl:Class ;
+    rdfs:label "Customer invoice" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Billing to a customer establishing a receivable; may create deferred revenue when billed in advance." ;
+    rdfs:comment "A bill you sent a customer." .
+
+ek:CustomerReceipt a owl:Class ;
+    rdfs:label "Customer receipt" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Cash received from a customer applied to invoices." ;
+    rdfs:comment "A customer payment that came in." .
+
+ek:BankAccount a owl:Class ;
+    rdfs:label "Bank account" ;
+    rdfs:subClassOf ek:EconomicResource ;
+    skos:definition "Deposit account at a bank, linked to one GL cash account." ;
+    rdfs:comment "A bank account." .
+
+ek:BankStatement a owl:Class ;
+    rdfs:label "Bank statement" ;
+    rdfs:subClassOf ek:SourceDocument ;
+    skos:definition "Bank-issued statement with opening and closing balances and transactions for a date range." ;
+    rdfs:comment "The bank’s monthly report." .
+
+ek:BankTransaction a owl:Class ;
+    rdfs:label "Bank transaction" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "One statement line (credit or debit) with value date, amount, type code and free-text description." ;
+    rdfs:comment "One line on the bank statement." .
+
+ek:CardTransaction a owl:Class ;
+    rdfs:label "Card transaction" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Corporate card purchase with merchant, MCC, cardholder, amount, receipt and coding." ;
+    rdfs:comment "One corporate card purchase." .
+
+ek:FixedAsset a owl:Class ;
+    rdfs:label "Fixed asset" ;
+    rdfs:subClassOf ek:EconomicResource ;
+    skos:definition "Tangible asset held for use for more than one period, capitalised at cost and depreciated over its useful life (ASC 360)." ;
+    rdfs:comment "Equipment that lasts years and is expensed gradually." .
+
+ek:PayrollRun a owl:Class ;
+    rdfs:label "Payroll run" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "One pay cycle’s wages, employer taxes and benefits." ;
+    rdfs:comment "One payday." .
+
+ek:Budget a owl:Class ;
+    rdfs:label "Budget" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Approved plan of amounts by account, dimension and period." ;
+    rdfs:comment "What the company planned to spend and earn." .
+
+ek:Forecast a owl:Class ;
+    rdfs:label "Forecast" ;
+    rdfs:subClassOf ek:Budget ;
+    skos:definition "Updated expectation of future amounts, typically re-run quarterly." ;
+    rdfs:comment "The latest best guess, updated during the year." .
+
+ek:Reconciliation a owl:Class ;
+    rdfs:label "Reconciliation" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A control comparing a GL balance with independent evidence, explaining every difference until the unexplained difference is zero, then certified by a preparer and a reviewer." ;
+    rdfs:comment "Proving an account balance is right by comparing it to something independent." ;
+    skos:altLabel "rec" ;
+    skos:altLabel "account reconciliation" ;
+    skos:altLabel "balance sheet reconciliation" .
+
+ek:BankReconciliation a owl:Class ;
+    rdfs:label "Bank reconciliation" ;
+    rdfs:subClassOf ek:Reconciliation ;
+    skos:definition "Reconciles the bank statement closing balance with the GL cash balance via matches and reconciling items." ;
+    rdfs:comment "Checking the books against the bank statement." .
+
+ek:SubledgerTieOut a owl:Class ;
+    rdfs:label "Subledger tie-out" ;
+    rdfs:subClassOf ek:Reconciliation ;
+    skos:definition "Reconciles a subledger total (e.g. AP aging) with its GL control account." ;
+    rdfs:comment "Checking the detailed list adds up to the ledger account." .
+
+ek:IntercompanyReconciliation a owl:Class ;
+    rdfs:label "Intercompany reconciliation" ;
+    rdfs:subClassOf ek:Reconciliation ;
+    skos:definition "Reconciles due-to/due-from and intercompany P&L between counterparties in a common currency." ;
+    rdfs:comment "Checking two group companies agree on what they owe each other." .
+
+ek:BalanceSheetSubstantiation a owl:Class ;
+    rdfs:label "Balance substantiation" ;
+    rdfs:subClassOf ek:Reconciliation ;
+    skos:definition "Reconciles a balance to a supporting schedule (prepaids, accruals, fixed assets)." ;
+    rdfs:comment "Showing the schedule that backs up a balance." .
+
+ek:Match a owl:Class ;
+    rdfs:label "Match" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Link between items on two sides of a reconciliation whose amounts net to zero." ;
+    rdfs:comment "Pairing a bank line with the ledger entry it corresponds to." .
+
+ek:ExactMatch a owl:Class ;
+    rdfs:label "Exact match" ;
+    rdfs:subClassOf ek:Match ;
+    skos:definition "One-to-one match with identical amount and a decisive key (date and/or reference)." ;
+    rdfs:comment "Same amount, same day or same reference." .
+
+ek:FuzzyMatch a owl:Class ;
+    rdfs:label "Fuzzy match" ;
+    rdfs:subClassOf ek:Match ;
+    skos:definition "One-to-one match on amount within a date window, supported by name similarity rather than a shared key." ;
+    rdfs:comment "Same amount, a few days apart, similar description." .
+
+ek:OneToManyMatch a owl:Class ;
+    rdfs:label "One-to-many match" ;
+    rdfs:subClassOf ek:Match ;
+    skos:definition "One item on side A equals the sum of several items on side B (e.g. a batched deposit)." ;
+    rdfs:comment "One bank deposit that covers several customer payments." .
+
+ek:ManyToOneMatch a owl:Class ;
+    rdfs:label "Many-to-one match" ;
+    rdfs:subClassOf ek:Match ;
+    skos:definition "Several items on side A sum to one item on side B." ;
+    rdfs:comment "Several bank lines that together equal one ledger entry." .
+
+ek:ReconcilingItem a owl:Class ;
+    rdfs:label "Reconciling item" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A documented difference between the two sides of a reconciliation, with type, age and expected resolution." ;
+    rdfs:comment "A known, explained difference." .
+
+ek:TimingDifference a owl:Class ;
+    rdfs:label "Timing difference" ;
+    rdfs:subClassOf ek:ReconcilingItem ;
+    skos:definition "Difference that reverses in a subsequent period without action (recorded in books, not yet on the statement)." ;
+    rdfs:comment "A difference that fixes itself in a few days." .
+
+ek:DepositInTransit a owl:Class ;
+    rdfs:label "Deposit in transit" ;
+    rdfs:subClassOf ek:TimingDifference ;
+    skos:definition "Receipt recorded in the books before period end but credited by the bank after period end." ;
+    rdfs:comment "Money received at month end that the bank had not posted yet." .
+
+ek:OutstandingCheck a owl:Class ;
+    rdfs:label "Outstanding check" ;
+    rdfs:subClassOf ek:TimingDifference ;
+    skos:definition "Disbursement recorded in the books that has not cleared the bank by statement date." ;
+    rdfs:comment "A check that was written but not cashed yet." .
+
+ek:BankOnlyItem a owl:Class ;
+    rdfs:label "Bank-only item" ;
+    rdfs:subClassOf ek:ReconcilingItem ;
+    skos:definition "Item on the statement with no book entry yet (fees, interest, direct debits); requires a journal entry." ;
+    rdfs:comment "Something the bank recorded that the books do not have yet." .
+
+ek:UnexplainedDifference a owl:Class ;
+    rdfs:label "Unexplained difference" ;
+    rdfs:subClassOf ek:ReconcilingItem ;
+    skos:definition "A difference without an identified cause; blocks certification until investigated." ;
+    rdfs:comment "A difference nobody can explain yet." .
+
+ek:Certification a owl:Class ;
+    rdfs:label "Certification" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Signed attestation by the preparer and then an independent reviewer that a reconciliation is complete and accurate." ;
+    rdfs:comment "Signing off that the reconciliation is right." ;
+    skos:altLabel "sign-off" .
+
+ek:Accrual a owl:Class ;
+    rdfs:label "Accrual" ;
+    rdfs:subClassOf ek:JournalEntry ;
+    skos:definition "Entry recognising an expense (or revenue) in the period incurred (earned) before the related invoice or cash; normally auto-reverses on the first day of the next period." ;
+    rdfs:comment "Recording a cost this month even though the bill comes later." ;
+    skos:altLabel "accrued expense" .
+
+ek:GrniAccrual a owl:Class ;
+    rdfs:label "Received-not-invoiced accrual" ;
+    rdfs:subClassOf ek:Accrual ;
+    skos:definition "Accrual for goods or services received against a purchase order without a vendor invoice." ;
+    rdfs:comment "You got the service; the bill has not arrived." ;
+    skos:altLabel "GRNI" .
+
+ek:PayrollAccrual a owl:Class ;
+    rdfs:label "Payroll accrual" ;
+    rdfs:subClassOf ek:Accrual ;
+    skos:definition "Accrual of wages and employer taxes earned between the last pay period end and the period end." ;
+    rdfs:comment "Salaries earned this month but paid next month." .
+
+ek:Deferral a owl:Class ;
+    rdfs:label "Deferral" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Postponement of recognising a cash flow in earnings until the related service is consumed or delivered." ;
+    rdfs:comment "Cash happened now; the expense or revenue belongs to later months." .
+
+ek:PrepaidSchedule a owl:Class ;
+    rdfs:label "Prepaid schedule" ;
+    rdfs:subClassOf ek:Deferral ;
+    skos:definition "Schedule amortising a prepaid asset straight-line over its service period (ASC 340-10)." ;
+    rdfs:comment "A plan that spreads a prepayment evenly across months." .
+
+ek:DepreciationSchedule a owl:Class ;
+    rdfs:label "Depreciation schedule" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Systematic allocation of a fixed asset’s depreciable base over its useful life (straight-line)." ;
+    rdfs:comment "How an asset’s cost is spread over its life." .
+
+ek:CapitalizationPolicy a owl:Class ;
+    rdfs:label "Capitalisation policy" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Threshold and useful-life rules deciding whether a purchase is an asset or an expense." ;
+    rdfs:comment "The rule for when a purchase is equipment rather than an expense." .
+
+ek:ServicePeriod a owl:Class ;
+    rdfs:label "Service period" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Date range over which goods or services are received or delivered; governs period assignment." ;
+    rdfs:comment "The months a bill or contract actually covers." .
+
+ek:FluxAnalysis a owl:Class ;
+    rdfs:label "Flux analysis" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Analytical review comparing balances or activity across periods or against budget, with explanations for variances above thresholds." ;
+    rdfs:comment "Asking \"why did this number change?\" for the big moves." ;
+    skos:altLabel "variance analysis" ;
+    skos:altLabel "fluctuation analysis" ;
+    skos:altLabel "analytical review" .
+
+ek:Variance a owl:Class ;
+    rdfs:label "Variance" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Difference between a current amount and a comparison amount (prior month, prior year, budget), absolute and relative." ;
+    rdfs:comment "How much a number moved." .
+
+ek:VarianceThreshold a owl:Class ;
+    rdfs:label "Variance threshold" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Policy deciding which variances require explanation: absolute and percentage limits, combined with AND/OR." ;
+    rdfs:comment "The rule for which changes need an explanation." .
+
+ek:VarianceDriver a owl:Class ;
+    rdfs:label "Variance driver" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Quantified cause of a variance: volume, rate, new or lost vendor, one-time item, timing, accrual, FX, headcount, mix." ;
+    rdfs:comment "A specific reason a number changed, with an amount." .
+
+ek:ComparisonBasis a owl:Class ;
+    rdfs:label "Comparison basis" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "What a current amount is compared with: prior month, same month prior year, or budget." ;
+    rdfs:comment "What we compare this month against." .
+
+ek:VarianceExplanation a owl:Class ;
+    rdfs:label "Variance explanation" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Narrative plus drivers explaining a variance, with coverage (share explained) and approval." ;
+    rdfs:comment "The written reason for a change, backed by numbers." .
+
+ek:IntercompanyTransaction a owl:Class ;
+    rdfs:label "Intercompany transaction" ;
+    rdfs:subClassOf ek:EconomicEvent ;
+    skos:definition "Transaction between two entities of the same consolidation group, recorded by both with mirrored accounts." ;
+    rdfs:comment "A charge from one group company to another." .
+
+ek:IntercompanyBalance a owl:Class ;
+    rdfs:label "Intercompany balance" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Due-from in one entity and due-to in the counterparty, compared in the reporting currency." ;
+    rdfs:comment "How much one group company owes another, as each of them sees it." .
+
+ek:ExchangeRate a owl:Class ;
+    rdfs:label "Exchange rate" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Price of one currency in another at a date and of a rate type (spot, average, closing, historical)." ;
+    rdfs:comment "How many dollars one pound buys." .
+
+ek:RateType a owl:Class ;
+    rdfs:label "Rate type" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Which exchange rate applies: spot (transaction date), closing (balance sheet date), average (income statement), historical (equity)." ;
+    rdfs:comment "Which rate to use for which number." .
+
+ek:MonetaryItem a owl:Class ;
+    rdfs:label "Monetary item" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Asset or liability fixed in units of currency (cash, receivables, payables, IC balances); remeasured at closing rates." ;
+    rdfs:comment "A balance that is a fixed amount of some currency." .
+
+ek:Revaluation a owl:Class ;
+    rdfs:label "FX revaluation" ;
+    rdfs:subClassOf ek:JournalEntry ;
+    skos:definition "Remeasurement of monetary items denominated in a foreign currency into the functional currency at the closing rate, with the difference in FX gain/loss (ASC 830-20)." ;
+    rdfs:comment "Updating foreign-currency balances to today’s rate." ;
+    skos:altLabel "remeasurement" .
+
+ek:Translation a owl:Class ;
+    rdfs:label "Translation" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Conversion of a foreign entity’s functional-currency statements into the reporting currency for consolidation, with differences to CTA (ASC 830-30)." ;
+    rdfs:comment "Converting a subsidiary’s whole set of books into dollars." .
+
+ek:Control a owl:Class ;
+    rdfs:label "Internal control" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A policy or procedure that prevents or detects misstatements (COSO control activity)." ;
+    rdfs:comment "A check that stops mistakes or catches them." .
+
+ek:PreventiveControl a owl:Class ;
+    rdfs:label "Preventive control" ;
+    rdfs:subClassOf ek:Control ;
+    skos:definition "Control that stops an error before it is recorded." ;
+    rdfs:comment "A gate that blocks bad entries." .
+
+ek:DetectiveControl a owl:Class ;
+    rdfs:label "Detective control" ;
+    rdfs:subClassOf ek:Control ;
+    skos:definition "Control that finds errors after recording." ;
+    rdfs:comment "A review that catches mistakes." .
+
+ek:AutomatedControl a owl:Class ;
+    rdfs:label "Automated control" ;
+    rdfs:subClassOf ek:Control ;
+    skos:definition "Control performed by the system without human intervention, relying on IT general controls." ;
+    rdfs:comment "A check the software does every time." .
+
+ek:MakerChecker a owl:Class ;
+    rdfs:label "Maker–checker" ;
+    rdfs:subClassOf ek:PreventiveControl ;
+    skos:definition "Two-person rule: the person (or agent) preparing an item cannot approve it." ;
+    rdfs:comment "One prepares, a different person approves." ;
+    skos:altLabel "four-eyes" ;
+    skos:altLabel "dual control" .
+
+ek:SegregationOfDuties a owl:Class ;
+    rdfs:label "Segregation of duties" ;
+    rdfs:subClassOf ek:PreventiveControl ;
+    skos:definition "Separation of incompatible duties (authorisation, custody, recording, reconciliation) across people." ;
+    rdfs:comment "No one person controls a whole transaction from start to finish." ;
+    skos:altLabel "SoD" .
+
+ek:SodRule a owl:Class ;
+    rdfs:label "SoD rule" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A configured pair of incompatible duties with severity, evaluated on every approval." ;
+    rdfs:comment "A specific \"these two jobs cannot be done by the same person\" rule." .
+
+ek:Evidence a owl:Class ;
+    rdfs:label "Evidence" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Information supporting an assertion or control performance: records, calculations, documents, check results." ;
+    rdfs:comment "The proof attached to a decision." .
+
+ek:Assertion a owl:Class ;
+    rdfs:label "Financial statement assertion" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Management’s implicit claim about a balance or transaction class: existence/occurrence, completeness, accuracy/valuation, cutoff, classification, rights & obligations, presentation & disclosure." ;
+    rdfs:comment "What we are claiming is true about a number." .
+
+ek:Materiality a owl:Class ;
+    rdfs:label "Materiality" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Magnitude of misstatement that could influence users’ decisions; set as overall materiality, performance materiality and a clearly-trivial threshold." ;
+    rdfs:comment "How big an error has to be before it matters." .
+
+ek:AuditTrail a owl:Class ;
+    rdfs:label "Audit trail" ;
+    rdfs:subClassOf ek:Evidence ;
+    skos:definition "Append-only, hash-chained log of every action with actor, time, before/after state." ;
+    rdfs:comment "A tamper-evident history of who did what and when." .
+
+ek:Exception a owl:Class ;
+    rdfs:label "Exception" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Issue requiring human judgment raised by a control or agent (duplicate payment, SoD break, unexplained item, anomaly)." ;
+    rdfs:comment "Something an agent found that a person needs to decide on." ;
+    skos:altLabel "issue" ;
+    skos:altLabel "flag" .
+
+ek:Role a owl:Class ;
+    rdfs:label "Role" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A bundle of permissions granted to users (Staff Accountant, Controller, Auditor…)." ;
+    rdfs:comment "A job function that decides what someone can do." .
+
+ek:CloseCycle a owl:Class ;
+    rdfs:label "Close cycle" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "The set of tasks, reconciliations, analyses and sign-offs that take a period from open to locked." ;
+    rdfs:comment "Everything that has to happen to finish the month." .
+
+ek:CloseTask a owl:Class ;
+    rdfs:label "Close task" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A unit of close work with owner, reviewer, workday due date, dependencies, linked skill and control." ;
+    rdfs:comment "One item on the close checklist." .
+
+ek:TaskDependency a owl:Class ;
+    rdfs:label "Task dependency" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Finish-to-start relation between close tasks; must form a directed acyclic graph." ;
+    rdfs:comment "\"Do this before that.\"" .
+
+ek:ClosePackage a owl:Class ;
+    rdfs:label "Close package" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Frozen, hashed bundle of trial balance, statements, commentary, reconciliation status and sign-offs for a period." ;
+    rdfs:comment "The finished month-end report pack." .
+
+ek:SoftwareAgent a owl:Class ;
+    rdfs:label "AI agent" ;
+    rdfs:subClassOf ek:InternalAgent ;
+    skos:definition "Software actor that executes a skill under delegated authority of a requesting user, bounded by the skill’s tools, permissions and autonomy." ;
+    rdfs:comment "An AI helper doing a close task on someone’s behalf." .
+
+ek:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Versioned package of instructions, resources, typed manifest (inputs, outputs, tools, permissions, controls, autonomy) and eval cases." ;
+    rdfs:comment "A playbook an agent follows for one close task." .
+
+ek:AgentRun a owl:Class ;
+    rdfs:label "Agent run" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "One durable execution of a skill: plan → act → observe → verify → propose → approve → post → audit, with budgets and trace." ;
+    rdfs:comment "One time an agent did a task, step by step." .
+
+ek:Proposal a owl:Class ;
+    rdfs:label "Proposal" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "A typed change an agent wants to make (journal entry, match, explanation…) with evidence, plain-English rationale, confidence and verification results; applied only after approval or within autonomy policy." ;
+    rdfs:comment "Something the agent suggests, waiting for a person to approve." .
+
+ek:AutonomyLevel a owl:Class ;
+    rdfs:label "Autonomy level" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "How far an agent may act without prior approval: L0 suggest, L1 draft for approval, L2 auto-post under threshold with sampled review, L3 auto with post-hoc review." ;
+    rdfs:comment "How much the agent is allowed to do on its own." .
+
+ek:Policy a owl:Class ;
+    rdfs:label "Skill policy" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Versioned settings for a skill: thresholds, mappings and plain-English rules compiled to executable conditions." ;
+    rdfs:comment "Your team’s rules for how an agent should behave." .
+
+ek:CodingDecision a owl:Class ;
+    rdfs:label "Coding decision" ;
+    rdfs:subClassOf ek:Thing ;
+    skos:definition "Assignment of a transaction to an account, dimensions and treatment (expense, prepaid, capitalise) with confidence and basis." ;
+    rdfs:comment "Deciding which account and team a purchase belongs to." ;
+    skos:altLabel "bucketing" ;
+    skos:altLabel "categorisation" ;
+    skos:altLabel "GL coding" .
+
+ek:OperatingExpense a owl:Class ;
+    rdfs:label "Operating expense" ;
+    rdfs:subClassOf ek:ExpenseAccount ;
+    skos:definition "Expense incurred in normal operations, presented within operating income (R&D, S&M, G&A)." ;
+    rdfs:comment "Day-to-day cost of running the business." .
+
+ek:CostOfRevenue a owl:Class ;
+    rdfs:label "Cost of revenue" ;
+    rdfs:subClassOf ek:ExpenseAccount ;
+    skos:definition "Costs directly attributable to delivering revenue (hosting, support)." ;
+    rdfs:comment "Cost of delivering the product to customers." .
+
+ek:SoftwareExpense a owl:Class ;
+    rdfs:label "Software & subscriptions" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Fees for software licences and SaaS subscriptions consumed in the period; annual prepayments are deferred (ASC 340-10)." ;
+    rdfs:comment "Paying for apps and software tools." .
+
+ek:HostingExpense a owl:Class ;
+    rdfs:label "Cloud hosting" ;
+    rdfs:subClassOf ek:CostOfRevenue ;
+    skos:definition "Usage-based infrastructure cost to run the production service." ;
+    rdfs:comment "Paying for servers in the cloud." .
+
+ek:TravelExpense a owl:Class ;
+    rdfs:label "Travel" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Business travel: transport, lodging and incidentals." ;
+    rdfs:comment "Flights, hotels, taxis for work trips." .
+
+ek:MealsExpense a owl:Class ;
+    rdfs:label "Meals & entertainment" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Business meals and entertainment; partially deductible for tax." ;
+    rdfs:comment "Team lunches and client dinners." .
+
+ek:MarketingExpense a owl:Class ;
+    rdfs:label "Marketing & advertising" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Demand generation: advertising, sponsorships, events and content." ;
+    rdfs:comment "Spending to attract customers." .
+
+ek:ProfessionalFeesExpense a owl:Class ;
+    rdfs:label "Professional fees" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Legal, audit, tax and consulting services." ;
+    rdfs:comment "Paying lawyers, auditors and consultants." .
+
+ek:OfficeExpense a owl:Class ;
+    rdfs:label "Office supplies" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Consumable office items below the capitalisation threshold." ;
+    rdfs:comment "Pens, paper, small office items." .
+
+ek:ComputerEquipment a owl:Class ;
+    rdfs:label "Computer equipment" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Computing hardware; capitalised to fixed assets when unit cost exceeds the capitalisation threshold (ASC 360), otherwise expensed." ;
+    rdfs:comment "Laptops and monitors." .
+
+ek:TelecomExpense a owl:Class ;
+    rdfs:label "Telecom & internet" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Phone, internet and connectivity services." ;
+    rdfs:comment "Phone and internet bills." .
+
+ek:RentExpense a owl:Class ;
+    rdfs:label "Rent & facilities" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Occupancy cost; leases > 12 months are recognised under ASC 842 as right-of-use assets and lease liabilities (simplified here to straight-line lease cost)." ;
+    rdfs:comment "Office rent." .
+
+ek:InsuranceExpense a owl:Class ;
+    rdfs:label "Insurance" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Insurance premiums, usually paid annually in advance and amortised." ;
+    rdfs:comment "Insurance policies." .
+
+ek:UtilitiesExpense a owl:Class ;
+    rdfs:label "Utilities" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Electricity, water and similar utilities." ;
+    rdfs:comment "Power and water bills." .
+
+ek:ShippingExpense a owl:Class ;
+    rdfs:label "Shipping & postage" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Courier, freight and postage." ;
+    rdfs:comment "Sending packages." .
+
+ek:TrainingExpense a owl:Class ;
+    rdfs:label "Training & education" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Employee learning and certification." ;
+    rdfs:comment "Courses and training for staff." .
+
+ek:PayrollExpense a owl:Class ;
+    rdfs:label "Salaries & wages" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Employee compensation, employer payroll taxes and benefits." ;
+    rdfs:comment "What the company pays its people." .
+
+ek:BankFeesExpense a owl:Class ;
+    rdfs:label "Bank fees" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Charges levied by banks for account services." ;
+    rdfs:comment "Fees the bank charges." .
+
+ek:DepreciationExpense a owl:Class ;
+    rdfs:label "Depreciation" ;
+    rdfs:subClassOf ek:OperatingExpense ;
+    skos:definition "Periodic allocation of fixed asset cost (ASC 360)." ;
+    rdfs:comment "The monthly cost of using equipment." .
+
+ek:stockflow a owl:ObjectProperty ;
+    rdfs:label "changes resource" ;
+    rdfs:domain ek:EconomicEvent ;
+    rdfs:range ek:EconomicResource ;
+    skos:definition "Event increases or decreases a resource (REA stockflow)." .
+
+ek:participates a owl:ObjectProperty ;
+    rdfs:label "has participant" ;
+    rdfs:domain ek:EconomicEvent ;
+    rdfs:range ek:EconomicAgent ;
+    skos:definition "Agents providing and receiving in the event (REA participation)." .
+
+ek:duality a owl:ObjectProperty ;
+    rdfs:label "is paired with" ;
+    rdfs:domain ek:EconomicEvent ;
+    rdfs:range ek:EconomicEvent ;
+    skos:definition "Give event paired with take event in an exchange (REA duality), e.g. bill ↔ payment." .
+
+ek:fulfills a owl:ObjectProperty ;
+    rdfs:label "fulfils" ;
+    rdfs:domain ek:EconomicEvent ;
+    rdfs:range ek:Commitment ;
+    skos:definition "Event executes a commitment (e.g. bill fulfils a purchase order)." .
+
+ek:belongsToEntity a owl:ObjectProperty ;
+    rdfs:label "belongs to entity" ;
+    rdfs:domain ek:Thing ;
+    rdfs:range ek:LegalEntity ;
+    skos:definition "Record is owned by one legal entity." .
+
+ek:functionalCurrency a owl:ObjectProperty ;
+    rdfs:label "has functional currency" ;
+    rdfs:domain ek:LegalEntity ;
+    rdfs:range ek:Currency ;
+    skos:definition "Currency of the entity’s primary economic environment (ASC 830)." .
+
+ek:consolidatesInto a owl:ObjectProperty ;
+    rdfs:label "consolidates into" ;
+    rdfs:domain ek:LegalEntity ;
+    rdfs:range ek:ConsolidationGroup ;
+    skos:definition "Entity is part of a consolidation group." .
+
+ek:inPeriod a owl:ObjectProperty ;
+    rdfs:label "in period" ;
+    rdfs:domain ek:JournalEntry ;
+    rdfs:range ek:FiscalPeriod ;
+    skos:definition "Accounting period the entry is recorded in (cutoff)." .
+
+ek:hasState a owl:ObjectProperty ;
+    rdfs:label "has state" ;
+    rdfs:domain ek:FiscalPeriod ;
+    rdfs:range ek:PeriodState ;
+    skos:definition "Current lifecycle state." .
+
+ek:hasNormalBalance a owl:ObjectProperty ;
+    rdfs:label "has normal balance" ;
+    rdfs:domain ek:Account ;
+    rdfs:range ek:NormalBalance ;
+    skos:definition "Side that increases the account." .
+
+ek:rollsUpTo a owl:ObjectProperty ;
+    rdfs:label "presents in" ;
+    rdfs:domain ek:Account ;
+    rdfs:range ek:FinancialStatementLineItem ;
+    skos:definition "Statement line the account aggregates into (XBRL element)." .
+
+ek:childOf a owl:ObjectProperty ;
+    rdfs:label "child of" ;
+    rdfs:domain ek:Account ;
+    rdfs:range ek:Account ;
+    skos:definition "Account hierarchy (summary accounts)." .
+
+ek:conceptOf a owl:ObjectProperty ;
+    rdfs:label "measures concept" ;
+    rdfs:domain ek:Account ;
+    rdfs:range ek:Thing ;
+    skos:definition "Spend or balance concept an account measures (used for bucketing)." .
+
+ek:controlledBy a owl:ObjectProperty ;
+    rdfs:label "controlled by" ;
+    rdfs:domain ek:ControlAccount ;
+    rdfs:range ek:Subledger ;
+    skos:definition "Subledger whose total must equal the control account." .
+
+ek:hasLine a owl:ObjectProperty ;
+    rdfs:label "has line" ;
+    rdfs:domain ek:JournalEntry ;
+    rdfs:range ek:JournalLine ;
+    skos:definition "Lines of the entry; Σ debits = Σ credits." ;
+    owl:inverseOf ek:lineOf .
+
+ek:lineOf a owl:ObjectProperty ;
+    rdfs:label "line of" ;
+    rdfs:domain ek:JournalLine ;
+    rdfs:range ek:JournalEntry ;
+    skos:definition "Entry the line belongs to." ;
+    owl:inverseOf ek:hasLine .
+
+ek:postsTo a owl:ObjectProperty ;
+    rdfs:label "posts to" ;
+    rdfs:domain ek:JournalLine ;
+    rdfs:range ek:Account ;
+    skos:definition "Account debited or credited." .
+
+ek:taggedWith a owl:ObjectProperty ;
+    rdfs:label "tagged with" ;
+    rdfs:domain ek:JournalLine ;
+    rdfs:range ek:Dimension ;
+    skos:definition "Dimension values on the line." .
+
+ek:hasEntryType a owl:ObjectProperty ;
+    rdfs:label "has entry type" ;
+    rdfs:domain ek:JournalEntry ;
+    rdfs:range ek:EntryType ;
+    skos:definition "Purpose classification." .
+
+ek:reverses a owl:ObjectProperty ;
+    rdfs:label "reverses" ;
+    rdfs:domain ek:ReversingEntry ;
+    rdfs:range ek:JournalEntry ;
+    skos:definition "Posted entry cancelled by this entry." ;
+    owl:inverseOf ek:reversedBy .
+
+ek:reversedBy a owl:ObjectProperty ;
+    rdfs:label "reversed by" ;
+    rdfs:domain ek:JournalEntry ;
+    rdfs:range ek:ReversingEntry ;
+    skos:definition "Reversal that cancels this entry." ;
+    owl:inverseOf ek:reverses .
+
+ek:documentedBy a owl:ObjectProperty ;
+    rdfs:label "documented by" ;
+    rdfs:domain ek:Thing ;
+    rdfs:range ek:SourceDocument ;
+    skos:definition "Provenance: originating document." .
+
+ek:counterparty a owl:ObjectProperty ;
+    rdfs:label "counterparty entity" ;
+    rdfs:domain ek:JournalLine ;
+    rdfs:range ek:LegalEntity ;
+    skos:definition "Other group entity on an intercompany line." .
+
+ek:billedBy a owl:ObjectProperty ;
+    rdfs:label "billed by" ;
+    rdfs:domain ek:Bill ;
+    rdfs:range ek:Vendor ;
+    skos:definition "Vendor issuing the bill." .
+
+ek:settles a owl:ObjectProperty ;
+    rdfs:label "settles" ;
+    rdfs:domain ek:VendorPayment ;
+    rdfs:range ek:Bill ;
+    skos:definition "Bills a payment settles (duality)." .
+
+ek:appliesTo a owl:ObjectProperty ;
+    rdfs:label "applies to" ;
+    rdfs:domain ek:CustomerReceipt ;
+    rdfs:range ek:Invoice ;
+    skos:definition "Invoices a receipt settles." .
+
+ek:heldAt a owl:ObjectProperty ;
+    rdfs:label "held at" ;
+    rdfs:domain ek:BankAccount ;
+    rdfs:range ek:Bank ;
+    skos:definition "Bank holding the account." .
+
+ek:mapsToCash a owl:ObjectProperty ;
+    rdfs:label "maps to" ;
+    rdfs:domain ek:BankAccount ;
+    rdfs:range ek:CashAccount ;
+    skos:definition "GL cash account of the bank account." .
+
+ek:coveredBy a owl:ObjectProperty ;
+    rdfs:label "covers service period" ;
+    rdfs:domain ek:Bill ;
+    rdfs:range ek:ServicePeriod ;
+    skos:definition "Service dates on the bill (cutoff)." .
+
+ek:amortizedBy a owl:ObjectProperty ;
+    rdfs:label "amortised by" ;
+    rdfs:domain ek:PrepaidSchedule ;
+    rdfs:range ek:JournalEntry ;
+    skos:definition "Monthly amortisation entries." .
+
+ek:depreciatedBy a owl:ObjectProperty ;
+    rdfs:label "depreciated by" ;
+    rdfs:domain ek:FixedAsset ;
+    rdfs:range ek:DepreciationSchedule ;
+    skos:definition "Schedule allocating cost." .
+
+ek:reconciles a owl:ObjectProperty ;
+    rdfs:label "reconciles" ;
+    rdfs:domain ek:Reconciliation ;
+    rdfs:range ek:Account ;
+    skos:definition "GL account under reconciliation." .
+
+ek:matchesItem a owl:ObjectProperty ;
+    rdfs:label "matches" ;
+    rdfs:domain ek:Match ;
+    rdfs:range ek:Thing ;
+    skos:definition "Items paired by the match (at least one on each side)." .
+
+ek:hasReconcilingItem a owl:ObjectProperty ;
+    rdfs:label "has reconciling item" ;
+    rdfs:domain ek:Reconciliation ;
+    rdfs:range ek:ReconcilingItem ;
+    skos:definition "Explained differences." .
+
+ek:resolvedBy a owl:ObjectProperty ;
+    rdfs:label "resolved by" ;
+    rdfs:domain ek:ReconcilingItem ;
+    rdfs:range ek:JournalEntry ;
+    skos:definition "Entry clearing the item." .
+
+ek:certifiedBy a owl:ObjectProperty ;
+    rdfs:label "certified by" ;
+    rdfs:domain ek:Reconciliation ;
+    rdfs:range ek:Certification ;
+    skos:definition "Preparer and reviewer sign-offs." .
+
+ek:explains a owl:ObjectProperty ;
+    rdfs:label "explains" ;
+    rdfs:domain ek:VarianceExplanation ;
+    rdfs:range ek:Variance ;
+    skos:definition "Variance being explained." .
+
+ek:drivenBy a owl:ObjectProperty ;
+    rdfs:label "driven by" ;
+    rdfs:domain ek:Variance ;
+    rdfs:range ek:VarianceDriver ;
+    skos:definition "Quantified causes." .
+
+ek:comparedAgainst a owl:ObjectProperty ;
+    rdfs:label "compared against" ;
+    rdfs:domain ek:Variance ;
+    rdfs:range ek:Budget ;
+    skos:definition "Budget/forecast used as comparison." .
+
+ek:eliminatedBy a owl:ObjectProperty ;
+    rdfs:label "eliminated by" ;
+    rdfs:domain ek:IntercompanyBalance ;
+    rdfs:range ek:EliminationEntry ;
+    skos:definition "Consolidation elimination." .
+
+ek:measuredAt a owl:ObjectProperty ;
+    rdfs:label "measured at" ;
+    rdfs:domain ek:ExchangeRate ;
+    rdfs:range ek:RateType ;
+    skos:definition "Rate type." .
+
+ek:mitigates a owl:ObjectProperty ;
+    rdfs:label "addresses assertion" ;
+    rdfs:domain ek:Control ;
+    rdfs:range ek:Assertion ;
+    skos:definition "Assertions the control supports." .
+
+ek:preparedBy a owl:ObjectProperty ;
+    rdfs:label "prepared by" ;
+    rdfs:domain ek:Thing ;
+    rdfs:range ek:InternalAgent ;
+    skos:definition "Maker." .
+
+ek:approvedBy a owl:ObjectProperty ;
+    rdfs:label "approved by" ;
+    rdfs:domain ek:Thing ;
+    rdfs:range ek:InternalAgent ;
+    skos:definition "Checker; must differ from maker." .
+
+ek:evidencedBy a owl:ObjectProperty ;
+    rdfs:label "evidenced by" ;
+    rdfs:domain ek:Thing ;
+    rdfs:range ek:Evidence ;
+    skos:definition "Supporting evidence." .
+
+ek:conflictsWith a owl:ObjectProperty ;
+    rdfs:label "conflicts with" ;
+    rdfs:domain ek:Role ;
+    rdfs:range ek:Role ;
+    skos:definition "Incompatible duties (SoD)." .
+
+ek:dependsOn a owl:ObjectProperty ;
+    rdfs:label "depends on" ;
+    rdfs:domain ek:CloseTask ;
+    rdfs:range ek:CloseTask ;
+    skos:definition "Finish-to-start dependency (acyclic)." .
+
+ek:performedBySkill a owl:ObjectProperty ;
+    rdfs:label "performed by skill" ;
+    rdfs:domain ek:CloseTask ;
+    rdfs:range ek:Skill ;
+    skos:definition "Skill an agent runs for the task." .
+
+ek:dueOn a owl:ObjectProperty ;
+    rdfs:label "due on" ;
+    rdfs:domain ek:CloseTask ;
+    rdfs:range ek:Workday ;
+    skos:definition "Workday offset due date." .
+
+ek:partOfCycle a owl:ObjectProperty ;
+    rdfs:label "part of" ;
+    rdfs:domain ek:CloseTask ;
+    rdfs:range ek:CloseCycle ;
+    skos:definition "Close cycle." .
+
+ek:executes a owl:ObjectProperty ;
+    rdfs:label "executes" ;
+    rdfs:domain ek:AgentRun ;
+    rdfs:range ek:Skill ;
+    skos:definition "Skill version run." .
+
+ek:proposes a owl:ObjectProperty ;
+    rdfs:label "proposes" ;
+    rdfs:domain ek:AgentRun ;
+    rdfs:range ek:Proposal ;
+    skos:definition "Proposals produced by the run." .
+
+ek:actsFor a owl:ObjectProperty ;
+    rdfs:label "acts for" ;
+    rdfs:domain ek:SoftwareAgent ;
+    rdfs:range ek:InternalAgent ;
+    skos:definition "User whose authority the agent exercises (least privilege)." .
+
+ek:atAutonomy a owl:ObjectProperty ;
+    rdfs:label "at autonomy" ;
+    rdfs:domain ek:Skill ;
+    rdfs:range ek:AutonomyLevel ;
+    skos:definition "Configured autonomy level." .
+
+ek:governedBy a owl:ObjectProperty ;
+    rdfs:label "governed by" ;
+    rdfs:domain ek:Skill ;
+    rdfs:range ek:Policy ;
+    skos:definition "Current policy version." .
+
+ek:Debit a owl:NamedIndividual, ek:NormalBalance ;
+    rdfs:label "Debit" ;
+    skos:definition "Left side; increases assets and expenses." .
+
+ek:Credit a owl:NamedIndividual, ek:NormalBalance ;
+    rdfs:label "Credit" ;
+    skos:definition "Right side; increases liabilities, equity and revenue." .
+
+ek:Open a owl:NamedIndividual, ek:PeriodState ;
+    rdfs:label "Open" ;
+    skos:definition "All entry types may post (subject to approval)." .
+
+ek:SoftClose a owl:NamedIndividual, ek:PeriodState ;
+    rdfs:label "Soft close" ;
+    skos:definition "Subledgers closed; only adjusting-type entries by Senior Accountant or above." .
+
+ek:HardClose a owl:NamedIndividual, ek:PeriodState ;
+    rdfs:label "Hard close (locked)" ;
+    skos:definition "No postings; reopening requires CFO approval with a reason." .
+
+ek:Standard a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Standard entry" ;
+    skos:definition "Ordinary transaction entry." .
+
+ek:Adjusting a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Adjusting entry" ;
+    skos:definition "Top-side correction made during the close." .
+
+ek:AccrualType a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Accrual entry" ;
+    skos:definition "Recognises incurred but unbilled amounts; auto-reverses next period." .
+
+ek:Reversing a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Reversing entry" ;
+    skos:definition "Mirror of a posted entry; cancels it." .
+
+ek:Recurring a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Recurring entry" ;
+    skos:definition "Template-generated each period." .
+
+ek:Reclass a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Reclassification" ;
+    skos:definition "Moves an amount between accounts/dimensions without changing totals." .
+
+ek:Elimination a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Elimination" ;
+    skos:definition "Consolidation-only intercompany elimination." .
+
+ek:FxRevaluationType a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "FX revaluation" ;
+    skos:definition "Remeasures monetary items at closing rate." .
+
+ek:DepreciationType a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Depreciation" ;
+    skos:definition "Fixed-asset depreciation from the register." .
+
+ek:AmortizationType a owl:NamedIndividual, ek:EntryType ;
+    rdfs:label "Amortisation" ;
+    skos:definition "Prepaid amortisation from schedules." .
+
+ek:Existence a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Existence" ;
+    skos:definition "Assets, liabilities and equity interests exist at the balance sheet date." .
+
+ek:Occurrence a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Occurrence" ;
+    skos:definition "Recorded transactions and events have occurred and pertain to the entity." .
+
+ek:Completeness a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Completeness" ;
+    skos:definition "All transactions and balances that should be recorded have been recorded." .
+
+ek:Accuracy a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Accuracy" ;
+    skos:definition "Amounts and data have been recorded appropriately." .
+
+ek:Valuation a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Valuation & allocation" ;
+    skos:definition "Balances are included at appropriate amounts and adjustments are recorded." .
+
+ek:Cutoff a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Cutoff" ;
+    skos:definition "Transactions are recorded in the correct period." .
+
+ek:Classification a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Classification" ;
+    skos:definition "Transactions are recorded in the proper accounts." .
+
+ek:RightsAndObligations a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Rights & obligations" ;
+    skos:definition "The entity holds rights to assets and liabilities are its obligations." .
+
+ek:PresentationAndDisclosure a owl:NamedIndividual, ek:Assertion ;
+    rdfs:label "Presentation & disclosure" ;
+    skos:definition "Components are properly classified, described and disclosed." .
+
+ek:OverallMateriality a owl:NamedIndividual, ek:Materiality ;
+    rdfs:label "Overall materiality" ;
+    skos:definition "Threshold for the financial statements as a whole (e.g. 1% of revenue)." .
+
+ek:PerformanceMateriality a owl:NamedIndividual, ek:Materiality ;
+    rdfs:label "Performance materiality" ;
+    skos:definition "Lower threshold used to reduce aggregation risk (typically 50–75% of overall)." .
+
+ek:ClearlyTrivial a owl:NamedIndividual, ek:Materiality ;
+    rdfs:label "Clearly trivial" ;
+    skos:definition "Threshold below which misstatements are clearly inconsequential (typically ≤5% of overall)." .
+
+ek:L0 a owl:NamedIndividual, ek:AutonomyLevel ;
+    rdfs:label "L0 — Suggest" ;
+    skos:definition "Agent suggests; a person must act." .
+
+ek:L1 a owl:NamedIndividual, ek:AutonomyLevel ;
+    rdfs:label "L1 — Draft for approval" ;
+    skos:definition "Agent drafts; every item needs approval before posting." .
+
+ek:L2 a owl:NamedIndividual, ek:AutonomyLevel ;
+    rdfs:label "L2 — Auto-post under threshold" ;
+    skos:definition "Agent posts items below the policy threshold and confidence floor; a sample is reviewed after posting." .
+
+ek:L3 a owl:NamedIndividual, ek:AutonomyLevel ;
+    rdfs:label "L3 — Auto with post-hoc review" ;
+    skos:definition "Agent posts verified items; all are reviewed after posting. Never above performance materiality." .
+
+ek:Spot a owl:NamedIndividual, ek:RateType ;
+    rdfs:label "Spot rate" ;
+    skos:definition "Rate on the transaction date." .
+
+ek:Closing a owl:NamedIndividual, ek:RateType ;
+    rdfs:label "Closing rate" ;
+    skos:definition "Rate at the balance sheet date; used for monetary items." .
+
+ek:Average a owl:NamedIndividual, ek:RateType ;
+    rdfs:label "Average rate" ;
+    skos:definition "Period average; used for income statement translation." .
+
+ek:Historical a owl:NamedIndividual, ek:RateType ;
+    rdfs:label "Historical rate" ;
+    skos:definition "Rate when the item arose; used for equity and non-monetary items." .
+
+ek:ControlEnvironment a owl:NamedIndividual, ek:Control ;
+    rdfs:label "Control environment" ;
+    skos:definition "COSO component 1 (principles 1–5)." .
+
+ek:RiskAssessment a owl:NamedIndividual, ek:Control ;
+    rdfs:label "Risk assessment" ;
+    skos:definition "COSO component 2 (principles 6–9)." .
+
+ek:ControlActivities a owl:NamedIndividual, ek:Control ;
+    rdfs:label "Control activities" ;
+    skos:definition "COSO component 3 (principles 10–12): approvals, reconciliations, SoD." .
+
+ek:InformationCommunication a owl:NamedIndividual, ek:Control ;
+    rdfs:label "Information & communication" ;
+    skos:definition "COSO component 4 (principles 13–15)." .
+
+ek:MonitoringActivities a owl:NamedIndividual, ek:Control ;
+    rdfs:label "Monitoring activities" ;
+    skos:definition "COSO component 5 (principles 16–17)." .
+
+ek:BalanceSheet a owl:NamedIndividual, ek:FinancialStatement ;
+    rdfs:label "Balance sheet" ;
+    skos:definition "Statement of financial position at a date." .
+
+ek:IncomeStatement a owl:NamedIndividual, ek:FinancialStatement ;
+    rdfs:label "Income statement" ;
+    skos:definition "Statement of operations for a period." .
+
+ek:CashFlowStatement a owl:NamedIndividual, ek:FinancialStatement ;
+    rdfs:label "Cash flow statement" ;
+    skos:definition "Statement of cash flows for a period." .
+
+ek:PriorMonth a owl:NamedIndividual, ek:ComparisonBasis ;
+    rdfs:label "Prior month" ;
+    skos:definition "Compare with the immediately preceding period." .
+
+ek:PriorYear a owl:NamedIndividual, ek:ComparisonBasis ;
+    rdfs:label "Prior year" ;
+    skos:definition "Compare with the same period last year (seasonality)." .
+
+ek:BudgetComparison a owl:NamedIndividual, ek:ComparisonBasis ;
+    rdfs:label "Budget" ;
+    skos:definition "Compare with the approved budget." .
+
+# Axiom AX-DE-01 (error) on ek:JournalEntry: Debits equal credits
+#   ∀ e ∈ JournalEntry: Σ_{l ∈ lines(e)} debit(l) = Σ_{l ∈ lines(e)} credit(l)
+# Axiom AX-DE-02 (error) on ek:JournalEntry: Each line is one-sided and positive
+#   ∀ l ∈ lines(e): (debit(l) > 0 ∧ credit(l) = 0) ∨ (credit(l) > 0 ∧ debit(l) = 0); amounts ∈ ℤ
+# Axiom AX-DE-03 (error) on ek:JournalEntry: At least one debit and one credit
+#   ∃ l1, l2 ∈ lines(e): debit(l1) > 0 ∧ credit(l2) > 0
+# Axiom AX-DE-04 (error) on ek:JournalEntry: Single-currency entries balance in transaction currency
+#   If all lines share txnCurrency k ≠ functional: Σ txnAmount(l) = 0
+# Axiom AX-DE-05 (error) on ek:TrialBalance: Accounting equation holds
+#   Σ debits = Σ credits over all accounts ⇔ Assets = Liabilities + Equity + (Revenue − Expenses)
+# Axiom AX-PER-01 (error) on ek:JournalEntry: Posting requires an open period
+#   state(period(e)) = Open ∨ (state = SoftClose ∧ type(e) ∈ AdjustingTypes ∧ role(actor) ≥ Senior)
+# Axiom AX-PER-02 (error) on ek:JournalEntry: Entry date within its period
+#   start(period(e)) ≤ date(e) ≤ end(period(e))
+# Axiom AX-ACC-01 (error) on ek:JournalEntry: Lines post to active, postable accounts
+#   ∀ l: account(l) ∈ Accounts(tenant) ∧ postable(account(l)) ∧ active(account(l))
+# Axiom AX-ACC-03 (error) on ek:JournalEntry: Required dimensions present
+#   ∀ l: requiresDepartment(account(l)) → department(l) ≠ ∅
+# Axiom AX-ACC-04 (warning) on ek:JournalEntry: Control accounts are posted through their subledger
+#   controlAccount(account(l)) ∧ source(e) ∈ {manual, agent} → flag
+# Axiom AX-FX-02 (error) on ek:JournalEntry: Ledger is kept in functional currency
+#   currency(e) = functionalCurrency(entity(e))
+# Axiom AX-JE-02 (error) on ek:JournalEntry: Reversals mirror the original
+#   reverses(e, o) → posted(o) ∧ ¬reversed(o) ∧ entity(e)=entity(o) ∧ date(e) ≥ date(o) ∧ lines(e) = swap(lines(o))
+# Axiom AX-JE-03 (error) on ek:JournalEntry: Accruals auto-reverse next period
+#   type(e) = Accrual → autoReverseDate(e) = start(period(e) + 1)
+# Axiom AX-JE-04 (error) on ek:JournalEntry: Eliminations only in the elimination entity
+#   (type(e) = Elimination → entity(e) ∈ EliminationEntity) ∧ (entity(e) ∈ EliminationEntity → type(e) ∈ {Elimination, Reversing ∘ Elimination})
+# Axiom AX-IC-02 (error) on ek:JournalEntry: Intercompany lines name the counterparty
+#   ∀ l: intercompany(account(l)) → counterparty(l) ∈ Entities ∖ {entity(e)}
+# Axiom AX-SOD-01 (error) on ek:JournalEntry: Preparer is not approver
+#   approvedBy(e) ≠ ∅ → approvedBy(e) ∉ {preparedBy(e), requestedBy(e)}
+# Axiom AX-REC-01 (error) on ek:Reconciliation: Reconciliation ties out
+#   certified(r) → |GL(r) − (Statement(r) + Σ reconcilingItems(r))| ≤ tolerance ∧ unexplained(r) = 0
+# Axiom AX-REC-02 (error) on ek:Reconciliation: Certified reconciliations carry evidence
+#   certified(r) → |evidence(r)| ≥ 1
+# Axiom AX-REC-03 (error) on ek:Reconciliation: Reviewer is not the preparer
+#   reviewed(r) → reviewer(r) ≠ preparer(r)
+# Axiom AX-REC-04 (warning) on ek:Reconciliation: Reconciling items are not stale
+#   ∀ i ∈ items(r): age(i) ≤ 90 days
+# Axiom AX-FLX-01 (error) on ek:Variance: Material variances are explained
+#   material(v) → ∃ x ∈ VarianceExplanation: explains(x, v) ∧ approved(x)
+# Axiom AX-FLX-02 (warning) on ek:Variance: Explanations quantify most of the variance
+#   explains(x, v) → Σ drivers(x) / variance(v) ≥ 0.8
+# Axiom AX-FLX-03 (error) on ek:Variance: Explanation approver is not the author
+#   approved(x) → approver(x) ≠ author(x)
+# Axiom AX-IC-01 (error) on ek:IntercompanyBalance: Intercompany balances agree
+#   |dueFrom(A,B) − dueTo(B,A)|_{reporting ccy} ≤ tolerance
+# Axiom AX-MAT-01 (error) on ek:Materiality: Materiality levels are ordered
+#   0 < clearlyTrivial < performance ≤ overall
+# Axiom AX-CLS-01 (error) on ek:CloseCycle: Task dependencies are acyclic
+#   dependsOn⁺ is irreflexive
+# Axiom AX-CLS-02 (error) on ek:FiscalPeriod: Lock only a finished close
+#   lock(p) → tasks(p) complete ∧ recs(p) reviewed ∧ materialFlux(p) explained ∧ pendingProposals(p) = ∅ ∧ package(p) generated
+# Axiom AX-PRP-01 (error) on ek:Proposal: Proposals explain themselves
+#   ∀ p ∈ Proposal: |why(p)| > 0 ∧ |evidence(p)| ≥ 1 ∧ confidence(p) ∈ [0,1]
+# Axiom AX-PRP-02 (error) on ek:AutonomyLevel: Autonomy ceiling
+#   autoPost(p) → level ∈ {L2,L3} ∧ |amount| < performanceMateriality ∧ (level = L3 ∨ (|amount| < threshold ∧ confidence ≥ floor))
+# Axiom AX-CAP-01 (warning) on ek:CodingDecision: Equipment above threshold is capitalised
+#   concept(t) ⊑ ComputerEquipment ∧ unitCost(t) ≥ capThreshold → treatment(t) = capitalize
+# Axiom AX-PPD-01 (warning) on ek:CodingDecision: Multi-month prepayments are deferred
+#   servicePeriodMonths(t) > 1 ∧ amount(t) ≥ prepaidThreshold → treatment(t) = prepaid

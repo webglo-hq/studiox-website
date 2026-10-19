@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-demo
+dist-site
+.data
+.env
+.env.*
+!.env.example
+coverage
+test-results
+playwright-report
+blob-report
+evals-report.json
+*.tsbuildinfo
+docs
+.github

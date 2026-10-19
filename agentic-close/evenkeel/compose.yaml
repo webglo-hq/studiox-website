@@ -1,0 +1,46 @@
+# Evenkeel with PostgreSQL 16.
+#   cp .env.example .env    # then set POSTGRES_PASSWORD (any long random string)
+#   docker compose up --build
+#   docker compose logs app | grep -A12 "Demo accounts"   # generated demo passwords
+# The app listens on http://127.0.0.1:${EVENKEEL_PORT:-4610} (loopback only).
+name: evenkeel
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evenkeel
+      POSTGRES_DB: evenkeel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evenkeel -d evenkeel"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://evenkeel:${POSTGRES_PASSWORD}@db:5432/evenkeel
+      PORT: "4610"
+      # Optional: 32 random bytes, base64. Empty = generated into the app-data volume.
+      EVENKEEL_SECRET_KEY: ${EVENKEEL_SECRET_KEY:-}
+      # Optional: live Claude agents. Empty = deterministic offline engine.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Set when serving over HTTPS behind a proxy, e.g. https://close.example.com
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+    ports:
+      - "127.0.0.1:${EVENKEEL_PORT:-4610}:4610"
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  app-data:
