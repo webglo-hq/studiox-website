@@ -19,7 +19,41 @@ export interface DecisionBlock {
   message: string;
 }
 
-/** Why `principal` may not approve `proposal` (empty = allowed). */
+/** Segregation-of-duties findings for `principal` approving `proposal`, with each rule's configured severity. */
+export async function sodFindings(tx: Tx, runtime: AgentRuntime<unknown>, principal: Principal, proposal: Row<'proposals'>): Promise<Array<DecisionBlock & { severity: 'block' | 'warn' }>> {
+  const out: Array<DecisionBlock & { severity: 'block' | 'warn' }> = [];
+  const limitApplies = runtime.handler(proposal.kind).limitApplies !== false;
+  const rules = await tx.find('sod_rules', { tenant_id: principal.tenantId, enabled: true });
+  for (const rule of rules) {
+    const params = (rule.params ?? {}) as Record<string, unknown>;
+    const add = (message: string) => out.push({ code: rule.code, message, severity: rule.severity });
+    if (rule.kind === 'maker_checker' && proposal.maker_user_id && proposal.maker_user_id === principal.user.id) {
+      add(`${rule.name}: you made this proposal, so someone else must approve it.`);
+    }
+    if (rule.kind === 'requester_limit' && limitApplies && proposal.requested_by === principal.user.id && proposal.amount_minor > Number(params.limit_minor ?? 0)) {
+      add(`${rule.name}: you started the agent run, and items over ${formatMoney(Number(params.limit_minor ?? 0))} need an independent approver.`);
+    }
+    if (rule.kind === 'policy_author' && proposal.policy_id) {
+      const policy = await tx.get('skill_policies', proposal.policy_id);
+      if (policy?.created_by === principal.user.id) add(`${rule.name}: you wrote the policy version this proposal was generated under (v${policy.version}).`);
+    }
+    if (rule.kind === 'vendor_master_payment') {
+      const subjects = runtime.handler(proposal.kind).sodSubjects?.(proposal);
+      for (const vendorId of subjects?.vendorIds ?? []) {
+        const vendor = await tx.get('vendors', vendorId);
+        if (vendor && (vendor.created_by === principal.user.id || vendor.updated_by === principal.user.id)) {
+          add(`${rule.name}: you maintain the vendor record for ${vendor.name}.`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Why `principal` may not approve `proposal` (empty = allowed). SoD rules set to "block" stop the approval;
+ * rules set to "warn" let it through but are recorded on the approval and in the audit chain.
+ */
 export async function approvalBlocks(tx: Tx, runtime: AgentRuntime<unknown>, principal: Principal, proposal: Row<'proposals'>): Promise<DecisionBlock[]> {
   const blocks: DecisionBlock[] = [];
   if (principal.readOnly) blocks.push({ code: 'READ_ONLY', message: 'Read-only role: auditors can review but not decide.' });
@@ -30,29 +64,7 @@ export async function approvalBlocks(tx: Tx, runtime: AgentRuntime<unknown>, pri
   if (limitApplies && !withinLimit(principal, proposal.amount_minor)) {
     blocks.push({ code: 'LIMIT', message: `${formatMoney(proposal.amount_minor, { currency: proposal.currency })} is above your approval limit of ${formatMoney(principal.approvalLimitMinor ?? 0, { currency: proposal.currency })}.` });
   }
-  const rules = (await tx.find('sod_rules', { tenant_id: principal.tenantId, enabled: true })).filter((r) => r.severity === 'block');
-  for (const rule of rules) {
-    const params = (rule.params ?? {}) as Record<string, unknown>;
-    if (rule.kind === 'maker_checker' && proposal.maker_user_id && proposal.maker_user_id === principal.user.id) {
-      blocks.push({ code: rule.code, message: `${rule.name}: you made this proposal, so someone else must approve it.` });
-    }
-    if (rule.kind === 'requester_limit' && limitApplies && proposal.requested_by === principal.user.id && proposal.amount_minor > Number(params.limit_minor ?? 0)) {
-      blocks.push({ code: rule.code, message: `${rule.name}: you started the agent run, and items over ${formatMoney(Number(params.limit_minor ?? 0))} need an independent approver.` });
-    }
-    if (rule.kind === 'policy_author' && proposal.policy_id) {
-      const policy = await tx.get('skill_policies', proposal.policy_id);
-      if (policy?.created_by === principal.user.id) blocks.push({ code: rule.code, message: `${rule.name}: you wrote the policy version this proposal was generated under (v${policy.version}).` });
-    }
-    if (rule.kind === 'vendor_master_payment') {
-      const subjects = runtime.handler(proposal.kind).sodSubjects?.(proposal);
-      for (const vendorId of subjects?.vendorIds ?? []) {
-        const vendor = await tx.get('vendors', vendorId);
-        if (vendor && (vendor.created_by === principal.user.id || vendor.updated_by === principal.user.id)) {
-          blocks.push({ code: rule.code, message: `${rule.name}: you maintain the vendor record for ${vendor.name}.` });
-        }
-      }
-    }
-  }
+  for (const f of await sodFindings(tx, runtime, principal, proposal)) if (f.severity === 'block') blocks.push({ code: f.code, message: f.message });
   return blocks;
 }
 
@@ -68,6 +80,7 @@ export async function approveProposal(tx: Tx, ctx: DomainContext, runtime: Agent
   }
   const blocks = await approvalBlocks(tx, runtime, principal, proposal);
   if (blocks.length) throw new DomainError(blocks.some((b) => b.code.startsWith('SOD')) ? 'SOD_VIOLATION' : 'FORBIDDEN', blocks.map((b) => b.message).join(' '), { blocks });
+  const warnings = (await sodFindings(tx, runtime, principal, proposal)).filter((f) => f.severity === 'warn');
   const handler = runtime.handler(proposal.kind);
   const scope = await scopeFor(tx, ctx, runtime);
   const result = await handler.apply({ ...scope, proposal, basis: 'human_approval', approvedBy: principal.user.id, runId: proposal.run_id });
@@ -81,13 +94,15 @@ export async function approveProposal(tx: Tx, ctx: DomainContext, runtime: Agent
     posted_entry_id: result.postedEntryId ?? null,
     updated_at: now,
   });
-  await tx.insert('approvals', { tenant_id: ctx.tenantId, proposal_id: proposal.id, decision: 'approve', user_id: principal.user.id, role_key: principal.roleKeys[0] ?? 'unknown', reason: note ?? null });
+  const warningText = warnings.length ? `[SoD warning] ${warnings.map((w) => w.message).join(' ')}` : '';
+  const reason = [note?.trim(), warningText].filter(Boolean).join(' ');
+  await tx.insert('approvals', { tenant_id: ctx.tenantId, proposal_id: proposal.id, decision: 'approve', user_id: principal.user.id, role_key: principal.roleKeys[0] ?? 'unknown', reason: reason || null });
   await appendAudit(tx, ctx.tenantId, ctx.actor, {
     action: 'proposal.approve',
     objectType: 'proposal',
     objectId: proposal.id,
-    summary: `Approved ${handler.label.toLowerCase()}: ${proposal.title}${result.postedEntryId ? ' (posted)' : ''}`,
-    details: { effect: result.effect, note: note ?? null, amount_minor: proposal.amount_minor },
+    summary: `Approved ${handler.label.toLowerCase()}: ${proposal.title}${result.postedEntryId ? ' (posted)' : ''}${warnings.length ? ` despite SoD warning ${warnings.map((w) => w.code).join(', ')}` : ''}`,
+    details: { effect: result.effect, note: note ?? null, amount_minor: proposal.amount_minor, ...(warnings.length ? { sodWarnings: warnings } : {}) },
   }, now);
   await runtime.deps.pack.onProposalSettled?.(scope, updated);
   return updated;

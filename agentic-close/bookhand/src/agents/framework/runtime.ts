@@ -8,7 +8,8 @@ import type { Actor, Clock, DomainContext } from '../../shared/context';
 import { DomainError } from '../../shared/errors';
 import { sha256Hex } from '../../shared/hash';
 import { newId } from '../../shared/ids';
-import { describeApiError, usageOf, type BetaMessageParam, type BetaTool, type BetaToolResultBlockParam, type LlmClient } from '../llm/anthropic';
+import { yieldToEventLoop } from '../../shared/yield';
+import { describeApiError, usageOf, type BetaMessageParam, type BetaTextBlockParam, type BetaTool, type BetaToolResultBlockParam, type LlmClient } from '../llm/types';
 import { HYGIENE_RULES, sanitizeValue, scanText, wrapToolResult } from './hygiene';
 import type { SkillPackage } from './manifest';
 import { currentPolicyRow, decideDisposition, resolvePolicy, type RuleCompiler } from './policy';
@@ -428,6 +429,7 @@ export class AgentRuntime<P> {
   }
 
   private async callTool(state: RunState, name: string, rawInput: unknown): Promise<unknown> {
+    await yieldToEventLoop();
     let tool: AnyTool<P>;
     try {
       tool = this.toolAllowed(state, name);
@@ -683,6 +685,7 @@ export class AgentRuntime<P> {
       state.counters.cacheRead += usage.cacheReadTokens;
       state.counters.costMicros += usage.costUsdMicros;
       const text = response.content.filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n').trim();
+      const thinking = response.content.filter((b): b is Extract<typeof b, { type: 'thinking' }> => b.type === 'thinking').map((b) => b.thinking).join('\n').trim();
       if (text) lastText = text;
       const fallback = response.content.some((b) => b.type === 'fallback');
       await this.step(state, turn === 0 ? 'plan' : 'act', 'message', text ? text.slice(0, 280) : `Model turn ${turn + 1} (${response.stop_reason})`, {
@@ -691,19 +694,24 @@ export class AgentRuntime<P> {
         fallback_served: fallback,
         usage: { input: usage.inputTokens, output: usage.outputTokens, cache_read: usage.cacheReadTokens, cache_write: usage.cacheWriteTokens },
         text: text.slice(0, 4000),
+        ...(thinking ? { thinking_summary: thinking.slice(0, 4000) } : {}),
       }, `turn:${turn}:${response.id}`, undefined, { tokens_in: usage.inputTokens, tokens_out: usage.outputTokens, cost_usd_micros: usage.costUsdMicros, duration_ms: Date.now() - started });
       await this.deps.db.tx((tx) => tx.update('agent_runs', state.run.id, { tokens_in: state.counters.tokensIn, tokens_out: state.counters.tokensOut, cache_read_tokens: state.counters.cacheRead, cost_usd_micros: state.counters.costMicros, heartbeat_at: this.deps.clock.now() }));
       if (response.stop_reason === 'refusal') {
         const details = (response as unknown as { stop_details?: { category?: string; explanation?: string } }).stop_details;
         throw new DomainError('UNAVAILABLE', `The model declined this task${details?.category ? ` (${details.category})` : ''}. Run it offline or adjust the request.`);
       }
+      // The history is append-only: assistant turns (thinking blocks included) go back exactly as received.
       messages.push({ role: 'assistant', content: response.content as BetaMessageParam['content'] });
       if (response.stop_reason === 'pause_turn') continue;
+      const uses = response.content.filter((b): b is Extract<typeof b, { type: 'tool_use' }> => b.type === 'tool_use');
       if (response.stop_reason === 'max_tokens') {
-        messages.push({ role: 'user', content: 'Your last reply hit the output limit. Continue with fewer words: call the next tool or give the final summary.' });
+        // Answer any tool call that was cut off with an error result, then ask for a shorter continuation.
+        const content: Array<BetaToolResultBlockParam | BetaTextBlockParam> = uses.map((u) => ({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: 'Your reply hit the output limit before this tool call was complete; it was not run. Call it again.' }));
+        content.push({ type: 'text', text: 'Your last reply hit the output limit. Continue with fewer words: call the next tool or give the final summary.' });
+        messages.push({ role: 'user', content });
         continue;
       }
-      const uses = response.content.filter((b): b is Extract<typeof b, { type: 'tool_use' }> => b.type === 'tool_use');
       if (response.stop_reason !== 'tool_use' || !uses.length) return lastText || 'Done.';
       const results: BetaToolResultBlockParam[] = [];
       for (const use of uses) {
