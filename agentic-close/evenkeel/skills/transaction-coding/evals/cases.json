@@ -1,1 +1,54 @@
-{ "cases": [] }
+{
+  "skill": "transaction-coding",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "capitalise-laptops",
+      "description": "The Kestrel Computers laptops (unit cost above the $2,500 threshold) are capitalised to 1500 and held for review.",
+      "expect": {
+        "kind": "coding",
+        "titleIncludes": "Kestrel",
+        "payload": {
+          "treatment": "capitalize"
+        },
+        "notAutoPosted": true
+      }
+    },
+    {
+      "id": "gift-cards-blocked",
+      "description": "The policy line \"Never auto-post when memo contains gift\" keeps the Brightleaf gift-card purchase for a person.",
+      "expect": {
+        "kind": "coding",
+        "titleIncludes": "Brightleaf",
+        "gate": "await_approval"
+      }
+    },
+    {
+      "id": "orbitline-low-confidence",
+      "description": "Orbitline Supplies (generic MCC 5999, no history) is coded with honest low confidence and not auto-posted.",
+      "expect": {
+        "kind": "coding",
+        "titleIncludes": "Orbitline",
+        "confidenceBelow": 0.85,
+        "notAutoPosted": true
+      }
+    },
+    {
+      "id": "routine-auto-posts",
+      "description": "Routine, confident card spend under the threshold posts automatically under L2.",
+      "expect": {
+        "kind": "coding",
+        "withStatus": [
+          "auto_applied"
+        ],
+        "min": 50,
+        "confidenceAtLeast": 0.85
+      }
+    },
+    {
+      "id": "every-proposal-explained",
+      "description": "Every coding decision explains its basis.",
+      "check": "every_proposal_explained"
+    }
+  ]
+}

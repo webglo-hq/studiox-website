@@ -2,8 +2,9 @@ import { randomInt } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { SkillPackage } from '../framework/skills/manifest';
+import { recordEvalReport, runSkillEvals } from '../packs/accounting/evals/run';
 import { loadScenario, type ScenarioInfo } from '../packs/accounting/seed/load';
-import { USERS, type UserKey } from '../packs/accounting/seed/scenario';
+import { SCENARIO, USERS, type UserKey } from '../packs/accounting/seed/scenario';
 import type { EkDb } from '../packs/accounting/store';
 import { hashPassword } from './auth/password';
 
@@ -34,12 +35,20 @@ export interface DemoCredentialsFile {
 
 export async function seedDemo(
   db: EkDb,
-  opts: { skills: SkillPackage[]; demoPassword: string | null; credentialsFile: string | null; progress?: (s: string) => void },
+  opts: { skills: SkillPackage[]; demoPassword: string | null; credentialsFile: string | null; progress?: (s: string) => void; runEvals?: boolean },
 ): Promise<{ info: ScenarioInfo; credentials: DemoCredentialsFile | null }> {
   const passwords = Object.fromEntries(USERS.map((u) => [u.key, opts.demoPassword ?? generatePassword()])) as Record<UserKey, string>;
   opts.progress?.('Hashing demo passwords (scrypt)');
   const hashes = Object.fromEntries(await Promise.all(USERS.map(async (u) => [u.key, await hashPassword(passwords[u.key])] as const))) as Record<UserKey, string>;
   const info = await loadScenario(db, { skills: opts.skills, passwordHashes: hashes, progress: opts.progress });
+  if (opts.runEvals !== false) {
+    // Each skill's evaluation cases, run on a separate in-memory close of the same scenario,
+    // so the skill catalog shows real results from the first start.
+    opts.progress?.('Running the skill evaluations');
+    const report = await runSkillEvals(opts.skills);
+    await recordEvalReport(db, report, SCENARIO.asOf);
+    opts.progress?.(`Skill evals: ${report.passed}/${report.total} cases passed`);
+  }
   let credentials: DemoCredentialsFile | null = null;
   if (!opts.demoPassword) {
     credentials = {

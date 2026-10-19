@@ -19,13 +19,27 @@ const customTypes = {
 
 class PgClientConn implements SqlDriver {
   readonly kind = 'postgres' as const;
+  private tail: Promise<unknown> = Promise.resolve();
   constructor(private readonly client: pg.PoolClient) {}
-  async query(text: string, values: unknown[] = []) {
-    const res = await this.client.query({ text, values, types: customTypes });
-    return { rows: res.rows as Record<string, unknown>[], affectedRows: res.rowCount ?? undefined };
+  /**
+   * A transaction is one connection, which runs one statement at a time. Code inside a
+   * transaction may still fan out with Promise.all, so statements queue here in order.
+   */
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(fn, fn);
+    this.tail = next.catch(() => undefined);
+    return next;
   }
-  async exec(sql: string): Promise<void> {
-    await this.client.query(sql);
+  query(text: string, values: unknown[] = []) {
+    return this.serial(async () => {
+      const res = await this.client.query({ text, values, types: customTypes });
+      return { rows: res.rows as Record<string, unknown>[], affectedRows: res.rowCount ?? undefined };
+    });
+  }
+  exec(sql: string): Promise<void> {
+    return this.serial(async () => {
+      await this.client.query(sql);
+    });
   }
   async transaction<R>(fn: (conn: SqlDriver) => Promise<R>): Promise<R> {
     return fn(this);

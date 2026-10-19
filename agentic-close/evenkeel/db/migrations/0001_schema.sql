@@ -182,7 +182,7 @@ CREATE TABLE account (
     (account_class IN ('asset','expense') AND normal_balance = 'debit') OR
     (account_class IN ('liability','equity','revenue') AND normal_balance = 'credit')
   ),
-  CHECK (NOT is_control_account OR subledger IS NOT NULL)
+  CONSTRAINT account_control_subledger CHECK (NOT is_control_account OR subledger IS NOT NULL)
 );
 
 CREATE TABLE dimension_type (
@@ -222,8 +222,8 @@ CREATE TABLE fiscal_period (
   reopened_at timestamptz,
   reopen_reason text,
   UNIQUE (tenant_id, entity_id, period_key),
-  CHECK (end_date >= start_date),
-  CHECK (to_char(start_date, 'YYYY-MM') = period_key)
+  CONSTRAINT fiscal_period_dates CHECK (end_date >= start_date),
+  CONSTRAINT fiscal_period_key_matches CHECK (to_char(start_date, 'YYYY-MM') = period_key)
 );
 CREATE INDEX fiscal_period_key_idx ON fiscal_period(period_key);
 
@@ -414,7 +414,7 @@ CREATE TABLE bill (
   bill_date date NOT NULL,
   due_date date NOT NULL,
   received_date date,
-  amount bigint NOT NULL CHECK (amount > 0),
+  amount bigint NOT NULL CONSTRAINT bill_amount_positive CHECK (amount > 0),
   currency text NOT NULL REFERENCES currency(code),
   status text NOT NULL CONSTRAINT bill_status_check CHECK (status IN ('draft','open','paid','partially_paid','void')),
   service_start date,
@@ -428,7 +428,7 @@ CREATE TABLE bill (
   import_batch_id uuid REFERENCES import_batch(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, vendor_id, bill_number),
-  CHECK (service_end IS NULL OR service_start IS NULL OR service_end >= service_start)
+  CONSTRAINT bill_service_period CHECK (service_end IS NULL OR service_start IS NULL OR service_end >= service_start)
 );
 CREATE INDEX bill_vendor_idx ON bill(vendor_id);
 
@@ -439,7 +439,7 @@ CREATE TABLE vendor_payment (
   vendor_id uuid NOT NULL REFERENCES vendor(id),
   bill_id uuid REFERENCES bill(id),
   payment_date date NOT NULL,
-  amount bigint NOT NULL CHECK (amount > 0),
+  amount bigint NOT NULL CONSTRAINT vendor_payment_amount_positive CHECK (amount > 0),
   method text NOT NULL CONSTRAINT vendor_payment_method_check CHECK (method IN ('ach','wire','check','card')),
   reference text NOT NULL,
   bank_account_id uuid NOT NULL REFERENCES bank_account(id),
@@ -522,7 +522,7 @@ CREATE TABLE bank_transaction (
   statement_id uuid REFERENCES bank_statement(id),
   posted_date date NOT NULL,
   value_date date,
-  amount bigint NOT NULL CHECK (amount <> 0),
+  amount bigint NOT NULL CONSTRAINT bank_transaction_nonzero CHECK (amount <> 0),
   description text NOT NULL,
   reference text,
   counterparty text,
@@ -561,7 +561,7 @@ CREATE TABLE card_transaction (
   class_id uuid REFERENCES dimension_value(id),
   project_id uuid REFERENCES dimension_value(id),
   coding_source text CONSTRAINT card_transaction_coding_source_check CHECK (coding_source IN ('cardholder','rule','history','agent','human')),
-  coding_confidence numeric(5,4) CHECK (coding_confidence IS NULL OR (coding_confidence >= 0 AND coding_confidence <= 1)),
+  coding_confidence numeric(5,4) CONSTRAINT card_transaction_confidence CHECK (coding_confidence IS NULL OR (coding_confidence >= 0 AND coding_confidence <= 1)),
   journal_entry_id uuid REFERENCES journal_entry(id),
   external_id text NOT NULL,
   dedupe_hash text NOT NULL,
@@ -569,7 +569,7 @@ CREATE TABLE card_transaction (
   import_batch_id uuid REFERENCES import_batch(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, dedupe_hash),
-  CHECK (status = 'uncoded' OR status = 'excluded' OR account_id IS NOT NULL)
+  CONSTRAINT card_transaction_coded_account CHECK (status = 'uncoded' OR status = 'excluded' OR account_id IS NOT NULL)
 );
 CREATE INDEX card_transaction_status_idx ON card_transaction(status);
 CREATE INDEX card_transaction_merchant_idx ON card_transaction(merchant_name);
@@ -595,7 +595,7 @@ CREATE TABLE fixed_asset (
   source_ref jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, tag),
-  CHECK (salvage < cost)
+  CONSTRAINT fixed_asset_values CHECK (cost > 0 AND salvage >= 0 AND salvage < cost AND useful_life_months >= 12)
 );
 
 CREATE TABLE depreciation_line (
@@ -658,7 +658,7 @@ CREATE TABLE payroll_run (
   source_document_id uuid REFERENCES source_document(id),
   import_batch_id uuid REFERENCES import_batch(id),
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (net_pay = gross_wages - withholdings)
+  CONSTRAINT payroll_run_net CHECK (net_pay = gross_wages - withholdings)
 );
 
 CREATE TABLE payroll_line (
@@ -777,7 +777,7 @@ CREATE TABLE close_package (
   approved_by uuid REFERENCES app_user(id),
   approved_at timestamptz,
   UNIQUE (tenant_id, period_key, version),
-  CHECK (status <> 'final' OR approved_by IS NOT NULL)
+  CONSTRAINT close_package_final_approved CHECK (status <> 'final' OR approved_by IS NOT NULL)
 );
 
 CREATE TABLE reconciliation (
@@ -910,7 +910,7 @@ CREATE TABLE flux_line (
   status text NOT NULL CONSTRAINT flux_line_status_check CHECK (status IN ('not_required','unexplained','explained','approved')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (flux_analysis_id, account_id),
-  CHECK (variance = current_amount - comparison_amount)
+  CONSTRAINT flux_line_variance CHECK (variance = current_amount - comparison_amount)
 );
 CREATE INDEX flux_line_analysis_idx ON flux_line(flux_analysis_id);
 
@@ -1066,7 +1066,7 @@ CREATE TABLE proposal (
   kind text NOT NULL CONSTRAINT proposal_kind_check CHECK (kind IN ('journal_entry','coding','rec_match','reconciling_item','flux_explanation','issue','prepaid_schedule','fixed_asset','task_update','close_package')),
   payload_class text NOT NULL,
   title text NOT NULL,
-  why text NOT NULL CHECK (length(why) >= 10),
+  why text NOT NULL CONSTRAINT proposal_why CHECK (length(why) >= 10),
   confidence numeric(5,4) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
   amount bigint,
   currency text,
@@ -1114,7 +1114,7 @@ CREATE TABLE issue (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenant(id),
   proposal_id uuid REFERENCES proposal(id),
-  category text NOT NULL,
+  category text NOT NULL CONSTRAINT issue_category_check CHECK (category IN ('duplicate_payment','sod_break','unexplained_bank_item','misclassification','control_account_posting','intercompany_mismatch','tieout_difference','round_amount','weekend_posting','threshold_avoidance','benford_deviation','prompt_injection','missing_amortization','unusual_account_pair','stale_reconciling_item','other')),
   severity text NOT NULL CONSTRAINT issue_severity_check CHECK (severity IN ('low','medium','high','critical')),
   title text NOT NULL,
   description text NOT NULL,
@@ -1129,7 +1129,7 @@ CREATE TABLE issue (
   resolved_by uuid REFERENCES app_user(id),
   resolved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (status NOT IN ('resolved','dismissed') OR (resolution_note IS NOT NULL AND resolved_by IS NOT NULL))
+  CONSTRAINT issue_resolution CHECK (status NOT IN ('resolved','dismissed') OR (resolution_note IS NOT NULL AND resolved_by IS NOT NULL))
 );
 CREATE INDEX issue_period_idx ON issue(period_key);
 CREATE INDEX issue_status_idx ON issue(status);

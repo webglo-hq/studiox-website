@@ -1,1 +1,47 @@
-{ "cases": [] }
+{
+  "skill": "intercompany-reconciliation",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "uk-mirror-entry",
+      "description": "IC-2026-09-SW was booked only by the US; the UK side is proposed at the average rate.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "IC-2026-09-SW"
+      }
+    },
+    {
+      "id": "mismatch-issue",
+      "description": "The one-sided intercompany entry is reported as an exception ($3,400).",
+      "expect": {
+        "kind": "issue",
+        "amount": 340000,
+        "payload": {
+          "category": "intercompany_mismatch"
+        }
+      }
+    },
+    {
+      "id": "eliminate-fee",
+      "description": "The $25,000 intercompany management fee is eliminated in consolidation.",
+      "expect": {
+        "kind": "journal_entry",
+        "amount": 2500000,
+        "payload": {
+          "entryType": "elimination"
+        }
+      }
+    },
+    {
+      "id": "eliminate-balances",
+      "description": "Intercompany balances ($78,400) are eliminated and reverse next month.",
+      "expect": {
+        "kind": "journal_entry",
+        "amount": 7840000,
+        "payload": {
+          "entryType": "elimination"
+        }
+      }
+    }
+  ]
+}

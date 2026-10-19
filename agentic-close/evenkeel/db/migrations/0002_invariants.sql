@@ -24,7 +24,9 @@ BEGIN
     IF NEW.status = 'posted' THEN
       RAISE EXCEPTION 'EK-JE-POST-VIA-DRAFT: insert entry % as draft, add its lines, then post it', NEW.entry_number;
     END IF;
-    SELECT * INTO p FROM fiscal_period WHERE id = NEW.period_id;
+    -- FOR SHARE: a concurrent lock of this period waits for us (and we for it), so no entry
+    -- can slip into a period in the instant it is hard-closed.
+    SELECT * INTO p FROM fiscal_period WHERE id = NEW.period_id FOR SHARE;
     IF p.status = 'hard_close' THEN
       RAISE EXCEPTION 'EK-PERIOD-LOCKED: % is hard-closed; no new entries', NEW.period_key;
     END IF;
@@ -45,7 +47,9 @@ BEGIN
   END IF;
 
   IF NEW.status = 'posted' THEN
-    SELECT * INTO p FROM fiscal_period WHERE id = NEW.period_id;
+    -- FOR SHARE: a concurrent lock of this period waits for us (and we for it), so no entry
+    -- can slip into a period in the instant it is hard-closed.
+    SELECT * INTO p FROM fiscal_period WHERE id = NEW.period_id FOR SHARE;
     IF p.entity_id <> NEW.entity_id OR p.period_key <> NEW.period_key THEN
       RAISE EXCEPTION 'EK-PER-02: entry % period record does not match its entity/period', NEW.entry_number;
     END IF;
@@ -138,13 +142,14 @@ DECLARE
   tn uuid;
 BEGIN
   IF TG_OP IN ('UPDATE', 'DELETE') THEN
-    SELECT status INTO st FROM journal_entry WHERE id = OLD.journal_entry_id;
+    SELECT status INTO st FROM journal_entry WHERE id = OLD.journal_entry_id FOR SHARE;
     IF st = 'posted' THEN
       RAISE EXCEPTION 'EK-JE-IMMUTABLE: lines of a posted entry cannot change';
     END IF;
   END IF;
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
-    SELECT status, tenant_id INTO st, tn FROM journal_entry WHERE id = NEW.journal_entry_id;
+    -- FOR SHARE: posting the entry waits until this line is committed (and is then counted).
+    SELECT status, tenant_id INTO st, tn FROM journal_entry WHERE id = NEW.journal_entry_id FOR SHARE;
     IF st = 'posted' THEN
       RAISE EXCEPTION 'EK-JE-IMMUTABLE: lines cannot be added to a posted entry';
     END IF;

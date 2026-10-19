@@ -1,1 +1,60 @@
-{ "cases": [] }
+{
+  "skill": "je-review",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "erp-58213-critical",
+      "description": "The $48,000 revenue true-up imported from the legacy ERP was prepared and approved by the same user: a critical SoD break.",
+      "expect": {
+        "kind": "issue",
+        "amount": 4800000,
+        "payload": {
+          "category": "sod_break",
+          "severity": "critical"
+        }
+      }
+    },
+    {
+      "id": "erp-58213-reversal",
+      "description": "The agent proposes reversing the unsupported entry unless support is provided, and a person decides.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Reverse JE-US-202609-0112",
+        "amount": 4800000,
+        "notAutoPosted": true
+      }
+    },
+    {
+      "id": "duplicate-payment",
+      "description": "Sparrow invoice SP-2291 was paid twice ($6,480).",
+      "expect": {
+        "kind": "issue",
+        "amount": 648000,
+        "payload": {
+          "category": "duplicate_payment"
+        }
+      }
+    },
+    {
+      "id": "control-account-posting",
+      "description": "A manual entry posted directly to the AP control account is flagged.",
+      "expect": {
+        "kind": "issue",
+        "amount": 125000,
+        "payload": {
+          "category": "control_account_posting"
+        }
+      }
+    },
+    {
+      "id": "benford",
+      "description": "First-digit analysis of the month is reported.",
+      "expect": {
+        "kind": "issue",
+        "payload": {
+          "category": "benford_deviation"
+        }
+      }
+    }
+  ]
+}

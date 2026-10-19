@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createServerApp } from './app';
@@ -58,6 +59,7 @@ async function shutdown(signal: string) {
   server.closeAllConnections();
   try {
     await app.close();
+    if (config.ephemeral && config.dataDir) rmSync(config.dataDir, { recursive: true, force: true });
   } finally {
     process.exit(0);
   }

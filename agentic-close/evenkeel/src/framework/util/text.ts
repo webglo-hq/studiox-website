@@ -130,12 +130,14 @@ export function scanForInjection(text: string | null | undefined): InjectionScan
 
 /**
  * Make untrusted text safe to place inside a model prompt or a UI: strip control characters
- * (except newline/tab), neutralise markup that mimics prompt structure, cap length.
+ * (except newline/tab), bidirectional overrides and zero-width characters (which can hide or
+ * reorder text — "Trojan Source"), neutralise markup that mimics prompt structure, cap length.
  */
 export function sanitizeUntrusted(text: string | null | undefined, maxLen = 500): string {
   if (!text) return '';
   // eslint-disable-next-line no-control-regex
   let s = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
+  s = s.replace(/[​-‏‪-‮⁠-⁤⁦-⁩﻿]/g, '');
   s = s.replace(/[<>]/g, (c) => (c === '<' ? '‹' : '›'));
   return truncate(s, maxLen);
 }

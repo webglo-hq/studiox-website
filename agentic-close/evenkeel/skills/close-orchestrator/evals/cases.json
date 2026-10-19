@@ -1,1 +1,11 @@
-{ "cases": [] }
+{
+  "skill": "close-orchestrator",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "all-tasks-ran",
+      "description": "Following the close calendar, every agent task ran once its dependencies were approved.",
+      "check": "all_agent_tasks_ran"
+    }
+  ]
+}

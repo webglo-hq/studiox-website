@@ -1,1 +1,17 @@
-{ "cases": [] }
+{
+  "skill": "fx-revaluation",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "revalue-uk-usd-balance",
+      "description": "Kitewell UK revalues its USD balance due to Kitewell US at the September closing rate.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Revalue",
+        "payload": {
+          "entryType": "fx_revaluation"
+        }
+      }
+    }
+  ]
+}

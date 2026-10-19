@@ -8,6 +8,8 @@ const Env = z.object({
   PUBLIC_ORIGIN: z.string().optional(),
   DATABASE_URL: z.string().optional(),
   EVENKEEL_DATA_DIR: z.string().optional(),
+  /** Delete EVENKEEL_DATA_DIR on shutdown (automated test runs). */
+  EVENKEEL_EPHEMERAL: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   EVENKEEL_ENGINE: z.enum(['auto', 'offline', 'live']).default('auto'),
   EVENKEEL_CLOCK: z.enum(['scenario', 'system']).default('scenario'),
@@ -34,6 +36,8 @@ export interface ServerConfig {
   publicOrigin: string | null;
   databaseUrl: string | null;
   dataDir: string | null;
+  /** Remove dataDir when the server stops (test runs). */
+  ephemeral: boolean;
   anthropicApiKey: string | null;
   engine: 'auto' | 'offline' | 'live';
   clock: 'scenario' | 'system';
@@ -56,6 +60,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (production && e.DEMO_PASSWORD) throw new Error('DEMO_PASSWORD must not be set in production.');
   if (production && e.RATE_LIMIT_SCALE !== 1) throw new Error('RATE_LIMIT_SCALE must be 1 in production.');
   if (e.DEMO_PASSWORD && e.DEMO_PASSWORD.length < 12) throw new Error('DEMO_PASSWORD must be at least 12 characters.');
+  const ephemeral = e.EVENKEEL_EPHEMERAL === '1' || e.EVENKEEL_EPHEMERAL === 'true';
+  if (ephemeral && (production || !e.EVENKEEL_DATA_DIR)) throw new Error('EVENKEEL_EPHEMERAL is for test runs: it needs its own EVENKEEL_DATA_DIR and is refused in production.');
   return {
     production,
     port: e.PORT,
@@ -63,6 +69,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     publicOrigin: e.PUBLIC_ORIGIN ?? null,
     databaseUrl: e.DATABASE_URL || null,
     dataDir: e.EVENKEEL_DATA_DIR ?? null,
+    ephemeral,
     anthropicApiKey: e.ANTHROPIC_API_KEY || null,
     engine: e.EVENKEEL_ENGINE,
     clock: e.EVENKEEL_CLOCK,

@@ -61,9 +61,22 @@ export interface RuntimeOptions<Ctx> {
   tools: Map<string, ToolDef<Ctx, unknown, unknown>>;
   selectBrain: (skill: SkillPackage) => Brain;
   clock: Clock;
+  /**
+   * Run fn in one database transaction, with a store and adapter bound to it. Decisions and
+   * auto-posts use it so the claim, the posted effect, the status change and the audit event
+   * commit together or not at all. Without it they run unwrapped (single-process stores).
+   */
+  atomic?: <T>(fn: (scope: AtomicScope<Ctx>) => Promise<T>) => Promise<T>;
   /** test hook: throw after N tool calls to simulate a crash */
   faults?: { crashAfterToolCalls?: number };
 }
+
+export interface AtomicScope<Ctx> {
+  store: RuntimeStore;
+  adapter: DomainAdapter<Ctx>;
+}
+
+const OPEN_STATUSES: ProposalRecord['status'][] = ['pending', 'suggested'];
 
 export class SimulatedCrash extends Error {
   constructor() {
@@ -74,6 +87,11 @@ export class SimulatedCrash extends Error {
 
 export class AgentRuntime<Ctx> {
   constructor(readonly opts: RuntimeOptions<Ctx>) {}
+
+  /** See RuntimeOptions.atomic. */
+  atomically<T>(fn: (scope: AtomicScope<Ctx>) => Promise<T>): Promise<T> {
+    return this.opts.atomic ? this.opts.atomic(fn) : fn({ store: this.opts.store, adapter: this.opts.adapter });
+  }
 
   skill(id: string): SkillPackage {
     const s = this.opts.skills.get(id);
@@ -173,6 +191,7 @@ export class AgentRuntime<Ctx> {
     if (resumed) await step('plan', 'Resumed after interruption — replaying recorded steps', { previousSteps: steps.length });
 
     const adapter = this.opts.adapter;
+    const atomically = <T,>(fn: (scope: AtomicScope<Ctx>) => Promise<T>): Promise<T> => this.atomically(fn);
     const self = this;
     const session: BrainSession = {
       run,
@@ -304,21 +323,26 @@ export class AgentRuntime<Ctx> {
         await step('propose', `Proposed: ${draft.title}`, { proposalId: rec.id, kind: draft.kind, confidence: draft.confidence, status });
         let autoFailed: string | null = null;
         if (verification.ok && g.decision === 'auto_post') {
-          const review = policy.autonomy === 'L3' ? 'pending_review' : sampled(idem, policy.sampleRate) ? 'sampled' : 'none';
-          let applied: Record<string, unknown> | null = null;
+          const review: ProposalRecord['reviewStatus'] = policy.autonomy === 'L3' ? 'pending_review' : sampled(idem, policy.sampleRate) ? 'sampled' : 'none';
+          const proposed = rec;
           try {
-            applied = await adapter.apply(rec, ctx, { decidedBy: null, policyLabel: `policy:${skill.id}@v${policy.version} ${policy.autonomy}` });
+            // One transaction: the posted effect, the proposal's new status and the audit event
+            // commit together, so a crash can never leave an effect without its record.
+            rec = await atomically(async (tx) => {
+              const c = tx.adapter === adapter ? ctx : await tx.adapter.toolContext(run, actor);
+              const applied = await tx.adapter.apply(proposed, c, { decidedBy: null, policyLabel: `policy:${skill.id}@v${policy.version} ${policy.autonomy}` });
+              const patch = { status: 'auto_applied' as const, appliedRef: applied, reviewStatus: review, decidedAt: clock.nowIso(), decisionReason: g.reasons.join(' ') };
+              if (!(await tx.store.claimProposal(proposed.id, { status: OPEN_STATUSES }, patch))) throw new Error('the proposal was decided by someone else first');
+              const done: ProposalRecord = { ...proposed, ...patch };
+              await tx.adapter.audit(c, { action: 'agent.proposal.auto_applied', subjectType: 'proposal', subjectId: proposed.id, data: { skill: skill.id, kind: draft.kind, amount: draft.amount ?? null, policy: `${policy.autonomy}@v${policy.version}`, review } });
+              if (tx.adapter.afterDecision) await tx.adapter.afterDecision(done, c);
+              return done;
+            });
+            await step('post', `Posted automatically: ${draft.title}`, { applied: rec.appliedRef, review });
           } catch (e) {
-            // The store rolled the effect back; leave the proposal for a person with the reason.
+            // Everything rolled back; leave the proposal for a person with the reason.
             autoFailed = e instanceof Error ? e.message : String(e);
             await step('post', `Auto-post refused: ${autoFailed}`.slice(0, 300), { proposalId: rec.id }, 'error');
-          }
-          if (applied) {
-            await store.updateProposal(rec.id, { status: 'auto_applied', appliedRef: applied, reviewStatus: review, decidedAt: clock.nowIso(), decisionReason: g.reasons.join(' ') });
-            rec = { ...rec, status: 'auto_applied', appliedRef: applied, reviewStatus: review };
-            await step('post', `Posted automatically: ${draft.title}`, { applied, review });
-            await adapter.audit(ctx, { action: 'agent.proposal.auto_applied', subjectType: 'proposal', subjectId: rec.id, data: { skill: skill.id, kind: draft.kind, amount: draft.amount ?? null, policy: `${policy.autonomy}@v${policy.version}`, review } });
-            if (adapter.afterDecision) await adapter.afterDecision(rec, ctx);
           }
         }
         if (rec.status !== 'auto_applied') {
@@ -381,57 +405,69 @@ export class DecisionError extends Error {
  * proposals (e.g. the period was locked meanwhile) fail safely.
  */
 export async function decideProposal<Ctx>(rt: AgentRuntime<Ctx>, input: DecisionInput): Promise<DecisionResult> {
-  const { store, adapter, clock } = rt.opts;
-  const p = await store.getProposal(input.proposalId);
-  if (!p) throw new DecisionError('NOT_FOUND', 'Proposal not found');
-  if (!['pending', 'suggested'].includes(p.status)) throw new DecisionError('CONFLICT', `This proposal is already ${p.status.replace('_', ' ')}.`);
-  const run = (await store.getRun(p.runId))!;
-  const ctx = await adapter.toolContext(run, input.actor);
-  await adapter.authorize(p, ctx, input.decision);
-  const now = clock.nowIso();
-  if (input.decision === 'reject') {
-    const reason = (input.reason ?? '').trim();
-    if (reason.length < 3) throw new DecisionError('VALIDATION', 'Say briefly why you are rejecting this (at least 3 characters).');
-    await store.updateProposal(p.id, { status: 'rejected', decidedBy: input.actor.userId, decidedAt: now, decisionReason: reason });
-    if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'reject', userId: input.actor.userId, reason });
-    await adapter.audit(ctx, { action: 'agent.proposal.rejected', subjectType: 'proposal', subjectId: p.id, data: { reason, kind: p.kind, amount: p.amount } });
-  } else {
-    const verification = await adapter.verify(
-      { key: p.idempotencyKey, kind: p.kind, title: p.title, why: p.why, confidence: p.confidence, amount: p.amount, currency: p.currency, entityId: p.entityId, periodKey: p.periodKey, payload: p.payload, evidence: p.evidence },
-      ctx,
-    );
-    if (!verification.ok) {
-      const msg = verification.checks.filter((c) => !c.ok && c.severity === 'error').map((c) => c.detail ?? c.label).join(' ');
-      throw new DecisionError('CONFLICT', `This proposal no longer passes verification: ${msg}`);
+  const { clock } = rt.opts;
+  // One transaction per decision. The first write is a compare-and-set claim on the proposal,
+  // so a second, concurrent decision waits for this one and then finds it already decided;
+  // if applying fails, the claim rolls back with everything else and the item stays open.
+  return rt.atomically(async ({ store, adapter }) => {
+    const p = await store.getProposal(input.proposalId);
+    if (!p) throw new DecisionError('NOT_FOUND', 'Proposal not found');
+    if (!OPEN_STATUSES.includes(p.status)) throw new DecisionError('CONFLICT', `This proposal is already ${p.status.replace('_', ' ')}.`);
+    const run = (await store.getRun(p.runId))!;
+    const ctx = await adapter.toolContext(run, input.actor);
+    await adapter.authorize(p, ctx, input.decision);
+    const now = clock.nowIso();
+    const claim = async (patch: Partial<ProposalRecord>) => {
+      if (!(await store.claimProposal(p.id, { status: OPEN_STATUSES }, patch))) throw new DecisionError('CONFLICT', 'Someone else decided this item a moment ago. Refresh to see the outcome.');
+    };
+    if (input.decision === 'reject') {
+      const reason = (input.reason ?? '').trim();
+      if (reason.length < 3) throw new DecisionError('VALIDATION', 'Say briefly why you are rejecting this (at least 3 characters).');
+      await claim({ status: 'rejected', decidedBy: input.actor.userId, decidedAt: now, decisionReason: reason });
+      if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'reject', userId: input.actor.userId, reason });
+      await adapter.audit(ctx, { action: 'agent.proposal.rejected', subjectType: 'proposal', subjectId: p.id, data: { reason, kind: p.kind, amount: p.amount } });
+    } else {
+      const verification = await adapter.verify(
+        { key: p.idempotencyKey, kind: p.kind, title: p.title, why: p.why, confidence: p.confidence, amount: p.amount, currency: p.currency, entityId: p.entityId, periodKey: p.periodKey, payload: p.payload, evidence: p.evidence },
+        ctx,
+      );
+      if (!verification.ok) {
+        const msg = verification.checks.filter((c) => !c.ok && c.severity === 'error').map((c) => c.detail ?? c.label).join(' ');
+        throw new DecisionError('CONFLICT', `This proposal no longer passes verification: ${msg}`);
+      }
+      await claim({ status: 'approved', decidedBy: input.actor.userId, decidedAt: now, decisionReason: input.reason ?? null });
+      const applied = await adapter.apply(p, ctx, { decidedBy: input.actor.userId, policyLabel: null });
+      await store.updateProposal(p.id, { status: 'applied', appliedRef: applied });
+      if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'approve', userId: input.actor.userId, reason: input.reason ?? null });
+      await adapter.audit(ctx, { action: 'agent.proposal.approved', subjectType: 'proposal', subjectId: p.id, data: { kind: p.kind, amount: p.amount, applied } });
     }
-    const applied = await adapter.apply(p, ctx, { decidedBy: input.actor.userId, policyLabel: null });
-    await store.updateProposal(p.id, { status: 'applied', decidedBy: input.actor.userId, decidedAt: now, decisionReason: input.reason ?? null, appliedRef: applied });
-    if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'approve', userId: input.actor.userId, reason: input.reason ?? null });
-    await adapter.audit(ctx, { action: 'agent.proposal.approved', subjectType: 'proposal', subjectId: p.id, data: { kind: p.kind, amount: p.amount, applied } });
-  }
-  const updated = (await store.getProposal(p.id))!;
-  if (adapter.afterDecision) await adapter.afterDecision(updated, ctx);
-  const all = await store.listProposals(run.id);
-  if (run.status === 'awaiting_approval' && !all.some((x) => x.status === 'pending' || x.status === 'suggested')) {
-    await store.updateRun(run.id, { status: 'completed', finishedAt: now });
-  }
-  return { proposal: updated, run: (await store.getRun(run.id))! };
+    const updated = (await store.getProposal(p.id))!;
+    if (adapter.afterDecision) await adapter.afterDecision(updated, ctx);
+    const all = await store.listProposals(run.id);
+    if (run.status === 'awaiting_approval' && !all.some((x) => OPEN_STATUSES.includes(x.status))) {
+      await store.updateRun(run.id, { status: 'completed', finishedAt: now });
+    }
+    return { proposal: updated, run: (await store.getRun(run.id))! };
+  });
 }
 
 /** Post-hoc review of an auto-applied proposal (L2 samples, all L3 items). */
 export async function reviewProposal<Ctx>(rt: AgentRuntime<Ctx>, input: { proposalId: string; actor: DelegatedActor; note?: string | null }): Promise<ProposalRecord> {
-  const { store, adapter, clock } = rt.opts;
-  const p = await store.getProposal(input.proposalId);
-  if (!p) throw new DecisionError('NOT_FOUND', 'Proposal not found');
-  if (p.status !== 'auto_applied' || !['sampled', 'pending_review'].includes(p.reviewStatus)) throw new DecisionError('CONFLICT', 'This item is not waiting for a post-hoc review.');
-  const run = (await store.getRun(p.runId))!;
-  const ctx = await adapter.toolContext(run, input.actor);
-  await adapter.authorize(p, ctx, 'review');
-  const at = clock.nowIso();
-  await store.updateProposal(p.id, { reviewStatus: 'reviewed', reviewedBy: input.actor.userId, reviewedAt: at });
-  if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'review', userId: input.actor.userId, reason: input.note ?? null });
-  await adapter.audit(ctx, { action: 'agent.proposal.reviewed', subjectType: 'proposal', subjectId: p.id, data: { note: input.note ?? null, reviewedAt: at } });
-  return (await store.getProposal(p.id))!;
+  const { clock } = rt.opts;
+  return rt.atomically(async ({ store, adapter }) => {
+    const p = await store.getProposal(input.proposalId);
+    if (!p) throw new DecisionError('NOT_FOUND', 'Proposal not found');
+    if (p.status !== 'auto_applied' || !['sampled', 'pending_review'].includes(p.reviewStatus)) throw new DecisionError('CONFLICT', 'This item is not waiting for a post-hoc review.');
+    const run = (await store.getRun(p.runId))!;
+    const ctx = await adapter.toolContext(run, input.actor);
+    await adapter.authorize(p, ctx, 'review');
+    const at = clock.nowIso();
+    const claimed = await store.claimProposal(p.id, { status: ['auto_applied'], reviewStatus: ['sampled', 'pending_review'] }, { reviewStatus: 'reviewed', reviewedBy: input.actor.userId, reviewedAt: at });
+    if (!claimed) throw new DecisionError('CONFLICT', 'Someone else reviewed this item a moment ago.');
+    if (input.actor.userId) await store.recordDecision({ proposalId: p.id, decision: 'review', userId: input.actor.userId, reason: input.note ?? null });
+    await adapter.audit(ctx, { action: 'agent.proposal.reviewed', subjectType: 'proposal', subjectId: p.id, data: { note: input.note ?? null, reviewedAt: at } });
+    return (await store.getProposal(p.id))!;
+  });
 }
 
 function summarize(output: unknown): string {

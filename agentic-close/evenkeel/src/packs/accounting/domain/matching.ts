@@ -227,7 +227,8 @@ export function classifyUnmatched(unmatchedBank: MatchItem[], unmatchedLedger: M
   for (const l of unmatchedLedger) {
     const clear = subsequentBank.find((s) => !usedSubsequent.has(s.id) && s.amount === l.amount && diffDays(s.date, l.date) >= 0 && diffDays(s.date, l.date) <= 15);
     if (clear) usedSubsequent.add(clear.id);
-    const isCheck = /\b(check|chk|cheque)\b/i.test(`${l.text} ${l.reference ?? ''}`);
+    // "Check 10458", "CHK10458", "chk #10458", "cheque 77"
+    const isCheck = /\b(check|cheque)\b|\bchk(?:\b|\s*#?\s*\d)/i.test(`${l.text} ${l.reference ?? ''}`);
     const nearEnd = diffDays(periodEndDate, l.date) <= 5;
     if (l.amount > 0) {
       out.push({ item: l, side: 'book', cls: clear || nearEnd ? 'deposit_in_transit' : 'timing', clearedBy: clear ?? null, reason: clear ? `Recorded ${l.date}; the bank credited it on ${clear.date}.` : 'Recorded in the books; not yet on the statement.' });

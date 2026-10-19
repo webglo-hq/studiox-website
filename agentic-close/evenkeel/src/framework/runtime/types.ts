@@ -185,6 +185,12 @@ export interface RuntimeStore {
   findProposalByKey(key: string): Promise<ProposalRecord | null>;
   insertProposal(p: Omit<ProposalRecord, 'id' | 'createdAt'>): Promise<ProposalRecord>;
   updateProposal(id: string, patch: Partial<ProposalRecord>): Promise<void>;
+  /**
+   * Compare-and-set: apply `patch` only while the proposal is still in an expected state.
+   * Returns false when another decision got there first, so two people (or a double click)
+   * can never apply the same proposal twice.
+   */
+  claimProposal(id: string, expect: { status: ProposalRecord['status'][]; reviewStatus?: ProposalRecord['reviewStatus'][] }, patch: Partial<ProposalRecord>): Promise<boolean>;
   getProposal(id: string): Promise<ProposalRecord | null>;
   listProposals(runId: string): Promise<ProposalRecord[]>;
   /** Append-only record of every human decision (approve / reject / post-hoc review). */

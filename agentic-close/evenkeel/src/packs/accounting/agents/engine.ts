@@ -110,11 +110,15 @@ export class AgentEngine {
     const problems = validateSkills(opts.skills);
     if (problems.length) throw new Error(`Invalid skills:\n${problems.join('\n')}`);
     this.skills = new Map(opts.skills.map((s) => [s.id, s]));
-    const adapter = createAdapter({ db: opts.db, tenantId: opts.tenantId, clock: opts.clock, skills: this.skills, dispatch: (run) => this.dispatchWave(run) });
+    const deps = { tenantId: opts.tenantId, clock: opts.clock, skills: this.skills, dispatch: (run: RunRecord) => this.dispatchWave(run) };
+    const adapter = createAdapter({ ...deps, db: opts.db });
     const tools = new Map(ALL_TOOLS.map((t) => [t.name, t as ToolDef<AgentCtx, unknown, unknown>]));
+    const now = () => opts.clock.nowIso();
     this.runtime = new AgentRuntime<AgentCtx>({
-      store: new EkRuntimeStore(opts.db, opts.tenantId, () => opts.clock.nowIso()),
+      store: new EkRuntimeStore(opts.db, opts.tenantId, now),
       adapter,
+      // Everything inside uses the transaction's handle (PGlite would deadlock on the root one).
+      atomic: (fn) => opts.db.tx((tx) => fn({ store: new EkRuntimeStore(tx, opts.tenantId, now), adapter: createAdapter({ ...deps, db: tx }) })),
       skills: this.skills,
       tools,
       selectBrain: (skill) => this.brainFor(skill),

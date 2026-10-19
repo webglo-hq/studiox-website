@@ -1,1 +1,52 @@
-{ "cases": [] }
+{
+  "skill": "flux-analysis",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "marketing-vs-prior-month",
+      "description": "US Marketing rose about $116.7k vs August; the explanation names Brightstage and Signal Ads.",
+      "expect": {
+        "kind": "flux_explanation",
+        "titleIncludes": "6400 Marketing",
+        "payload": {
+          "comparison": "prior_month"
+        }
+      }
+    },
+    {
+      "id": "marketing-vs-budget",
+      "description": "US Marketing is also explained against budget.",
+      "expect": {
+        "kind": "flux_explanation",
+        "titleIncludes": "6400 Marketing",
+        "payload": {
+          "comparison": "budget"
+        }
+      }
+    },
+    {
+      "id": "drivers-cover-variance",
+      "description": "Drivers explain most of the movement.",
+      "expect": {
+        "kind": "flux_explanation",
+        "titleIncludes": "6400 Marketing",
+        "payload": {
+          "comparison": "prior_month",
+          "drivers": [
+            {
+              "kind": "one_time"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "explanations-need-approval",
+      "description": "Variance explanations are approved by a person (L1).",
+      "expect": {
+        "kind": "flux_explanation",
+        "notAutoPosted": true
+      }
+    }
+  ]
+}

@@ -1,1 +1,66 @@
-{ "cases": [] }
+{
+  "skill": "prepaid-amortization",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "gridline-amortisation",
+      "description": "The Gridline Analytics annual licence amortises $2,000 for September.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Gridline",
+        "amount": 200000,
+        "payload": {
+          "entryType": "amortization"
+        }
+      }
+    },
+    {
+      "id": "dno-amortisation",
+      "description": "The Lumen Mutual D&O policy amortises $3,000 for September.",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Amortise Lumen Mutual",
+        "amount": 300000
+      }
+    },
+    {
+      "id": "dno-catch-up",
+      "description": "The August D&O amortisation was missed; catch it up ($3,000).",
+      "expect": {
+        "kind": "journal_entry",
+        "titleIncludes": "Catch up",
+        "amount": 300000
+      }
+    },
+    {
+      "id": "missed-amortisation-issue",
+      "description": "The missed amortisation is reported as an exception.",
+      "expect": {
+        "kind": "issue",
+        "payload": {
+          "category": "missing_amortization"
+        }
+      }
+    },
+    {
+      "id": "ledgerlight-schedule",
+      "description": "Ledgerlight software ($14,400, 12 months) was expensed up front; move it to prepaid on a 12-month schedule.",
+      "expect": {
+        "kind": "prepaid_schedule",
+        "titleIncludes": "Ledgerlight",
+        "amount": 1440000,
+        "payload": {
+          "months": 12
+        }
+      }
+    },
+    {
+      "id": "no-brightstage-prepaid",
+      "description": "The Brightstage event already happened in September: it is not a prepaid.",
+      "expect": {
+        "titleIncludes": "Brightstage",
+        "absent": true
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
  * End-to-end tests of the full demo script, against both the real server (password sign-in,
  * embedded Postgres) and the zero-install static demo (in-browser backend).
  * Ports are random high ports unless E2E_SERVER_PORT / E2E_DEMO_PORT are set; each run uses a
- * fresh database directory under .data/ (gitignored).
+ * fresh database directory under .data/ (gitignored), deleted when the server stops.
  */
 // The config is evaluated by the runner and again by each worker: pick the ports once and
 // hand them down through the environment so every process agrees.
@@ -44,7 +44,9 @@ export default defineConfig({
             reuseExistingServer: false,
             stdout: 'ignore' as const,
             stderr: 'pipe' as const,
-            env: { PORT: String(serverPort), HOST: '127.0.0.1', EVENKEEL_DATA_DIR: dataDir, DEMO_LOGIN_HELPER: '1', RATE_LIMIT_SCALE: '50', NODE_ENV: 'test' },
+            env: { PORT: String(serverPort), HOST: '127.0.0.1', EVENKEEL_DATA_DIR: dataDir, EVENKEEL_EPHEMERAL: '1', DEMO_LOGIN_HELPER: '1', RATE_LIMIT_SCALE: '50', NODE_ENV: 'test' },
+            // SIGTERM lets the server finish, close the database and delete its data directory.
+            gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 20_000 },
           },
         ]
       : []),
@@ -55,6 +57,7 @@ export default defineConfig({
             url: `http://127.0.0.1:${demoPort}/index.html`,
             timeout: 60_000,
             reuseExistingServer: false,
+            gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 5_000 },
             stdout: 'ignore' as const,
             stderr: 'pipe' as const,
           },

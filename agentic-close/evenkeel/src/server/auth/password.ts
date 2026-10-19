@@ -46,7 +46,8 @@ export function passwordProblems(password: string, context: string[] = []): stri
   if (password.length > 256) out.push('Use at most 256 characters.');
   if (/^(.)\1+$/.test(password)) out.push('Avoid repeating a single character.');
   const lower = password.toLowerCase();
-  for (const c of context) if (c && c.length >= 4 && lower.includes(c.toLowerCase())) out.push('Do not include your name or email.');
+  const words = context.flatMap((c) => (c ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u)).filter((w) => w.length >= 4);
+  if (words.some((w) => lower.includes(w))) out.push('Do not include your name or email.');
   if (['password1234', 'correcthorsebatterystaple', '123456789012'].includes(lower)) out.push('This password is too common.');
   return [...new Set(out)];
 }

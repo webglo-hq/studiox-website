@@ -1,1 +1,26 @@
-{ "cases": [] }
+{
+  "skill": "fixed-asset-depreciation",
+  "scenario": "kitewell-2026-09",
+  "cases": [
+    {
+      "id": "register-laptops",
+      "description": "The capitalised Kestrel laptops are added to the asset register.",
+      "expect": {
+        "kind": "fixed_asset",
+        "titleIncludes": "Kestrel",
+        "amount": 869700
+      }
+    },
+    {
+      "id": "september-depreciation",
+      "description": "September straight-line depreciation across the register is $7,822.27.",
+      "expect": {
+        "kind": "journal_entry",
+        "amount": 782227,
+        "payload": {
+          "entryType": "depreciation"
+        }
+      }
+    }
+  ]
+}

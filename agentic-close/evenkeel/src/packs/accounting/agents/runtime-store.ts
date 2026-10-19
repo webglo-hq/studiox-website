@@ -283,6 +283,15 @@ export class EkRuntimeStore implements RuntimeStore {
     await this.db.update('proposal', id, proposalPatch(patch));
   }
 
+  async claimProposal(id: string, expect: { status: ProposalRecord['status'][]; reviewStatus?: ProposalRecord['reviewStatus'][] }, patch: Partial<ProposalRecord>): Promise<boolean> {
+    const n = await this.db.updateWhere(
+      'proposal',
+      { id, tenant_id: this.tenantId, status: { in: expect.status }, ...(expect.reviewStatus ? { review_status: { in: expect.reviewStatus } } : {}) },
+      proposalPatch(patch),
+    );
+    return n === 1;
+  }
+
   async getProposal(id: string): Promise<ProposalRecord | null> {
     const r = await this.db.get('proposal', id);
     return r && r.tenant_id === this.tenantId ? toProposal(r) : null;
