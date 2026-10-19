@@ -112,12 +112,18 @@ function sumTotals(rows: TbRow[]): { debit: number; credit: number } {
   return rows.reduce((t, r) => ({ debit: t.debit + r.debit, credit: t.credit + r.credit }), { debit: 0, credit: 0 });
 }
 
-const HISTORICAL_EQUITY_TYPES = new Set(['ek:EquityAccount']);
+/**
+ * Equity carried at historical rates: contributed capital and posted retained earnings. (Prior
+ * years' income reaches retained earnings below at the average rates of the months it was
+ * earned.) Translating either at the closing rate would move part of the CTA into equity.
+ */
+const HISTORICAL_EQUITY_TYPES = new Set(['ek:EquityAccount', 'ek:RetainedEarningsAccount']);
 
 /**
  * Consolidated TB in the reporting currency (ASC 830 translation + ASC 810 eliminations):
  * monetary and other balance-sheet items at the closing rate, income statement at monthly
- * average rates, contributed equity at historical rates, and the CTA as the balancing figure.
+ * average rates, contributed capital and retained earnings at historical rates, and the CTA
+ * as the balancing figure.
  */
 export async function consolidatedTrialBalance(ctx: ServiceContext, periodKey: string): Promise<TrialBalance> {
   const tenant = await tenantRow(ctx);
@@ -195,6 +201,16 @@ export interface StatementLine {
   accounts: { accountId: string; code: string; name: string; amount: number }[];
 }
 
+/** A footing check on one column of a statement. */
+export interface StatementCheck {
+  column: 'current' | 'comparison';
+  label: string;
+  ok: boolean;
+  /** cents by which the column fails to foot (0 when it foots) */
+  difference: number;
+  detail: string;
+}
+
 export interface Statement {
   kind: 'BS' | 'IS';
   title: string;
@@ -202,7 +218,15 @@ export interface Statement {
   currency: string;
   sections: { name: string; lines: StatementLine[]; total: number; comparisonTotal?: number }[];
   subtotals: { label: string; amount: number; comparison?: number }[];
+  /** Every column foots (one check per column); `check` summarises them. */
+  checks: StatementCheck[];
   check: { label: string; ok: boolean; detail: string };
+}
+
+function summarise(label: string, checks: StatementCheck[]): Statement['check'] {
+  const bad = checks.filter((c) => !c.ok);
+  const detail = bad.length ? bad.map((c) => `${c.column} column: ${c.detail}`).join('; ') : checks.length > 1 ? 'every column foots' : 'the column foots';
+  return { label, ok: bad.length === 0, detail };
 }
 
 /** Build a balance sheet or income statement from a TB using fs_line_item mappings. */
@@ -232,20 +256,26 @@ export async function buildStatement(ctx: ServiceContext, kind: 'BS' | 'IS', tb:
     return { name, lines: ls, total: ls.reduce((s, l) => s + l.amount, 0), comparisonTotal: comparisonTb ? ls.reduce((s, l) => s + (l.comparison ?? 0), 0) : undefined };
   });
   const sec = (n: string, comp = false) => sections.filter((s) => s.name.startsWith(n)).reduce((t, s) => t + ((comp ? s.comparisonTotal : s.total) ?? 0), 0);
+  const ledgerIncome = (t: TrialBalance) => -t.rows.filter((r) => r.accountClass === 'revenue' || r.accountClass === 'expense').reduce((s, r) => s + r.net, 0);
+  const columns = (comparisonTb ? ['current', 'comparison'] : ['current']) as StatementCheck['column'][];
   if (kind === 'BS') {
-    const assets = sec('Assets');
-    const liabilities = sec('Liabilities');
-    const equity = sec('Equity');
-    // Current-year earnings close into equity for presentation
-    const ytdIncome = -tb.rows.filter((r) => r.accountClass === 'revenue' || r.accountClass === 'expense').reduce((s, r) => s + r.net, 0);
-    const ytdIncomeComp = comparisonTb ? -comparisonTb.rows.filter((r) => r.accountClass === 'revenue' || r.accountClass === 'expense').reduce((s, r) => s + r.net, 0) : undefined;
+    // Section totals per column, read before current-year earnings joins the equity section.
+    const totals = (comp: boolean) => ({ assets: sec('Assets', comp), liabilities: sec('Liabilities', comp), equity: sec('Equity', comp), earnings: comp ? ledgerIncome(comparisonTb!) : ledgerIncome(tb) });
+    const cur = totals(false);
+    const cmp = comparisonTb ? totals(true) : null;
+    // Current-year earnings close into equity for presentation (once per column).
     const eqSection = sections.find((s) => s.name.startsWith('Equity'));
     if (eqSection) {
-      eqSection.lines.push({ fsLineItemId: 'current-year-earnings', code: 'BS-CYE', label: 'Current-year earnings', section: eqSection.name, xbrl: 'us-gaap:NetIncomeLoss', amount: ytdIncome, comparison: ytdIncomeComp, accounts: [] });
-      eqSection.total += ytdIncome;
-      if (eqSection.comparisonTotal !== undefined && ytdIncomeComp !== undefined) eqSection.comparisonTotal += ytdIncomeComp;
+      eqSection.lines.push({ fsLineItemId: 'current-year-earnings', code: 'BS-CYE', label: 'Current-year earnings', section: eqSection.name, xbrl: 'us-gaap:NetIncomeLoss', amount: cur.earnings, comparison: cmp?.earnings, accounts: [] });
+      eqSection.total += cur.earnings;
+      if (eqSection.comparisonTotal !== undefined && cmp) eqSection.comparisonTotal += cmp.earnings;
     }
-    const totalLe = liabilities + equity + ytdIncome;
+    const totalLe = (t: typeof cur) => t.liabilities + t.equity + t.earnings;
+    const checks = columns.map((column): StatementCheck => {
+      const t = column === 'current' ? cur : cmp!;
+      const difference = t.assets - totalLe(t);
+      return { column, label: 'Assets = Liabilities + Equity', ok: difference === 0, difference, detail: `difference ${difference}` };
+    });
     return {
       kind,
       title: 'Balance sheet',
@@ -253,21 +283,22 @@ export async function buildStatement(ctx: ServiceContext, kind: 'BS' | 'IS', tb:
       currency: tb.currency,
       sections,
       subtotals: [
-        { label: 'Total assets', amount: assets, comparison: comparisonTb ? sec('Assets', true) : undefined },
-        { label: 'Total liabilities', amount: liabilities, comparison: comparisonTb ? sec('Liabilities', true) : undefined },
-        { label: 'Total liabilities and equity', amount: totalLe, comparison: comparisonTb ? sec('Liabilities', true) + sec('Equity', true) + (ytdIncomeComp ?? 0) : undefined },
+        { label: 'Total assets', amount: cur.assets, comparison: cmp?.assets },
+        { label: 'Total liabilities', amount: cur.liabilities, comparison: cmp?.liabilities },
+        { label: 'Total liabilities and equity', amount: totalLe(cur), comparison: cmp ? totalLe(cmp) : undefined },
       ],
-      check: { label: 'Assets = Liabilities + Equity', ok: assets === totalLe, detail: `difference ${assets - totalLe}` },
+      checks,
+      check: summarise('Assets = Liabilities + Equity', checks),
     };
   }
-  const revenue = sec('Revenue');
-  const cogs = sec('Cost of revenue');
-  const opex = sec('Operating expenses');
-  const other = sec('Other');
-  const tax = sec('Income tax');
-  const net = revenue - cogs - opex + other - tax;
+  const netOf = (comp: boolean) => sec('Revenue', comp) - sec('Cost of revenue', comp) - sec('Operating expenses', comp) + sec('Other', comp) - sec('Income tax', comp);
+  const checks = columns.map((column): StatementCheck => {
+    const comp = column === 'comparison';
+    const ledger = ledgerIncome(comp ? comparisonTb! : tb);
+    const statement = netOf(comp);
+    return { column, label: 'Net income ties to the ledger', ok: ledger === statement, difference: statement - ledger, detail: `ledger ${ledger}, statement ${statement}` };
+  });
   const c = (n: string) => (comparisonTb ? sec(n, true) : undefined);
-  const ni = -tb.rows.filter((r) => r.accountClass === 'revenue' || r.accountClass === 'expense').reduce((s, r) => s + r.net, 0);
   return {
     kind,
     title: 'Income statement',
@@ -275,11 +306,12 @@ export async function buildStatement(ctx: ServiceContext, kind: 'BS' | 'IS', tb:
     currency: tb.currency,
     sections,
     subtotals: [
-      { label: 'Gross profit', amount: revenue - cogs, comparison: comparisonTb ? c('Revenue')! - c('Cost of revenue')! : undefined },
-      { label: 'Operating income', amount: revenue - cogs - opex, comparison: comparisonTb ? c('Revenue')! - c('Cost of revenue')! - c('Operating expenses')! : undefined },
-      { label: 'Net income', amount: net, comparison: comparisonTb ? c('Revenue')! - c('Cost of revenue')! - c('Operating expenses')! + c('Other')! - c('Income tax')! : undefined },
+      { label: 'Gross profit', amount: sec('Revenue') - sec('Cost of revenue'), comparison: comparisonTb ? c('Revenue')! - c('Cost of revenue')! : undefined },
+      { label: 'Operating income', amount: sec('Revenue') - sec('Cost of revenue') - sec('Operating expenses'), comparison: comparisonTb ? c('Revenue')! - c('Cost of revenue')! - c('Operating expenses')! : undefined },
+      { label: 'Net income', amount: netOf(false), comparison: comparisonTb ? netOf(true) : undefined },
     ],
-    check: { label: 'Net income ties to the ledger', ok: ni === net, detail: `ledger ${ni}, statement ${net}` },
+    checks,
+    check: summarise('Net income ties to the ledger', checks),
   };
 }
 

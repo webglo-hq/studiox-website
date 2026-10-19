@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { detectGrni, detectRecurringGaps, detectSubsequentBills, overlapRatio, payrollAccrual, type BillFact, type PoFact } from '../../src/packs/accounting/domain/accrual-math';
 import { benfordFirstDigit, controlAccountPostings, duplicatePayments, roundAmounts, sodBreaks, thresholdAvoidance, unusualPairs, weekendPostings, type EntryFact, type PaymentFact } from '../../src/packs/accounting/domain/anomaly-math';
-import { analyzeDrivers, computeVariance, fluxNarrative, isMaterialVariance } from '../../src/packs/accounting/domain/flux-math';
+import { analyzeDrivers, computeVariance, driversReconcile, fluxNarrative, isMaterialVariance } from '../../src/packs/accounting/domain/flux-math';
 import { accumulatedDepreciation, depreciationForPeriod, prepaidSchedule, serviceMonths, type AssetFact } from '../../src/packs/accounting/domain/schedule-math';
 import { BusinessCalendar, US_BANK_HOLIDAYS_2025_2027 } from '../../src/framework/util/workdays';
 
@@ -32,6 +32,34 @@ describe('flux mathematics', () => {
     expect(a.drivers[0]!.label).toMatch(/Brightstage/);
     expect(a.drivers[0]!.amount).toBe(9_500_000);
     expect(a.coverage).toBeGreaterThan(0.99);
+  });
+  it('ACC-m2: drivers reconcile to the variance and keep offsetting movements', () => {
+    // +150 new vendor, −60 lost vendor, +10 on a continuing one: the variance is +100.
+    const lines = [
+      { key: 'a', label: 'Arbor Studio', period: 'current' as const, amount: 15_000, ref: { type: 'journal_entry', id: 'je-a' } },
+      { key: 'b', label: 'Beacon Print', period: 'comparison' as const, amount: 6_000 },
+      { key: 'c', label: 'Cobalt CRM', period: 'current' as const, amount: 10_000 },
+      { key: 'c', label: 'Cobalt CRM', period: 'comparison' as const, amount: 9_000 },
+    ];
+    const a = analyzeDrivers(lines, 10_000);
+    expect(a.drivers.map((d) => [d.label, d.kind, d.amount])).toEqual([
+      ['Arbor Studio — new, one-time', 'one_time', 15_000],
+      ['Beacon Print — none this month', 'lost_vendor', -6_000],
+      ['Cobalt CRM — higher amounts', 'rate', 1_000],
+    ]);
+    expect(driversReconcile(a.drivers, 10_000)).toBe(true);
+    expect(a.coverage).toBe(1);
+    // Beyond the named drivers the rest is grouped; anything the lines miss is shown as untraced.
+    const many = Array.from({ length: 7 }, (_, i) => ({ key: `v${i}`, label: `Vendor ${i}`, period: 'current' as const, amount: (i + 1) * 1_000 }));
+    const b = analyzeDrivers(many, 30_000);
+    expect(b.drivers).toHaveLength(6);
+    expect(b.drivers[4]).toMatchObject({ kind: 'other', amount: 6_000, label: 'All other counterparties (3)' });
+    expect(b.drivers[5]).toMatchObject({ kind: 'other', amount: 2_000, label: 'Not traced to a counterparty' });
+    expect(driversReconcile(b.drivers, 30_000)).toBe(true);
+    expect(b.coverage).toBeCloseTo(22 / 30, 3);
+    const text = fluxNarrative({ accountName: 'Marketing', periodLabel: 'September 2026', comparisonLabel: 'budget', variance: computeVariance(30_000, 0), currency: 'USD', drivers: b.drivers, coverage: b.coverage });
+    expect(text).toContain('These explain 73% of the change; All other counterparties (3) (+$60) and Not traced to a counterparty (+$20) make up the rest.');
+    expect(fluxNarrative({ accountName: 'Hosting', periodLabel: 'September 2026', comparisonLabel: 'August 2026', variance: computeVariance(0, 5_000), currency: 'USD', drivers: [{ label: 'Nimbus', kind: 'lost_vendor', amount: -5_000, evidence: [] }], coverage: 1 })).toContain('Nimbus (−$50)');
   });
   it('writes a plain-English narrative', () => {
     const text = fluxNarrative({ accountName: 'Marketing & Advertising', periodLabel: 'September 2026', comparisonLabel: 'August 2026', variance: computeVariance(16_675_873, 5_062_694), currency: 'USD', drivers: [{ label: 'Brightstage Events — new this period', kind: 'one_time', amount: 9_500_000, evidence: [] }], coverage: 0.82 });
@@ -72,8 +100,26 @@ describe('accrual detection', () => {
     const r = payrollAccrual([{ id: 'p', periodStart: '2026-09-01', periodEnd: '2026-09-15', payDate: '2026-09-18', grossWages: 50_000_000, employerTaxes: 3_800_000, benefits: 0, byDepartment: [{ departmentId: 'eng', gross: 50_000_000, taxes: 3_800_000 }] }], '2026-09', cal);
     expect(r).not.toBeNull();
     expect(r!.days).toBe(11);
-    expect(r!.amountWages).toBeGreaterThan(40_000_000);
-    expect(r!.byDepartment[0]!.amount).toBe(Math.round((53_800_000 * r!.days) / Math.max(1, cal.businessDaysBetween('2026-08-31', '2026-09-15'))));
+    // The 16th–30th is one whole semi-monthly pay period: one period's pay, not 11/10 of it.
+    expect(r!.amountWages).toBe(50_000_000);
+    expect(r!.byDepartment[0]!.amount).toBe(53_800_000);
+  });
+  it('ACC-m1: accrues payroll by pay period, not by the business-day ratio of the last period', () => {
+    const cal = new BusinessCalendar(US_BANK_HOLIDAYS_2025_2027);
+    const run = (start: string, end: string, pay: string, gross: number) => ({ id: `${start}`, periodStart: start, periodEnd: end, payDate: pay, grossWages: gross, employerTaxes: Math.round(gross * 0.0765), benefits: 0, byDepartment: [{ departmentId: 'eng', gross, taxes: Math.round(gross * 0.0765) }] });
+    // September 2026: 1–15 has 10 business days (Labor Day), 16–30 has 11. Salary is fixed per period.
+    expect(cal.businessDaysBetween('2026-08-31', '2026-09-15')).toBe(10);
+    expect(cal.businessDaysBetween('2026-09-15', '2026-09-30')).toBe(11);
+    const semi = payrollAccrual([run('2026-08-16', '2026-08-31', '2026-09-04', 30_000_000), run('2026-09-01', '2026-09-15', '2026-09-18', 30_000_000)], '2026-09', cal)!;
+    expect(semi.amountWages).toBe(30_000_000);
+    expect(semi.amountTaxes).toBe(Math.round(30_000_000 * 0.0765));
+    expect(semi.basis).toMatch(/2026-09-16 – 2026-09-30: 11 of 11 business days/);
+    // Bi-weekly: the unpaid span covers part of the next 14-day period only.
+    const bi = payrollAccrual([run('2026-09-07', '2026-09-20', '2026-09-25', 14_000_000)], '2026-09', cal)!;
+    const share = cal.businessDaysBetween('2026-09-20', '2026-09-30') / cal.businessDaysBetween('2026-09-20', '2026-10-04');
+    expect(bi.amountWages).toBe(Math.round(14_000_000 * share));
+    // A monthly payroll paid inside the month leaves nothing to accrue.
+    expect(payrollAccrual([run('2026-09-01', '2026-09-30', '2026-09-25', 9_000_000)], '2026-09', cal)).toBeNull();
   });
 });
 

@@ -52,10 +52,17 @@ export interface DriverAnalysis {
   coverage: number;
 }
 
+/** Label of the driver that groups everything beyond the named drivers. */
+export const OTHER_DRIVERS_LABEL = 'All other counterparties';
+/** Label of the driver for any part of the variance the activity lines do not account for. */
+export const UNTRACED_DRIVER_LABEL = 'Not traced to a counterparty';
+
 /**
  * Decompose a variance into counterparty-level drivers: new and lost counterparties,
- * volume/rate changes, accrual and one-time items. Coverage is the share of the variance
- * explained by the listed drivers (same direction only).
+ * volume/rate changes, accrual and one-time items. The drivers reconcile to the variance
+ * exactly: the largest movements are named whatever their direction (an offsetting driver is
+ * part of the story), the rest are grouped, and anything the lines do not explain is shown as
+ * untraced. Coverage is the share of the variance the named drivers explain.
  */
 export function analyzeDrivers(lines: ActivityLine[], variance: number, maxDrivers = 4): DriverAnalysis {
   const groups = new Map<string, { label: string; cur: number; cmp: number; curRefs: SourceRef[]; curCount: number; cmpCount: number; accrual: boolean; maxSingle: number }>();
@@ -76,9 +83,8 @@ export function analyzeDrivers(lines: ActivityLine[], variance: number, maxDrive
   const deltas = [...groups.entries()]
     .map(([key, g]) => ({ key, ...g, delta: g.cur - g.cmp }))
     .filter((g) => g.delta !== 0)
-    .filter((g) => Math.sign(g.delta) === Math.sign(variance) || variance === 0)
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.key.localeCompare(b.key));
-  const drivers: VarianceDriver[] = deltas.slice(0, maxDrivers).map((g) => {
+  const named: VarianceDriver[] = deltas.slice(0, maxDrivers).map((g) => {
     let kind: VarianceDriver['kind'];
     let label: string;
     if (g.accrual) {
@@ -101,9 +107,20 @@ export function analyzeDrivers(lines: ActivityLine[], variance: number, maxDrive
     }
     return { label, kind, amount: g.delta, evidence: g.curRefs };
   });
-  const explained = drivers.reduce((s, d) => s + d.amount, 0);
+  const drivers = [...named];
+  const rest = deltas.slice(maxDrivers);
+  const restAmount = rest.reduce((s, g) => s + g.delta, 0);
+  if (restAmount !== 0) drivers.push({ label: `${OTHER_DRIVERS_LABEL} (${rest.length})`, kind: 'other', amount: restAmount, evidence: [] });
+  const untraced = variance - deltas.reduce((s, g) => s + g.delta, 0);
+  if (untraced !== 0) drivers.push({ label: UNTRACED_DRIVER_LABEL, kind: 'other', amount: untraced, evidence: [] });
+  const explained = named.reduce((s, d) => s + d.amount, 0);
   const coverage = variance === 0 ? 1 : Math.max(0, Math.min(2, explained / variance));
   return { drivers, coverage: Math.round(coverage * 1000) / 1000 };
+}
+
+/** True when the drivers add up to the variance (the check every explanation must pass). */
+export function driversReconcile(drivers: { amount: number }[], variance: number): boolean {
+  return drivers.reduce((s, d) => s + d.amount, 0) === variance;
 }
 
 export interface NarrativeInput {
@@ -123,10 +140,13 @@ export function fluxNarrative(n: NarrativeInput): string {
   const amt = formatMoney(Math.abs(n.variance.variance), n.currency, { whole: true });
   const pct = n.variance.variancePct === null ? 'new this period' : formatPct(n.variance.variancePct, 0);
   const parts = [`${n.accountName} ${dir} ${amt} (${pct}) vs ${n.comparisonLabel}.`];
-  if (n.drivers.length) {
-    const ds = n.drivers.map((d) => `${d.label} (${formatMoney(d.amount, n.currency, { whole: true, signed: true })})`);
-    parts.push(`Main drivers: ${ds.join('; ')}.`);
-    parts.push(`Together these explain ${Math.round(Math.min(n.coverage, 1) * 100)}% of the change.`);
+  const fmt = (d: VarianceDriver) => `${d.label} (${formatMoney(d.amount, n.currency, { whole: true, signed: true, accounting: false })})`;
+  const remainder = n.drivers.filter((d) => d.label === UNTRACED_DRIVER_LABEL || d.label.startsWith(OTHER_DRIVERS_LABEL));
+  const main = n.drivers.filter((d) => !remainder.includes(d));
+  if (main.length) {
+    parts.push(`Main drivers: ${main.map(fmt).join('; ')}.`);
+    const share = Math.round(Math.min(n.coverage, 1) * 100);
+    parts.push(remainder.length ? `These explain ${share}% of the change; ${remainder.map(fmt).join(' and ')} make up the rest.` : share < 100 ? `Together these explain ${share}% of the change.` : 'Together these account for the whole change.');
   } else {
     parts.push('No single counterparty explains the change; review the detail.');
   }

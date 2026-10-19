@@ -1,6 +1,7 @@
 import type { ProposalDraft, VerificationCheck, VerificationReport } from '../../../framework/runtime/types';
 import { formatMoney } from '../../../framework/util/money';
 import { periodEnd } from '../../../framework/util/dates';
+import { driversReconcile } from '../domain/flux-math';
 import { validateEntry } from '../domain/ledger';
 import { accounts, entityById, periodOf } from '../domain/refdata';
 import { closeOntology } from '../ontology';
@@ -163,7 +164,7 @@ async function verifyFlux(ctx: AgentCtx, payload: Record<string, unknown>): Prom
   if (line && !line.material) checks.push(fail('AX-FLX-01', 'Variance is material', 'below the thresholds now', 'warning'));
   checks.push(d.coverage >= 0.8 ? ok('AX-FLX-02', 'Drivers explain at least 80% of the variance', `${Math.round(d.coverage * 100)}%`) : fail('AX-FLX-02', 'Drivers explain at least 80% of the variance', `${Math.round(d.coverage * 100)}%`, 'warning'));
   const driverSum = d.drivers.reduce((s, x) => s + x.amount, 0);
-  checks.push(Math.abs(driverSum - d.variance * Math.min(1, d.coverage)) <= Math.max(100, Math.abs(d.variance) * 0.02) || d.coverage >= 1 ? ok('drivers', 'Driver amounts are consistent with coverage') : fail('drivers', 'Driver amounts are consistent with coverage', `${formatMoney(driverSum)} vs ${formatMoney(d.variance)}`, 'warning'));
+  checks.push(driversReconcile(d.drivers, d.variance) ? ok('drivers', 'Drivers add up to the variance', formatMoney(driverSum)) : fail('drivers', 'Drivers add up to the variance', `drivers ${formatMoney(driverSum)} vs variance ${formatMoney(d.variance)}`, 'warning'));
   return checks;
 }
 
