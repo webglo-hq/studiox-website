@@ -5,7 +5,7 @@
  * live loop. Because brains derive every action from tool results, a crashed run is resumed by
  * replaying recorded tool results (see core/agent/runtime.ts).
  */
-import { redactInstructions } from '../../../core/agent/injection';
+import { clipText, redactInstructions } from '../../../core/agent/injection';
 import type { BrainAction, BrainResult, EvidenceRef, OfflineBrain, ProposeOutcome, SkillRunInput } from '../../../core/agent/types';
 import type { JsonValue } from '../../../core/util/json';
 import { periodEnd, periodLabel, periodStart, shiftPeriod } from '../../../core/util/time';
@@ -80,7 +80,7 @@ export const bankReconciliation: OfflineBrain = async function* (input): Gen {
         draft: recMatchDraft(
           { bankAccountId: ba.id, entityId, periodKey: pk, matchType: m.type, externalIds: ext.map((x) => x.id), ledgerLineIds: led.map((x) => x.id), externalSumMinor: sum(ext.map((x) => x.amountMinor)), ledgerSumMinor: sum(led.map((x) => x.amountMinor)), explanation: redactInstructions(m.explanation).slice(0, 600) },
           {
-            title: `${m.type === 'exact' ? 'Match' : m.type === 'fuzzy' ? 'Probable match' : m.type === 'one_to_many' ? 'Deposit batch' : 'Split settlement'}: ${desc.slice(0, 60)} ${money(sum(ext.map((x) => x.amountMinor)), e.currency)}`,
+            title: `${m.type === 'exact' ? 'Match' : m.type === 'fuzzy' ? 'Probable match' : m.type === 'one_to_many' ? 'Deposit batch' : 'Split settlement'}: ${clipText(desc, 60)} ${money(sum(ext.map((x) => x.amountMinor)), e.currency)}`,
             why: `${MATCH_WHY[m.type]} Signals: ${m.signals.join('; ')}.`,
             confidence: m.confidence,
             evidence: [...ext.map((x) => rec(`Bank line ${x.date} ${money(x.amountMinor, e.currency)}`, 'bank_transaction', x.id)), ...led.map((l) => rec(`${l.entry} (${l.date})`, 'journal_entry', l.entryId)), ...stmt],
@@ -133,7 +133,7 @@ export const bankReconciliation: OfflineBrain = async function* (input): Gen {
           draft: reconcilingItemDraft(
             { bankAccountId: ba.id, entityId, periodKey: pk, kind: 'unexplained', side: 'ledger', amountMinor: b.line.amountMinor, itemDate: b.line.date, description: `Unexplained bank ${b.line.amountMinor < 0 ? 'debit' : 'credit'}: ${desc}`.slice(0, 300), relatedItemType: 'bank_transaction', relatedItemId: b.line.id, requiresAdjustment: true },
             {
-              title: `Investigate unexplained bank ${b.line.amountMinor < 0 ? 'debit' : 'credit'} ${money(b.line.amountMinor, e.currency)}: ${desc.slice(0, 60)}`,
+              title: `Investigate unexplained bank ${b.line.amountMinor < 0 ? 'debit' : 'credit'} ${money(b.line.amountMinor, e.currency)}: ${clipText(desc, 60)}`,
               why: `${b.reason} Nothing in the ledger, the vendor master or the customer list explains it${b.possibleCounterparties.length ? ` (closest names: ${b.possibleCounterparties.join(', ')})` : ''}. Ask the bank or treasury what it is before booking anything; it stays open on the reconciliation until resolved.`,
               confidence: 0.6,
               evidence: [rec(`Bank line ${b.line.date}`, 'bank_transaction', b.line.id), ...stmt],
@@ -478,7 +478,7 @@ export const jeReview: OfflineBrain = async function* (input): Gen {
       type: 'propose',
       draft: findingDraft(
         { entityId, periodKey: pk, category: f.hits[0]!.test, severity, recommendation: f.hits.some((h) => h.test === 'self_approval') ? 'Have an independent approver review the support. If it cannot be supported, reverse it; either way, remove the ability to approve imported entries you uploaded.' : 'Review the support for this entry and document the business reason.', subjects: [{ type: 'journal_entry', id: f.jeId, label: f.jeNumber }], tests: f.hits.map((h) => h.test), score: f.score },
-        { title: `${severity === 'critical' ? 'Critical' : 'Risky'} entry ${f.jeNumber}: ${memo.slice(0, 70)} ${money(f.amountMinor, e.currency)}`, why: `${f.hits.map((h) => h.detail).join(' ')} Risk score ${f.score} (self-approval 50, threshold skirting 20, weekend 15, round amount 10).`, confidence: 0.95, evidence: [rec(`${f.jeNumber} prepared by ${f.preparedBy}, approved by ${f.approvedBy ?? 'nobody'}`, 'journal_entry', f.jeId)], dedupeKey: `jerisk:${f.jeId}` },
+        { title: `${severity === 'critical' ? 'Critical' : 'Risky'} entry ${f.jeNumber}: ${clipText(memo, 70)} ${money(f.amountMinor, e.currency)}`, why: `${f.hits.map((h) => h.detail).join(' ')} Risk score ${f.score} (self-approval 50, threshold skirting 20, weekend 15, round amount 10).`, confidence: 0.95, evidence: [rec(`${f.jeNumber} prepared by ${f.preparedBy}, approved by ${f.approvedBy ?? 'nobody'}`, 'journal_entry', f.jeId)], dedupeKey: `jerisk:${f.jeId}` },
       ),
     };
     n++;

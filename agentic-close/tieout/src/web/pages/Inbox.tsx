@@ -131,7 +131,7 @@ export function Inbox() {
             <Empty title={status === 'open' ? 'Nothing needs a decision' : 'No items'}>{status === 'open' ? 'When agents propose work that needs a person, it lands here.' : 'Try another filter.'}</Empty>
           ) : (
             items.map((p, i) => (
-              <div className="prop" key={p.id} data-row tabIndex={0} aria-selected={cursor === i} onFocus={() => setCursor(i)} onKeyDown={(e) => e.key === 'Enter' && setQuery('open', p.id)}>
+              <div className="prop" key={p.id} data-row data-active={cursor === i ? 'true' : undefined} aria-current={cursor === i ? 'true' : undefined} tabIndex={0} onFocus={() => setCursor(i)} onKeyDown={(e) => e.key === 'Enter' && setQuery('open', p.id)}>
                 {status === 'open' ? (
                   <input
                     type="checkbox"

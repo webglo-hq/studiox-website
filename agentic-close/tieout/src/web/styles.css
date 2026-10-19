@@ -855,6 +855,13 @@ textarea:focus-visible {
   color: var(--muted);
   margin-top: 2px;
 }
+.task .meta a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0 2px;
+}
 .tick {
   width: 22px;
   height: 22px;
@@ -943,6 +950,10 @@ textarea:focus-visible {
 }
 .prop:last-child {
   border-bottom: none;
+}
+.prop[data-active='true'] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .prop .title {
   font-weight: 600;

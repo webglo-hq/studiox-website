@@ -15,6 +15,7 @@ const PATTERNS: { id: string; re: RegExp }[] = [
   { id: 'approval_command', re: /\b(auto[- ]?approve|approve (all|every|this)|mark (as )?approved|bypass (review|approval|controls?)|skip (review|approval))\b/i },
   { id: 'payment_command', re: /\b(wire|transfer|send|pay)\b[^.]{0,30}\b(immediately|now|urgently|to (this|the following|new) account)\b/i },
   { id: 'agent_addressing', re: /\b(ai|llm|assistant|agent|model|chatgpt|claude)s?\b[^.]{0,25}\b(must|should|need to|are instructed|please)\b/i },
+  { id: 'agent_note', re: /\b(note|message|memo|instructions?)\s+(to|for)\s+(the\s+|any\s+|all\s+)?(ai|llm|assistant|automated|bot|agent|model)s?\b/i },
   { id: 'markup_injection', re: /<\/?\s*(system|instructions?|untrusted_data|tool_call|assistant)\b|\[\/?INST\]|<\|im_(start|end)\|>/i },
 ];
 
@@ -65,7 +66,17 @@ export function redactInstructions(s: string): string {
     if (m && (cut === -1 || m.index < cut)) cut = m.index;
   }
   if (cut === -1) return s;
-  return `${s.slice(0, cut).trim()} [instruction-like text withheld]`.trim();
+  return `${s.slice(0, cut).trim()} ${WITHHELD}`.trim();
+}
+
+const WITHHELD = '[instruction-like text withheld]';
+
+/** Shorten (already redacted) third-party text for a title without losing the withheld marker. */
+export function clipText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const i = s.indexOf(WITHHELD);
+  if (i === -1) return `${s.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+  return `${s.slice(0, Math.min(i, Math.max(0, max - 11))).trimEnd()} [withheld]`;
 }
 
 /** Escape anything that could terminate the data boundary. */

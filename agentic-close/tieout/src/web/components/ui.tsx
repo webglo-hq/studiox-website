@@ -320,7 +320,7 @@ export function Term({ id, children }: { id: string; children: ReactNode }) {
                   Rules: {data.axioms.slice(0, 3).map((a) => `${a.id} ${a.title}`).join(' · ')}
                 </p>
               ) : null}
-              <a href={`#/ontology?c=${encodeURIComponent(data.classId ?? data.id)}`} style={{ fontSize: 13 }}>
+              <a href={data.classId ? `#/ontology?class=${encodeURIComponent(data.classId)}` : '#/ontology?view=glossary'} style={{ fontSize: 13 }}>
                 Open in ontology
               </a>
             </>
