@@ -308,6 +308,10 @@ export function createServerApp(ctx: AppContext, opts: ServerOptions = {}) {
   app.get('/api/ontology/export.ttl', (c) => c.body(q.ontologyExport('ttl'), 200, { 'Content-Type': 'text/turtle; charset=utf-8', 'Content-Disposition': 'attachment; filename="tieout-ontology.ttl"' }));
   app.get('/api/audit', async (c) => c.json(await q.auditList(ctx, U(c), { limit: Number(c.req.query('limit') ?? 100), before: c.req.query('before') ? Number(c.req.query('before')) : undefined, action: c.req.query('action'), subject: c.req.query('subject') })));
   app.post('/api/audit/verify', async (c) => c.json(await q.auditVerify(ctx, U(c))));
+  app.get('/api/audit/export', async (c) => {
+    const doc = await q.auditExport(ctx, U(c));
+    return c.body(JSON.stringify(doc, null, 1), 200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': 'attachment; filename="tieout-audit-chain.json"' });
+  });
   app.get('/api/admin', async (c) => c.json(await q.adminView(ctx, U(c))));
   app.post('/api/admin/users', async (c) => c.json(await admin.inviteUser(ctx, U(c), await body(c, 5000))));
   app.post('/api/admin/users/:id/roles', async (c) => {

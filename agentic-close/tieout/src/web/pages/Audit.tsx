@@ -1,8 +1,8 @@
 /** Tamper-evident audit log: every mutation by people and agents, hash-chained (AX-AUD-01). */
-import { ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { api, ApiError, qs, type AuditData, type AuditVerify } from '../api';
-import { Badge, ErrorBox, Loading } from '../components/ui';
+import { Download, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { api, ApiError, apiText, qs, type AuditData, type AuditVerify } from '../api';
+import { Badge, Dialog, ErrorBox, Loading } from '../components/ui';
 import { can, useApp, useMe } from '../lib/app-state';
 import { dateTime } from '../lib/format';
 import { setQuery, useRoute } from '../lib/router';
@@ -35,6 +35,7 @@ export function Audit() {
   const [more, setMore] = useState(true);
   const [verify, setVerify] = useState<AuditVerify | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [exported, setExported] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -70,6 +71,14 @@ export function Audit() {
     }
   }
 
+  async function runExport() {
+    try {
+      setExported(await apiText('/audit/export'));
+    } catch (e) {
+      toast(e instanceof ApiError ? e.message : 'The export failed.', 'bad');
+    }
+  }
+
   if (error) return <ErrorBox error={error} />;
   return (
     <div>
@@ -82,6 +91,9 @@ export function Audit() {
         </div>
         {can(me, 'audit.verify') ? (
           <div className="actions">
+            <button className="btn" onClick={() => void runExport()}>
+              <Download className="icon" aria-hidden="true" /> Export chain
+            </button>
             <button className="btn primary" onClick={() => void runVerify()} disabled={verifying}>
               <ShieldCheck className="icon" aria-hidden="true" /> {verifying ? 'Verifying…' : 'Verify chain'}
             </button>
@@ -187,6 +199,61 @@ export function Audit() {
           ) : null}
         </section>
       )}
+      <ExportDialog text={exported} onClose={() => setExported(null)} />
     </div>
+  );
+}
+
+/** The exported chain: what it contains, and how an auditor verifies it without Tieout. */
+function ExportDialog({ text, onClose }: { text: string | null; onClose: () => void }) {
+  const doc = useMemo(() => {
+    if (!text) return null;
+    try {
+      return JSON.parse(text) as { count: number; head: string | null; verifiedOnExport: boolean; algorithm: string };
+    } catch {
+      return null;
+    }
+  }, [text]);
+  const url = useMemo(() => {
+    if (!text) return null;
+    try {
+      return URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    } catch {
+      return null; // blob URLs blocked (sandboxed frame): the summary stays on screen
+    }
+  }, [text]);
+  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
+  return (
+    <Dialog
+      open={!!text}
+      onClose={onClose}
+      title="Audit chain export"
+      actions={
+        <>
+          {url ? (
+            <a className="btn" href={url} download="tieout-audit-chain.json">
+              <Download className="icon" aria-hidden="true" /> Download
+            </a>
+          ) : null}
+          <button className="btn primary" onClick={onClose}>
+            Close
+          </button>
+        </>
+      }
+    >
+      {doc ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <p style={{ margin: 0 }}>
+            {doc.count.toLocaleString()} events, {doc.verifiedOnExport ? <Badge tone="good">intact</Badge> : <Badge tone="bad">broken</Badge>} on export. Head hash:
+          </p>
+          <p className="mono" style={{ margin: 0, fontSize: 12, wordBreak: 'break-all' }}>
+            {doc.head ?? '—'}
+          </p>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            Every hashed field is included, so the chain can be checked outside Tieout: <span className="mono">npm run verify:audit -- tieout-audit-chain.json</span>, or any SHA-256 tool following this rule: {doc.algorithm}.
+          </p>
+        </div>
+      ) : null}
+    </Dialog>
   );
 }

@@ -78,6 +78,13 @@
       .stats div { font-size: 14px; color: var(--muted); }
       .stats b { display: block; font: 700 30px/1.1 'JetBrains Mono', monospace; color: var(--ink); }
       .quote { font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 1.3; border-left: 4px solid var(--accent); padding-left: 18px; margin: 0; }
+      .plan { display: flex; flex-direction: column; gap: 6px; }
+      .plan.featured { border: 2px solid var(--accent); }
+      .plan .price { color: var(--ink); font-size: 15px; margin: 4px 0 2px; }
+      .plan .price b { font: 700 30px/1.1 'JetBrains Mono', ui-monospace, monospace; }
+      .plan ul.ticks { margin-top: 10px; }
+      .plan ul.ticks li { font-size: 15px; padding: 6px 0 6px 30px; }
+      .plan ul.ticks li::before { top: 6px; }
       footer { padding: 40px 0 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
       footer .wrap { display: flex; gap: 20px; justify-content: space-between; flex-wrap: wrap; }
       @media (max-width: 900px) {
@@ -102,6 +109,7 @@
           <a href="#controls">Controls</a>
           <a href="#ontology">Ontology</a>
           <a href="#open">Integrations</a>
+          <a href="#plans">Plans</a>
         </nav>
         <a class="btn primary" href="./demo/index.html">Try the demo</a>
       </div>
@@ -191,6 +199,50 @@
             <div class="card"><h3>MCP and open data</h3><p>An MCP server gives Claude read access and agent runs with scoped tokens. The ontology exports as OWL in JSON-LD and Turtle.</p></div>
           </div>
           <blockquote class="quote" style="margin-top:44px">“Small, certain items post themselves. Everything else waits for the right person, with the reason written down.”</blockquote>
+        </div>
+      </section>
+
+      <section class="band" id="plans" aria-labelledby="h-plans">
+        <div class="wrap">
+          <div class="kicker">Plans</div>
+          <h2 id="h-plans">Start with drafts. <em>Earn autonomy.</em></h2>
+          <p style="color:var(--ink-2);max-width:640px">Every plan includes all ten close skills, the ontology, segregation of duties, approval limits and the hash-chained audit trail. Plans differ in how far agents may act on their own, how many entities you close, and where your data lives.</p>
+          <div class="grid g3 plans" style="margin-top:28px">
+            <div class="card plan">
+              <h3>Close</h3>
+              <p class="price"><b>$1,200</b> / month</p>
+              <p>One legal entity, up to 10 people.</p>
+              <ul class="ticks">
+                <li>Agents draft; people approve (autonomy up to L1)</li>
+                <li>Bank, card, AP and payroll imports with provenance</li>
+                <li>Reconciliation workbench, flux review, close package</li>
+                <li>Two-factor sign-in with recovery codes</li>
+              </ul>
+            </div>
+            <div class="card plan featured">
+              <h3>Group</h3>
+              <p class="price"><b>$3,500</b> / month</p>
+              <p>Up to five entities and 40 people.</p>
+              <ul class="ticks">
+                <li>Small, certain items post themselves, with sampled review (L2)</li>
+                <li>Intercompany, FX remeasurement and consolidation</li>
+                <li>Single sign-on (OpenID Connect) and access by entity</li>
+                <li>MCP server and API tokens for Claude</li>
+              </ul>
+            </div>
+            <div class="card plan">
+              <h3>Enterprise</h3>
+              <p class="price"><b>Custom</b></p>
+              <p>Any number of entities, in your PostgreSQL.</p>
+              <ul class="ticks">
+                <li>Post-hoc review (L3) where a skill’s manifest allows it</li>
+                <li>Your own skills, with golden evals gating every change</li>
+                <li>Live Claude with your keys and budgets, per skill</li>
+                <li>Row-level security in your database; audit evidence export</li>
+              </ul>
+            </div>
+          </div>
+          <p class="note">Prices are illustrative: Tieout is a prototype, and the demo company is fictional.</p>
           <div class="ctas" style="margin-top:28px"><a class="btn primary" href="./demo/index.html">Close September with the demo company</a></div>
         </div>
       </section>

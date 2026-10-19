@@ -39,6 +39,7 @@
     "ads": "tsx scripts/render-ads.ts",
     "mcp": "tsx src/mcp/main.ts",
     "audit:deps": "npm audit --audit-level=high",
+    "verify:audit": "tsx scripts/verify-audit-export.ts",
     "verify": "npm run gen:check && npm run typecheck && npm run lint && npm test && npm run evals"
   },
   "dependencies": {

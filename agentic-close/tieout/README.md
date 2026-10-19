@@ -110,7 +110,8 @@ self-approved Sunday journal entry; and six significant P&L variances across bot
 * **Ledger and controls**: double-entry ledger in minor units, multi-entity with consolidation (closing
   and average rates, CTA, eliminations), close checklist with workday calendar, reconciliations, flux,
   close package with hashed sign-off; database triggers enforce balanced, immutable entries, open
-  periods, maker-checker and the hash-chained audit log; row-level security isolates tenants.
+  periods, maker-checker and the hash-chained audit log, which auditors can export and verify outside
+  the app (`npm run verify:audit -- file.json`); row-level security isolates tenants.
 * **Enterprise auth**: scrypt, server-side sessions, CSRF + Origin checks, rate limits, RBAC (8 roles,
   34 permissions) with SoD and approval limits, TOTP MFA with recovery codes, OpenID Connect SSO,
   entity scoping, administrator resets of passwords and two-factor, API tokens for MCP.

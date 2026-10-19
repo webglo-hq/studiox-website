@@ -4,6 +4,8 @@
  * locked; then what a locked period means and how it reopens.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { verifyAuditChain } from '../../src/core/audit/chain';
+import type { AuditRecord } from '../../src/core/store/types';
 import { SCENARIO } from '../../src/packs/accounting/seed/company';
 import { testApp, type TestApp } from '../support/app';
 import { closeTheMonth, type CloseOutcome } from '../support/full-close';
@@ -57,6 +59,22 @@ describe('closing September end to end', () => {
     expect(verifyAsStaff.status).toBe(403);
     const verify = await out.people.casey!.post<{ ok: boolean }>('/api/audit/verify', {});
     expect(verify.body.ok).toBe(true);
+  });
+
+  it('exports the whole audit chain for verification outside Tieout, which catches any edit', async () => {
+    expect((await out.people.sam!.get('/api/audit/export')).status).toBe(403);
+    const r = await out.people.casey!.get<{ format: string; count: number; head: string; verifiedOnExport: boolean; records: AuditRecord[] }>('/api/audit/export');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-disposition')).toContain('tieout-audit-chain.json');
+    expect(r.body).toMatchObject({ format: 'tieout.audit-chain.v1', verifiedOnExport: true });
+    expect(r.body.records).toHaveLength(r.body.count);
+    expect(verifyAuditChain(r.body.records)).toMatchObject({ ok: true, headHash: r.body.head });
+    // the decision trail is in it: who locked September and why things were approved
+    expect(r.body.records.some((e) => e.action === 'period.lock')).toBe(true);
+    const tampered = r.body.records.map((e) => (e.action === 'period.lock' ? { ...e, summary: 'nothing happened' } : e));
+    const v = verifyAuditChain(tampered);
+    expect(v.ok).toBe(false);
+    expect(v.firstBadSeq).toBe(r.body.records.find((e) => e.action === 'period.lock')!.seq);
   });
 });
 

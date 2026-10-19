@@ -501,6 +501,32 @@ export async function auditVerify(ctx: AppContext, u: RequestUser) {
   });
 }
 
+export const AUDIT_EXPORT_FORMAT = 'tieout.audit-chain.v1';
+
+/**
+ * The whole chain with every hashed field, for an auditor to verify outside Tieout
+ * (`npm run verify:audit -- <file>` or any SHA-256 tool, following `algorithm`).
+ */
+export async function auditExport(ctx: AppContext, u: RequestUser) {
+  requirePermission(u, 'audit.verify');
+  requireGroupAccess(u, 'The audit chain');
+  return ctx.db.tx(u.tenantId, async (tx) => {
+    const rows = (await tx.find('audit_log', {}, { orderBy: [['seq', 'asc']] })) as unknown as AuditRecord[];
+    const v = verifyAuditChain(rows);
+    return {
+      format: AUDIT_EXPORT_FORMAT,
+      algorithm: 'hash_n = SHA-256(hash_(n-1) + "\\n" + canonical JSON of the record without prev_hash and hash: keys sorted, no whitespace); hash_0 = 64 zeros',
+      tenantId: u.tenantId,
+      exportedAt: ctx.clock.now().toISOString(),
+      exportedBy: u.actor.label,
+      verifiedOnExport: v.ok,
+      count: rows.length,
+      head: rows[rows.length - 1]?.hash ?? null,
+      records: rows.map((r) => ({ id: r.id, tenant_id: r.tenant_id, seq: r.seq, at: r.at, actor_type: r.actor_type, actor_id: r.actor_id, actor_label: r.actor_label, on_behalf_of: r.on_behalf_of, action: r.action, subject_type: r.subject_type, subject_id: r.subject_id, entity_id: r.entity_id, summary: r.summary, data: r.data, ip: r.ip, prev_hash: r.prev_hash, hash: r.hash })),
+    };
+  });
+}
+
 /** A user's entity scope as entity codes (null = every entity), from their role grants. */
 function scopeOf(grants: { scope_entity_id: string | null }[], entities: { id: string; code: string }[]): string[] | null {
   if (!grants.length || grants.some((g) => g.scope_entity_id === null)) return null;
