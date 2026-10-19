@@ -484,7 +484,7 @@ export function AgentInbox({ route, openId }: { route: Route; openId: string | n
                         <Bot size={12} aria-hidden /> {p.run.taskCode ?? p.skillId}
                         {p.entityCode ? ` · ${p.entityCode}` : ''}
                         {!p.canApprove.ok && decidable && p.canApprove.reasons[0] ? ` · ${p.canApprove.reasons[0]}` : ''}
-                        {p.canApprove.ok && !p.canBulkApprove.ok && decidable ? ` · ${p.canBulkApprove.reasons.join(' ')}` : ''}
+                        {p.canApprove.ok && !p.canBulkApprove.ok && decidable ? ` · ${p.canBulkApprove.reasons[0]} ${p.canBulkApprove.reasons.at(-1)}` : ''}
                       </div>
                     </td>
                     <td>

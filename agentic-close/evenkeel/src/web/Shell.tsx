@@ -393,9 +393,7 @@ function ShellInner() {
             <button type="button" className="search-btn" onClick={() => setPalette(true)} aria-keyshortcuts="/">
               <Search size={16} aria-hidden />
               <span className="label small">Go to or look up…</span>
-              <span aria-hidden>
-                <Kbd>/</Kbd>
-              </span>
+              <Kbd decorative>/</Kbd>
             </button>
           </header>
           <main id="main" ref={main} tabIndex={-1} style={{ outline: 'none' }}>

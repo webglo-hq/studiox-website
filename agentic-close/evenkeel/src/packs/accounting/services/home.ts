@@ -53,14 +53,16 @@ async function waitingOn(ctx: ServiceContext, input: { ready: LockReadiness; tas
     const first = visible[0];
     if (first) parts.push(`${count(visible.length, 'agent proposal')}${visible.length === 1 ? ` (${first.title})` : ''} ${verb(visible.length, 'waits', 'wait')} for ${names(approvers) || 'an eligible approver'}.`);
   }
+  // Only work someone can do now: items still waiting on agent proposals are covered above.
   const unreviewed = input.recs.filter((r) => r.status !== 'reviewed');
   if (failing.has('recs') && unreviewed.length) {
-    const toCertify = unreviewed.filter((r) => r.status !== 'prepared');
+    const prepared = (code: string | null) => !input.tasks.some((t) => t.code === code && t.skillId && t.runs === 0);
+    const toCertify = unreviewed.filter((r) => r.status !== 'prepared' && r.unexplained === 0 && r.pendingProposals === 0 && prepared(r.taskCode));
     const toReview = unreviewed.filter((r) => r.status === 'prepared');
     if (toCertify.length) parts.push(`${count(toCertify.length, 'reconciliation')} ${verb(toCertify.length, 'waits', 'wait')} for certification by ${names(toCertify.map((r) => r.owner))}.`);
     if (toReview.length) parts.push(`${count(toReview.length, 'reconciliation')} ${verb(toReview.length, 'waits', 'wait')} for review by ${names(toReview.map((r) => r.reviewer))}.`);
   }
-  const reviews = input.tasks.filter((t) => t.status === 'ready_for_review');
+  const reviews = input.tasks.filter((t) => t.status === 'ready_for_review' && t.pendingProposals === 0 && t.recs.every((r) => r.status === 'reviewed'));
   if (failing.has('tasks') && reviews.length) parts.push(`${count(reviews.length, 'task')} ${verb(reviews.length, 'waits', 'wait')} for review by ${names(reviews.map((t) => t.reviewer))}.`);
   for (const c of input.ready.checks.filter((x) => !x.ok && !['proposals', 'recs', 'tasks'].includes(x.id))) parts.push(`${c.label}: ${c.detail.charAt(0).toLowerCase()}${c.detail.slice(1)}.`);
   return parts.slice(0, 3).join(' ') || 'Nothing needs you right now.';
@@ -88,6 +90,7 @@ export async function myClose(ctx: ServiceContext) {
   // The assigned reviewer reviews, unless they prepared the item themselves.
   const reviewerIs = (assigned: PersonRef | null, preparer: string | null | undefined) => !assigned || assigned.id === preparer || assigned.id === me;
   const myTasks = cal.tasks.filter((t) => t.owner?.id === me && t.status !== 'complete');
+  const workable = myTasks.filter((t) => !t.blockedBy.length);
   const toReview: TaskView[] = [];
   if (can('close.task.review')) {
     for (const t of cal.tasks.filter((x) => x.status === 'ready_for_review' && (x.preparedBy?.id ?? x.owner?.id) !== me && reviewerIs(x.reviewer, x.preparedBy?.id ?? x.owner?.id))) {
@@ -140,7 +143,8 @@ export async function myClose(ctx: ServiceContext) {
     const stale = (await getPackage(ctx, draftPkg.id)).stale;
     next = step({ title: stale ? 'Refresh and sign the close package' : 'Approve the close package', detail: stale ? `The close moved on since version ${draftPkg.version} was generated. Refresh it to the current figures and status, review it, then sign.` : `Version ${draftPkg.version} is ready for your signature.`, href: '#/package', action: 'package', cta: 'Open the package' });
   } else if (ready.ok && can('period.lock')) next = step({ title: `Lock ${label}`, detail: 'Every check passes. Locking prevents any further posting to the month.', href: '#/cockpit', action: 'lock', cta: 'Go to lock' });
-  else if (myTasks.length) next = step({ title: `Work on ${count(myTasks.length, 'task')} you own`, detail: myTasks[0]!.blockedBy.length ? `${myTasks[0]!.title} is waiting on ${myTasks[0]!.blockedBy.map((b) => b.title).join(', ')}.` : `${myTasks[0]!.title} is due ${myTasks[0]!.dueLabel}.`, href: '#/cockpit', action: 'none', cta: null, tone: 'calm' });
+  // Owned tasks still waiting on upstream work are not something to work on yet: say who the close waits on.
+  else if (workable.length) next = step({ title: `Work on ${count(workable.length, 'task')} you own`, detail: `${workable[0]!.title} is due ${workable[0]!.dueLabel}.`, href: '#/cockpit', action: 'none', cta: null, tone: 'calm' });
   else if (ready.ok) next = step({ title: `${label} is ready to lock`, detail: `Every check passes. ${names(await people('period.lock'))} can lock the month.`, href: '#/cockpit', action: 'none', cta: null, kicker: WAITING, tone: 'calm' });
   else next = step({ title: 'Nothing for you right now', detail: await waitingOn(ctx, { ready, tasks: cal.tasks, recs, periodKey }), href: '#/cockpit', action: 'none', cta: null, kicker: WAITING, tone: 'calm' });
 

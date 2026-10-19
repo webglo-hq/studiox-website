@@ -82,6 +82,13 @@ describe('what to do next', () => {
     }
     const alex = await myClose(await as(s, 'alex'));
     expect(alex.next.detail).toMatch(/agent proposals wait for .*(Priya Natarajan|Jordan Blake)/);
+    // The controller started every run and her own task waits on upstream work: she is told who
+    // the close waits on, not to "work on" a task she cannot start.
+    const casey = await myClose(await as(s, 'casey'));
+    expect(casey.next.kicker).toBe('Waiting on others');
+    expect(casey.next.title).not.toMatch(/Work on/);
+    expect(casey.next.detail).toMatch(/agent proposals wait for .*Priya Natarajan/);
+    expect(casey.next.detail).not.toMatch(/Casey Morgan/);
   }, 120_000);
 
   it('E-2: when approvals that do not restart the agents unblock tasks, a close lead is told to continue the close first', async () => {
