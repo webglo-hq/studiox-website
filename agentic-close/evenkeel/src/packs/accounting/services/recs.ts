@@ -1,6 +1,7 @@
 import type { Row } from '../../../framework/store/schema';
 import { stableStringify } from '../../../framework/util/canonical';
 import { addDays, addMonths, periodEnd, periodStart } from '../../../framework/util/dates';
+import { formatMoney } from '../../../framework/util/money';
 import { AppError } from '../../../framework/util/errors';
 import { sha256Hex } from '../../../framework/util/sha256';
 import { scanForInjection } from '../../../framework/util/text';
@@ -450,7 +451,7 @@ function certifyReadiness(ctx: ServiceContext, rec: RecRow, s: RecSummary): { ok
   const reasons: string[] = [];
   if (rec.status === 'prepared' || rec.status === 'reviewed') reasons.push('Already certified.');
   if (!s.hasStatement) reasons.push('No bank statement for the period has been imported.');
-  if (rec.unexplained !== 0) reasons.push(`There is an unexplained difference of ${(Math.abs(rec.unexplained) / 100).toFixed(2)}.`);
+  if (rec.unexplained !== 0) reasons.push(`There is an unexplained difference of ${formatMoney(Math.abs(rec.unexplained), s.currency)}.`);
   if (s.pendingProposals > 0) reasons.push(`${s.pendingProposals} agent proposal${s.pendingProposals === 1 ? '' : 's'} for this reconciliation still need a decision.`);
   if (rec.rec_type === 'bank' && s.unmatchedBank > 0 && rec.unexplained !== 0) reasons.push(`${s.unmatchedBank} statement line${s.unmatchedBank === 1 ? ' is' : 's are'} not matched or explained.`);
   if (!ctx.actor.permissions.has('rec.prepare') && !ctx.actor.permissions.has('*')) reasons.push('Your role cannot certify reconciliations.');

@@ -40,6 +40,44 @@ export function humanize(s: string | null | undefined): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+const ACTION_EXACT: Record<string, string> = {
+  'auth.login': 'Signed in',
+  'auth.logout': 'Signed out',
+  'auth.mfa.verified': 'Two-step code accepted',
+  'seed.loaded': 'Demo data loaded',
+};
+
+/** Audit action codes in plain words: "je.posted" → "Journal entry posted". */
+const ACTION_SUBJECTS: [string, string][] = [
+  ['agent.proposal.', 'Proposal'],
+  ['agent.run.', 'Agent run'],
+  ['je.', 'Journal entry'],
+  ['rec.item.', 'Reconciling item'],
+  ['rec.', 'Reconciliation'],
+  ['flux.', 'Flux explanation'],
+  ['package.', 'Close package'],
+  ['period.', 'Period'],
+  ['task.', 'Task'],
+  ['issue.', 'Exception'],
+  ['admin.user.', 'User'],
+  ['admin.roles.', 'Roles'],
+  ['admin.sod.', 'Segregation-of-duties rules'],
+  ['auth.mfa.', 'Two-step sign-in'],
+  ['auth.password.', 'Password'],
+  ['integration.', 'File'],
+  ['settings.', 'Settings'],
+  ['skill.policy.', 'Skill policy'],
+  ['skill.', 'Skill'],
+];
+
+export function actionLabel(action: string): string {
+  if (ACTION_EXACT[action]) return ACTION_EXACT[action];
+  for (const [prefix, subject] of ACTION_SUBJECTS) {
+    if (action.startsWith(prefix)) return `${subject} ${action.slice(prefix.length).replace(/[_.-]+/g, ' ').trim()}`;
+  }
+  return humanize(action);
+}
+
 export function confidenceLabel(c: number): string {
   if (c >= 0.95) return 'Very high';
   if (c >= 0.85) return 'High';

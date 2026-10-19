@@ -1,5 +1,5 @@
 import { addMonths, diffDays, maxDate, minDate, periodEnd, periodStart } from '../../../framework/util/dates';
-import { roundHalfAwayFromZero } from '../../../framework/util/money';
+import { formatMoney, roundHalfAwayFromZero } from '../../../framework/util/money';
 import type { BusinessCalendar } from '../../../framework/util/workdays';
 
 /** Pure accrual detection (unrecorded liabilities). */
@@ -73,7 +73,7 @@ function median(xs: number[]): number {
  * Vendors that billed in at least `minHits` of the previous `lookback` months but have no
  * bill covering the current period → accrue the median of recent amounts.
  */
-export function detectRecurringGaps(bills: BillFact[], periodKey: string, lookback = 4, minHits = 3): AccrualCandidate[] {
+export function detectRecurringGaps(bills: BillFact[], periodKey: string, lookback = 4, minHits = 3, currency = 'USD'): AccrualCandidate[] {
   const byVendor = new Map<string, BillFact[]>();
   for (const b of bills) byVendor.set(b.vendorId, [...(byVendor.get(b.vendorId) ?? []), b]);
   const window = Array.from({ length: lookback }, (_, i) => addMonths(periodKey, -(i + 1)));
@@ -97,7 +97,7 @@ export function detectRecurringGaps(bills: BillFact[], periodKey: string, lookba
       accountId: latest.accountId,
       departmentId: latest.departmentId,
       confidence: Math.round(Math.max(0.6, Math.min(0.95, 0.95 - cv * 0.6)) * 100) / 100,
-      basis: `Billed in ${hits.length} of the last ${lookback} months (median ${median(amounts)} cents, variation ${Math.round(cv * 100)}%) but nothing yet for ${periodKey}.`,
+      basis: `Billed in ${hits.length} of the last ${lookback} months (median ${formatMoney(median(amounts), currency)}, variation ${Math.round(cv * 100)}%) but nothing yet for ${periodKey}.`,
       refs: vb.slice(0, 3).map((b) => ({ type: 'bill', id: b.id, label: `${b.billNumber} (${b.billDate})` })),
     });
   }

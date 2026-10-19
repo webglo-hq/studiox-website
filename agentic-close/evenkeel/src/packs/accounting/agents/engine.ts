@@ -232,8 +232,8 @@ export class AgentEngine {
   }
 
   /** Approve or reject one or more proposals; each is decided independently. */
-  async decide(input: { proposalIds: string[]; decision: 'approve' | 'reject'; reason?: string | null; userId: string; background?: boolean }): Promise<{ results: DecisionOutcome[]; continued: RunResult | null; continuing: boolean }> {
-    const actor = await humanDelegate(this.opts.db, this.opts.tenantId, input.userId);
+  async decide(input: { proposalIds: string[]; decision: 'approve' | 'reject'; reason?: string | null; userId: string; background?: boolean; actorLabel?: string | null }): Promise<{ results: DecisionOutcome[]; continued: RunResult | null; continuing: boolean }> {
+    const actor = await humanDelegate(this.opts.db, this.opts.tenantId, input.userId, input.actorLabel);
     const results: DecisionOutcome[] = [];
     // Decide in the order the agents proposed, whatever order people selected them in, so an
     // item and the entry that corrects it are applied as the agent sequenced them.
@@ -319,8 +319,8 @@ export class AgentEngine {
     while (this.background.size) await Promise.all([...this.background.values()].map((b) => b.promise));
   }
 
-  async review(proposalId: string, userId: string, note?: string | null) {
-    return reviewProposal(this.runtime, { proposalId, actor: await humanDelegate(this.opts.db, this.opts.tenantId, userId), note: note ?? null });
+  async review(proposalId: string, userId: string, note?: string | null, actorLabel?: string | null) {
+    return reviewProposal(this.runtime, { proposalId, actor: await humanDelegate(this.opts.db, this.opts.tenantId, userId, actorLabel), note: note ?? null });
   }
 
   /** Resume runs interrupted by a crash or restart (idempotent: recorded tool calls replay). */

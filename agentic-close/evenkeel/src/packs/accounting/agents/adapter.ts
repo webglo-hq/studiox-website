@@ -50,7 +50,8 @@ export function createAdapter(deps: AdapterDeps): DomainAdapter<AgentCtx> {
     let svc;
     let decider = null;
     if (actor.kind === 'user' && actor.userId) {
-      decider = await loadActor(db, tenantId, actor.userId);
+      // Keep the delegate's label, which may name the channel (e.g. "via API token").
+      decider = { ...(await loadActor(db, tenantId, actor.userId)), label: actor.label };
       svc = makeContext(db, tenantId, decider, clock);
     } else {
       svc = agentServiceContext(db, tenantId, clock, run, actor, requester);

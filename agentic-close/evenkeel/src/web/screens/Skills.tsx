@@ -130,6 +130,8 @@ function AutonomyEditor({ d }: { d: Detail }) {
   );
 }
 
+const KIND_PLURAL: Record<string, string> = { rec_match: 'Reconciliation matches', reconciling_item: 'Reconciling items', journal_entry: 'Journal entries', coding: 'Transaction codings', prepaid_schedule: 'Prepaid schedules', fixed_asset: 'Fixed assets' };
+
 function PolicyEditor({ d }: { d: Detail }) {
   const { can } = useSession();
   const current = d.versions.find((v) => v.current);
@@ -146,6 +148,7 @@ function PolicyEditor({ d }: { d: Detail }) {
   const preview = useApi('skills.previewRules', { text: debounced }, { keepPrevious: true, staleTime: 60_000 });
   const save = useAction('skills.updatePolicy', { success: (o) => `Policy version ${o.policy.version} saved.`, onSuccess: () => setNote('') });
   const editable = can('skill.policy.edit');
+  const perKind = Object.entries(d.policy.thresholds).filter(([k]) => k.startsWith('autoPostBelow:'));
   const thresholds = { autoPostBelow: Math.round(Number(autoPost) * 100), minConfidence: Number(minConf) / 100, sampleRate: Number(sample) / 100 };
   const valid = Number.isFinite(thresholds.autoPostBelow) && thresholds.autoPostBelow >= 0 && thresholds.minConfidence > 0 && thresholds.minConfidence <= 1 && thresholds.sampleRate >= 0 && thresholds.sampleRate <= 1;
   const changed = text !== (current?.rulesText ?? '') || thresholds.autoPostBelow !== d.policy.autoPostBelow || Math.abs(thresholds.minConfidence - d.policy.minConfidence) > 1e-9 || Math.abs(thresholds.sampleRate - d.policy.sampleRate) > 1e-9;
@@ -189,6 +192,11 @@ function PolicyEditor({ d }: { d: Detail }) {
             <input id="th-sample" className="input num" inputMode="numeric" value={sample} onChange={(e) => setSample(e.target.value)} readOnly={!editable} />
           </Field>
         </div>
+        {perKind.length > 0 && (
+          <Notice tone="info" title="Limits for specific kinds of proposal">
+            {perKind.map(([k, v]) => `${KIND_PLURAL[k.slice('autoPostBelow:'.length)] ?? humanize(k.slice('autoPostBelow:'.length))}: auto-post below ${money(v)}`).join(' · ')}. Set in the skill manifest; at or above materiality nothing posts without a person.
+          </Notice>
+        )}
         {editable && changed && (
           <>
             <Field label="Change note" htmlFor="pol-note" help="Required. Shown in the policy history and the audit log.">

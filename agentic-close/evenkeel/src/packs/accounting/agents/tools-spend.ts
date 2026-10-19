@@ -270,7 +270,7 @@ export const detectAccrualCandidates = defineTool({
       const subsequentVendors = new Set(subsequent.map((c) => c.vendorId));
       // Recurring detection groups bills by service month, so a bill received after month end
       // for this month's service already counts; vendors covered by an exact bill are skipped.
-      const recurring = detectRecurringGaps(bills, ctx.periodKey, lookback, minHits).filter((c) => !subsequentVendors.has(c.vendorId ?? ''));
+      const recurring = detectRecurringGaps(bills, ctx.periodKey, lookback, minHits, e.functional_currency).filter((c) => !subsequentVendors.has(c.vendorId ?? ''));
       for (const c of [...grni, ...subsequent, ...recurring]) {
         if (c.vendorId && accrued.has(c.vendorId)) continue;
         const a = c.accountId ? accs.get(c.accountId) : undefined;

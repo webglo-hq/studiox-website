@@ -252,7 +252,18 @@ function layout(g: Graph, width: number, height: number): Map<string, { x: numbe
       n.vy *= 0.55;
     }
   }
-  return new Map(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+  // Fit the layout to the canvas. Bounds come from the 3rd–97th percentiles so a few
+  // loosely connected classes cannot shrink the rest to a dot; those few sit on the edge.
+  const pct = (vals: number[], p: number) => [...vals].sort((a, b) => a - b)[Math.min(vals.length - 1, Math.max(0, Math.round((vals.length - 1) * p)))]!;
+  const xs = nodes.map((n) => n.x);
+  const ys = nodes.map((n) => n.y);
+  const [x0, x1, y0, y1] = [pct(xs, 0.03), pct(xs, 0.97), pct(ys, 0.03), pct(ys, 0.97)];
+  const pad = 60;
+  const s = Math.min((width - 2 * pad) / Math.max(1, x1 - x0), (height - 2 * pad) / Math.max(1, y1 - y0));
+  const ox = (width - (x1 - x0) * s) / 2;
+  const oy = (height - (y1 - y0) * s) / 2;
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  return new Map(nodes.map((n) => [n.id, { x: clamp(ox + (n.x - x0) * s, 16, width - 16), y: clamp(oy + (n.y - y0) * s, 16, height - 16) }]));
 }
 
 function GraphView({ modules }: { modules: string[] }) {

@@ -7,6 +7,7 @@ import { audit } from '../packs/accounting/domain/audit';
 import { makeContext, systemActor } from '../packs/accounting/domain/context';
 import { loadActor } from '../packs/accounting/domain/rbac';
 import { whoAmI } from '../packs/accounting/services/admin';
+import { verifyApiToken } from '../packs/accounting/services/api-tokens';
 import { identityProviders } from './auth/identity';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from './auth/password';
 import type { SecretBox } from './auth/secrets';
@@ -36,6 +37,8 @@ export interface HttpDeps {
 
 const MAX_BODY = 6 * 1024 * 1024;
 const LOCK_AFTER = 5;
+/** Methods an API token may never call. */
+const TOKEN_FORBIDDEN = /^(account\.|admin\.(set|update)|skills\.(updatePolicy|setAutonomy))/;
 const LOCK_MINUTES = 15;
 
 type AttemptReason = 'ok' | 'bad_credentials' | 'locked' | 'disabled' | 'rate_limited' | 'mfa_required' | 'mfa_failed' | 'mfa_ok';
@@ -313,7 +316,34 @@ export function createHandler(deps: HttpDeps) {
     sendJson(res, 200, { ok: true, csrfToken: csrfTokenFor(rotated.row, secrets) });
   }
 
+  /**
+   * API-token calls (MCP server, scripts): `Authorization: Bearer ekt_…`. The token acts as its
+   * owner with the same roles, SoD rules and audit trail. Bearer credentials are never sent
+   * automatically by a browser, so these calls need no cookie, Origin or CSRF checks; they
+   * cannot manage tokens, users, roles, settings or skill policies.
+   */
+  async function rpcWithToken(req: IncomingMessage, res: ServerResponse, name: string, presented: string) {
+    if (!isMethod(name)) throw new HttpError(404, 'NOT_FOUND', `Unknown method ${name}`);
+    const t = await verifyApiToken(env.db, env.tenantId, presented, now());
+    if (!t) {
+      // Failed attempts draw on a per-IP budget, so guessing is throttled.
+      const wait = limiter.take('login_ip', `token:${clientIp(req)}`);
+      if (wait) throw new HttpError(429, 'RATE_LIMITED', 'Too many attempts.', { retryAfter: wait });
+      throw new HttpError(401, 'UNAUTHENTICATED', 'The API token is invalid, expired or revoked.');
+    }
+    if (TOKEN_FORBIDDEN.test(name)) throw new HttpError(403, 'FORBIDDEN', 'This action needs a signed-in session in the web app; API tokens cannot do it.');
+    const info = methodInfo(name);
+    if (info.mutates && !t.scopes.includes('write')) throw new HttpError(403, 'FORBIDDEN', 'This API token is read-only.');
+    const wait = limiter.take(info.expensive ? 'expensive' : 'api', `token:${t.tokenId}`);
+    if (wait) throw new HttpError(429, 'RATE_LIMITED', 'You are going a little fast. Try again in a moment.', { retryAfter: wait });
+    const input = await readJson(req);
+    const data = await invoke(env, { userId: t.userId, ip: clientIp(req), via: `API token "${t.name}"` }, name, input);
+    sendJson(res, 200, { ok: true, data });
+  }
+
   async function rpc(req: IncomingMessage, res: ServerResponse, name: string) {
+    const bearer = /^Bearer\s+(\S+)$/i.exec(str(req.headers.authorization, 200))?.[1];
+    if (bearer) return rpcWithToken(req, res, name, bearer);
     checkOrigin(req);
     if (!isMethod(name)) throw new HttpError(404, 'NOT_FOUND', `Unknown method ${name}`);
     const info = methodInfo(name);

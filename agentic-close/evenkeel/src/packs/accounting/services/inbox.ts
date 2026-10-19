@@ -5,8 +5,14 @@ import { hasPermission, requirePermission, withDb, type ServiceContext } from '.
 import { reverseEntry } from '../domain/ledger';
 import { accounts, dimensionById, entities } from '../domain/refdata';
 import { formatMoney } from '../../../framework/util/money';
+import { closeOntology } from '../ontology';
 import type { EkSchema } from '../store';
 import { peopleMap, type PersonRef } from './common';
+
+/** Ontology ids (ek:Existence) shown as their plain labels (Existence). */
+function termLabel(id: string): string {
+  return closeOntology().explain(id)?.label ?? id.replace(/^ek:/, '');
+}
 
 /**
  * The agent inbox: proposals waiting for people, post-hoc review queues and decided history,
@@ -162,7 +168,7 @@ function previewOf(kind: string, payload: Record<string, unknown>, currency: str
         drivers: ((P.drivers ?? []) as { label: string; kind: string; amount: number }[]).map((d) => ({ label: d.label, kind: d.kind, amount: d.amount })),
       };
     case 'issue':
-      return { fields: [f('Category', str(P.category).replace(/_/g, ' ')), f('Severity', str(P.severity)), f('Description', str(P.description)), f('Recommended action', str(P.recommendedAction)), ...(P.assertions?.length ? [f('Assertions at risk', (P.assertions as string[]).join(', '))] : [])], lines: null, drivers: null };
+      return { fields: [f('Category', str(P.category).replace(/_/g, ' ')), f('Severity', str(P.severity)), f('Description', str(P.description)), f('Recommended action', str(P.recommendedAction)), ...(P.assertions?.length ? [f('Assertions at risk', (P.assertions as string[]).map(termLabel).join(', '))] : [])], lines: null, drivers: null };
     case 'prepaid_schedule':
       return { fields: [f('Entity', ent(P.entityId)), f('Description', str(P.description)), f('Total', m(P.total)), f('Starts', str(P.startPeriod)), f('Months', str(P.months)), f('Prepaid account', acct(P.prepaidAccountId)), f('Expense account', acct(P.expenseAccountId))], lines: null, drivers: null };
     case 'fixed_asset':

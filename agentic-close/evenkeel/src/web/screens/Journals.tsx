@@ -1,7 +1,7 @@
 import { ArrowLeft, Bot, Check, CircleCheck, CircleX, FileText, Plus, Trash2, Undo2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useAction, useApi } from '../lib/api';
-import { date, humanize, money, period, plural, when } from '../lib/format';
+import { actionLabel, date, humanize, money, period, plural, when } from '../lib/format';
 import { href, navigate, setQuery, type Route } from '../lib/router';
 import { useSession } from '../lib/session';
 import { Badge, Button, Card, Dialog, Empty, Field, Kv, LinkButton, Money, Notice, PageHead, Query, Status } from '../ui/kit';
@@ -320,7 +320,7 @@ function EntryDetail({ id }: { id: string }) {
                     <ol className="stack small" style={{ margin: 0, paddingLeft: 18, gap: 6 }}>
                       {d.audit.map((a) => (
                         <li key={a.seq}>
-                          <strong>{humanize(a.action)}</strong> <span className="muted">by {a.actor ?? a.actorType} · {when(a.at)}</span>
+                          <strong>{actionLabel(a.action)}</strong> <span className="muted">by {a.actor ?? a.actorType} · {when(a.at)}</span>
                         </li>
                       ))}
                     </ol>

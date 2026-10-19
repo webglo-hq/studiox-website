@@ -36,9 +36,10 @@ export async function delegatedActorFor(db: EkDb, tenantId: string, requesterId:
   return { kind: 'agent', userId: requesterId, label: `${skill.manifest.title} agent for ${user.label}`, permissions: perms };
 }
 
-export async function humanDelegate(db: EkDb, tenantId: string, userId: string): Promise<DelegatedActor> {
+/** A person deciding on agent work. `label` names the channel when it is not the web app. */
+export async function humanDelegate(db: EkDb, tenantId: string, userId: string, label?: string | null): Promise<DelegatedActor> {
   const user = await loadActor(db, tenantId, userId);
-  return { kind: 'user', userId, label: user.label, permissions: user.permissions };
+  return { kind: 'user', userId, label: label || user.label, permissions: user.permissions };
 }
 
 export function agentServiceContext(db: EkDb, tenantId: string, clock: Clock, run: RunRecord, actor: DelegatedActor, requester: Actor | null): ServiceContext {

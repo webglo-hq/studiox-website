@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { MethodOutput } from '../../app/methods';
 import { useAgents } from '../lib/agents';
 import { useAction, useApi } from '../lib/api';
-import { date, period, plural } from '../lib/format';
+import { date, humanize, period, plural } from '../lib/format';
 import { href } from '../lib/router';
 import { useSession } from '../lib/session';
 import { Badge, Button, Card, Dialog, Field, Notice, PageHead, Person, Progress, Query, Status } from '../ui/kit';
@@ -170,6 +170,7 @@ export function Cockpit() {
                         </span>
                       ))}
                     </div>
+                    <WorkdayStrip byWd={byWd} today={c.todayWorkday} target={`WD+${c.cycle.targetWorkday}`} />
                   </div>
                 </Card>
                 <Card title="Lock readiness" hint={<Term id="AX-CLS-02">What must be true to lock</Term>}>
@@ -237,6 +238,34 @@ export function Cockpit() {
           );
         }}
       </Query>
+    </div>
+  );
+}
+
+/** The close calendar at a glance: each business day's tasks, coloured by status. */
+function WorkdayStrip({ byWd, today, target }: { byWd: Map<string, Task[]>; today: string; target: string }) {
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="xs muted strong">Calendar by business day</div>
+      <ul className="wd-strip">
+        {[...byWd.entries()].map(([wd, tasks]) => (
+          <li key={wd} className={`wd-col${wd === today ? ' today' : ''}`}>
+            <div className="wd-label">
+              {wd}
+              {wd === today && <span className="wd-flag">today</span>}
+              {wd === target && wd !== today && <span className="wd-flag target">target</span>}
+            </div>
+            <span className="sr-only">{tasks.map((t) => `${t.code} ${t.title}: ${humanize(t.status)}`).join('; ')}</span>
+            <div className="wd-pills" aria-hidden>
+              {tasks.map((t) => (
+                <span key={t.id} className={`wd-pill s-${t.status}`} title={`${t.code} ${t.title} — ${humanize(t.status)}`}>
+                  {t.code}
+                </span>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

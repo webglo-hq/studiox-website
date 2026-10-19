@@ -1,7 +1,7 @@
 import { Bot, Link2, ShieldCheck, User, Workflow } from 'lucide-react';
 import { useState } from 'react';
 import { useApi } from '../lib/api';
-import { humanize, when } from '../lib/format';
+import { actionLabel, humanize, when } from '../lib/format';
 import { href, setQuery, type Route } from '../lib/router';
 import { Button, Card, Disclosure, Empty, Notice, PageHead, Query, Seg } from '../ui/kit';
 import { Term } from '../ui/term';
@@ -91,7 +91,7 @@ export function AuditLog({ route }: { route: Route }) {
                             </span>
                           </td>
                           <td style={{ minWidth: 260 }}>
-                            <div className="small strong">{humanize(a.action)}</div>
+                            <div className="small strong">{actionLabel(a.action)}</div>
                             {a.subjectType && (
                               <div className="xs muted">
                                 {humanize(a.subjectType)}{' '}

@@ -1,11 +1,11 @@
-import { KeyRound, ShieldCheck, Smartphone } from 'lucide-react';
+import { Copy, KeyRound, Plug, ShieldCheck, Smartphone } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { errorMessage, useBackend } from '../lib/api';
-import { ROLE_LABEL } from '../lib/format';
+import { errorMessage, useAction, useApi, useBackend } from '../lib/api';
+import { date, ROLE_LABEL, when } from '../lib/format';
 import { useSession } from '../lib/session';
 import { useTheme } from '../lib/theme';
 import { useToast } from '../lib/toast';
-import { Badge, Button, Card, Field, Kv, Notice, PageHead, Seg } from '../ui/kit';
+import { Badge, Button, Card, Field, Kv, Notice, PageHead, Query, Seg } from '../ui/kit';
 
 function TwoStep() {
   const backend = useBackend();
@@ -123,6 +123,112 @@ function PasswordForm() {
   );
 }
 
+/** Personal API tokens for the MCP server and scripts: shown once, stored as a hash, revocable. */
+function ApiTokens() {
+  const q = useApi('account.tokens', {});
+  const [name, setName] = useState('');
+  const [write, setWrite] = useState(false);
+  const [days, setDays] = useState('90');
+  const [created, setCreated] = useState<string | null>(null);
+  const toast = useToast();
+  const create = useAction('account.createToken', {
+    success: 'Token created. Copy it now; it will not be shown again.',
+    onSuccess: (o) => {
+      setCreated(o.token);
+      setName('');
+    },
+  });
+  const revoke = useAction('account.revokeToken', { success: 'Token revoked.' });
+  const config = created ? JSON.stringify({ mcpServers: { evenkeel: { command: 'node', args: ['<path-to-evenkeel>/scripts/mcp.mjs'], env: { EVENKEEL_URL: window.location.origin, EVENKEEL_TOKEN: created } } } }, null, 2) : '';
+  const copy = (text: string) => {
+    void navigator.clipboard?.writeText(text).then(
+      () => toast.push({ tone: 'good', text: 'Copied.' }),
+      () => toast.push({ tone: 'bad', text: 'Copy failed; select the text instead.' }),
+    );
+  };
+  return (
+    <Card title="API tokens" hint="For the MCP server (Claude and other AI assistants) and scripts. A token acts as you, with your role and the same approval rules.">
+      <div className="stack">
+        {created && (
+          <Notice tone="good" title="Your new token">
+            <div className="stack" style={{ gap: 8 }}>
+              <code className="xs" style={{ wordBreak: 'break-all' }} data-testid="new-token">
+                {created}
+              </code>
+              <div className="row-wrap">
+                <Button size="s" icon={<Copy size={14} aria-hidden />} onClick={() => copy(created)}>
+                  Copy token
+                </Button>
+                <Button size="s" variant="quiet" icon={<Plug size={14} aria-hidden />} onClick={() => copy(config)}>
+                  Copy MCP client config
+                </Button>
+                <Button size="s" variant="quiet" onClick={() => setCreated(null)}>
+                  Done
+                </Button>
+              </div>
+              <span className="xs ink2">It is shown only now. Evenkeel stores a hash, never the token.</span>
+            </div>
+          </Notice>
+        )}
+        <Query q={q} rows={2}>
+          {(tokens) =>
+            tokens.length ? (
+              <ul className="stack small" style={{ listStyle: 'none', margin: 0, padding: 0, gap: 8 }}>
+                {tokens.map((t) => (
+                  <li key={t.id} className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <span>
+                      <strong>{t.name}</strong> {t.scopes.includes('write') ? <Badge tone="warn">can make changes</Badge> : <Badge>read only</Badge>} {!t.active && <Badge tone="bad">{t.revokedAt ? 'revoked' : 'expired'}</Badge>}
+                      <div className="xs muted">
+                        Created {date(t.createdAt, 'short')} · {t.lastUsedAt ? `last used ${when(t.lastUsedAt)}` : 'never used'} · {t.expiresAt ? `expires ${date(t.expiresAt, 'short')}` : 'no expiry'}
+                      </div>
+                    </span>
+                    {t.active && (
+                      <Button size="s" variant="quiet" busy={revoke.isPending} onClick={() => revoke.mutate({ id: t.id })}>
+                        Revoke
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="small muted">No tokens yet.</p>
+            )
+          }
+        </Query>
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            create.mutate({ name, write, days: Number(days) });
+          }}
+        >
+          <div className="grid grid-2">
+            <Field label="Name" htmlFor="tok-name" help="Where you will use it, e.g. Claude Desktop.">
+              <input id="tok-name" className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+            </Field>
+            <Field label="Expires after" htmlFor="tok-days">
+              <select id="tok-days" className="select" value={days} onChange={(e) => setDays(e.target.value)}>
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+                <option value="365">1 year</option>
+              </select>
+            </Field>
+          </div>
+          <label className="check small">
+            <input type="checkbox" checked={write} onChange={(e) => setWrite(e.target.checked)} /> Allow changes (approve, reject, run agents). Without this the token can only read.
+          </label>
+          <div>
+            <Button type="submit" variant="primary" icon={<KeyRound size={16} aria-hidden />} busy={create.isPending} disabled={name.trim().length < 3}>
+              Create token
+            </Button>
+          </div>
+        </form>
+      </div>
+    </Card>
+  );
+}
+
 export function Account() {
   const { info } = useSession();
   const [theme, setTheme] = useTheme();
@@ -165,6 +271,7 @@ export function Account() {
           <>
             <TwoStep />
             <PasswordForm />
+            <ApiTokens />
           </>
         ) : (
           <Card title="Security">

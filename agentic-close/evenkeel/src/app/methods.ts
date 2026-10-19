@@ -7,6 +7,7 @@ import type { AgentEngine } from '../packs/accounting/agents/engine';
 import { makeContext, requirePermission, type ServiceContext } from '../packs/accounting/domain/context';
 import { loadActor } from '../packs/accounting/domain/rbac';
 import { Id, JournalEntryDraft, PeriodKeyShape, ReconcilingItemDraft, FluxExplanationDraft } from '../packs/accounting/ontology/shapes';
+import { createToken, listMyTokens, revokeToken } from '../packs/accounting/services/api-tokens';
 import { closeSettings, listAudit, listRoles, listSodRules, listUsers, setSodRule, setUserRoles, setUserStatus, updateCloseSettings, verifyAudit, whoAmI } from '../packs/accounting/services/admin';
 import { assignTask, closeCalendar, updateTask } from '../packs/accounting/services/close';
 import { currentPeriodKey } from '../packs/accounting/services/common';
@@ -65,6 +66,18 @@ export const METHODS = {
   'session.me': m({ input: empty, mutates: false, description: 'The signed-in user, roles and permissions', handler: (ctx) => whoAmI(ctx) }),
   'home.myClose': m({ input: empty, mutates: false, description: 'What to do next', handler: (ctx) => myClose(ctx) }),
 
+  'account.tokens': m({ input: empty, mutates: false, description: 'Your personal API tokens (for MCP and scripts)', handler: (ctx) => listMyTokens(ctx) }),
+  'account.createToken': m({
+    input: z.object({ name: z.string().trim().min(3).max(60), write: z.boolean(), days: z.number().int().min(1).max(365) }).strict(),
+    mutates: true,
+    description: 'Create a personal API token (shown once)',
+    handler: (ctx, env, i) => {
+      if (env.mode === 'demo') throw new AppError('VALIDATION', 'API tokens need the Evenkeel server; this demo runs entirely in your browser.');
+      return createToken(ctx, i);
+    },
+  }),
+  'account.revokeToken': m({ input: z.object({ id: Id }).strict(), mutates: true, description: 'Revoke an API token', handler: (ctx, _e, i) => revokeToken(ctx, i.id) }),
+
   'close.calendar': m({ input: period, mutates: false, description: 'Close calendar, progress and blockers', handler: async (ctx, _e, i) => closeCalendar(ctx, await periodOr(ctx, i.periodKey)) }),
   'close.periods': m({ input: empty, mutates: false, description: 'All periods and their states', handler: (ctx) => periodsOverview(ctx) }),
   'close.lockReadiness': m({ input: period, mutates: false, description: 'Checklist for locking the period', handler: async (ctx, _e, i) => lockReadiness(ctx, await periodOr(ctx, i.periodKey)) }),
@@ -119,11 +132,11 @@ export const METHODS = {
     description: 'Approve or reject proposals (bulk)',
     handler: async (ctx, env, i) => {
       if (i.decision === 'reject' && (!i.reason || i.reason.trim().length < 3)) throw new AppError('VALIDATION', 'Say briefly why you are rejecting (at least 3 characters).');
-      const r = await env.engine.decide({ proposalIds: i.ids, decision: i.decision, reason: i.reason ?? null, userId: ctx.actor.userId!, background: env.backgroundAgents });
+      const r = await env.engine.decide({ proposalIds: i.ids, decision: i.decision, reason: i.reason ?? null, userId: ctx.actor.userId!, background: env.backgroundAgents, actorLabel: ctx.actor.label });
       return { results: r.results, continued: r.continued ? { runId: r.continued.run.id, summary: r.continued.run.summary } : null, continuing: r.continuing };
     },
   }),
-  'inbox.review': m({ input: z.object({ id: Id, note: z.string().max(500).optional() }).strict(), mutates: true, description: 'Complete a post-hoc review', handler: async (ctx, env, i) => { const r = await env.engine.review(i.id, ctx.actor.userId!, i.note); return { id: r.id, reviewStatus: r.reviewStatus }; } }),
+  'inbox.review': m({ input: z.object({ id: Id, note: z.string().max(500).optional() }).strict(), mutates: true, description: 'Complete a post-hoc review', handler: async (ctx, env, i) => { const r = await env.engine.review(i.id, ctx.actor.userId!, i.note, ctx.actor.label); return { id: r.id, reviewStatus: r.reviewStatus }; } }),
   'inbox.undo': m({ input: z.object({ id: Id, reason }).strict(), mutates: true, description: 'Undo an applied entry by reversal', handler: (ctx, _e, i) => undoProposal(ctx, i.id, i.reason) }),
 
   'recs.list': m({ input: period, mutates: false, description: 'Reconciliations for the period', handler: async (ctx, _e, i) => listRecs(ctx, await periodOr(ctx, i.periodKey)) }),
@@ -209,6 +222,8 @@ export function isMethod(name: string): name is MethodName {
 export interface Caller {
   userId: string;
   ip?: string | null;
+  /** How the person is calling when it is not the web app, e.g. 'API token "Claude Desktop"'. */
+  via?: string | null;
 }
 
 /** Invoke a method as a signed-in user. Errors are AppErrors with stable codes. */
@@ -217,7 +232,9 @@ export async function invoke(env: AppEnv, caller: Caller, name: string, raw: unk
   const def = METHODS[name] as unknown as MethodDef<z.ZodType, unknown>;
   const parsed = def.input.safeParse(raw ?? {});
   if (!parsed.success) throw new AppError('VALIDATION', parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '));
-  const actor = await loadActor(env.db, env.tenantId, caller.userId, { ip: caller.ip ?? null });
+  const base = await loadActor(env.db, env.tenantId, caller.userId, { ip: caller.ip ?? null });
+  // Audit events name the channel: "Casey Morgan via API token "Claude Desktop"".
+  const actor = caller.via ? { ...base, label: `${base.label} via ${caller.via}` } : base;
   const ctx = makeContext(env.db, env.tenantId, actor, env.clock);
   return def.handler(ctx, env, parsed.data);
 }

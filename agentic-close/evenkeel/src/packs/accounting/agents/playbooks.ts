@@ -565,7 +565,7 @@ const intercompany: Playbook = async (s) => {
     await propose(s, {
       key: `ic:mirror:${a.ref}`,
       kind: 'journal_entry',
-      title: `Book ${a.ref} in Kitewell UK — £${(gbp / 100).toFixed(2)} (USD ${(usd / 100).toFixed(2)})`,
+      title: `Book ${a.ref} in Kitewell UK — ${money(gbp, 'GBP')} (${money(usd)})`,
       why: `Kitewell US recorded ${a.ref} on ${a.lender[0]!.date} (${money(usd)}) but Kitewell UK has no matching entry, so intercompany is out by ${money(usd)}. The UK side is booked at the September average rate (${pos.averageRate}); the payable stays denominated in USD and is remeasured at the closing rate by FX revaluation.`,
       confidence: 0.9,
       amount: gbp,
@@ -584,7 +584,7 @@ const intercompany: Playbook = async (s) => {
           { accountId: ref('2400'), debit: 0, credit: gbp, counterpartyEntityId: pos.lender.entityId, txnCurrency: 'USD', txnAmount: -usd, fxRate: Math.round((1 / pos.averageRate) * 1e6) / 1e6 },
         ],
       },
-      evidence: [...a.lender.map((l): EvidenceRef => ({ kind: 'record', label: `${l.entryNumber} (US) ${l.date} ${money(l.amount)}`, detail: sanitizeUntrusted(l.memo, 200), untrusted: true })), { kind: 'calculation', label: `USD ${(usd / 100).toFixed(2)} ÷ ${pos.averageRate} = £${(gbp / 100).toFixed(2)}` }],
+      evidence: [...a.lender.map((l): EvidenceRef => ({ kind: 'record', label: `${l.entryNumber} (US) ${l.date} ${money(l.amount)}`, detail: sanitizeUntrusted(l.memo, 200), untrusted: true })), { kind: 'calculation', label: `${money(usd)} ÷ ${pos.averageRate} = ${money(gbp, 'GBP')}` }],
     });
     await propose(s, {
       key: `issue:ic:${a.ref}`,
@@ -652,7 +652,7 @@ const fx: Playbook = async (s) => {
       key: `fx:${b.entityCode}:${b.accountCode}:${b.txnCurrency}:${bal.periodKey}`,
       kind: 'journal_entry',
       title: `Revalue ${b.txnCurrency} ${b.accountName} (${b.entityCode}) — ${money(amt, b.functionalCurrency)} ${b.difference > 0 === (b.booked > 0) ? 'increase' : 'decrease'}`,
-      why: `${b.accountCode} carries ${b.txnCurrency} ${(Math.abs(b.txnBalance) / 100).toFixed(2)} booked at ${money(Math.abs(b.booked), b.functionalCurrency)}. At the ${rates.rates[0]?.pair ?? ''} closing rate it is worth ${money(Math.abs(b.remeasured), b.functionalCurrency)}, so ${gain ? 'a gain' : 'a loss'} of ${money(amt, b.functionalCurrency)} is unrealised (ASC 830-20).`,
+      why: `${b.accountCode} carries ${money(Math.abs(b.txnBalance), b.txnCurrency)} booked at ${money(Math.abs(b.booked), b.functionalCurrency)}. At the ${rates.rates[0]?.pair ?? ''} closing rate it is worth ${money(Math.abs(b.remeasured), b.functionalCurrency)}, so ${gain ? 'a gain' : 'a loss'} of ${money(amt, b.functionalCurrency)} is unrealised (ASC 830-20).`,
       confidence: 0.97,
       amount: amt,
       currency: b.functionalCurrency,
@@ -669,7 +669,7 @@ const fx: Playbook = async (s) => {
           ? [{ accountId: b.accountId, debit: amt, credit: 0, counterpartyEntityId: b.counterpartyEntityId, txnCurrency: b.txnCurrency, txnAmount: 0 }, { accountId: fxAcct, debit: 0, credit: amt }]
           : [{ accountId: fxAcct, debit: amt, credit: 0 }, { accountId: b.accountId, debit: 0, credit: amt, counterpartyEntityId: b.counterpartyEntityId, txnCurrency: b.txnCurrency, txnAmount: 0 }],
       },
-      evidence: [{ kind: 'calculation', label: `${(b.txnBalance / 100).toFixed(2)} ${b.txnCurrency} × ${b.closingRate.toFixed(6)} = ${(b.remeasured / 100).toFixed(2)} ${b.functionalCurrency}`, detail: `Booked ${(b.booked / 100).toFixed(2)}` }],
+      evidence: [{ kind: 'calculation', label: `${money(b.txnBalance, b.txnCurrency)} × ${b.closingRate.toFixed(6)} = ${money(b.remeasured, b.functionalCurrency)}`, detail: `Booked ${money(b.booked, b.functionalCurrency)}` }],
     });
   }
   if (!bal.items.some((b) => Math.abs(b.difference) >= 1)) await s.note('No foreign-currency balances need revaluation.');
